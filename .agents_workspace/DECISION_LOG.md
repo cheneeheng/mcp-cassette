@@ -59,3 +59,15 @@
 **Decision:** (1) argparse `REMAINDER` positional swallowed flags placed after the cassette positional in `serve`; replaced with a manual split of argv on the first standalone `--`. (2) anyio `FileReadStream(sys.stdin.buffer)` uses a *buffered* reader whose `read(n)` blocks until n bytes or EOF, stalling an interactive proxy that has received one short line; `FileWriteStream(sys.stdout.buffer)` buffers responses. Fixed by reading/writing unbuffered raw fds (`os.fdopen(..., buffering=0)`) in `src/mcp_cassette/_stdio.py`.
 **Impact / Risk:** Both are core to the streaming stdio transport working at all. Covered by the record/replay/fault suites.
 **Outcome:** Fixed; suite green.
+
+### Entry 6
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-13T00:00:00Z
+**Task:** ITER_05 — Windows support (post-MVP): scope and shutdown design.
+
+**Context:** The goal was "add Windows support." Empirically the suite already passed on Windows (43 passed, 1 skipped); the only real gap was graceful shutdown of the recording proxy on Ctrl+C/Ctrl+Break, because `anyio.open_signal_receiver` is unavailable on Windows and the code fell back to `sleep_forever()`. A first design (poll a `signal.signal` flag, then cancel the task group like POSIX) hung: Windows cannot EINTR-interrupt the worker thread blocked in our own stdin read, so the task-group unwind never completes.
+**Decision:** On the Windows interrupt path, do not cancel the group. Instead terminate the child (shielded), call `_finalize()` to write the cassette, then `os._exit(130)`. The un-joinable stdin thread dies with the process; the cassette is already saved. POSIX keeps its clean cancel-based unwind. Left `new_episodes` unchanged (EOF-driven on all platforms already — no new Windows gap). Included a minimal GitHub Actions CI (OS matrix incl. windows-latest) to guard the claim, but dropped the `ruff format --check` step because the repo has pre-existing format drift (never `ruff format`'d, only lint-clean); reformatting the whole tree is out of scope for this task.
+**Impact / Risk:** `os._exit` is blunt but correct for a shutdown path with the artifact already persisted; commented in-source. The Ctrl+Break test needs a real Windows console to deliver the event, so it skips (never hangs) under `uv run`/pty launchers — it asserts exit-130/finalize when a console is present (verified from PowerShell) and skips cleanly otherwise.
+**Outcome:** Applied. `uv run pytest` → 44 passed, 1 skipped; ruff + mypy clean; Ctrl+Break finalize verified rc 130 from a real console.

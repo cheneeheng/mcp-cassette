@@ -7,10 +7,11 @@ On any shutdown path the captured session is finalized into a valid cassette.
 
 from __future__ import annotations
 
+import os
 import signal
 
 import anyio
-from anyio.abc import ByteReceiveStream, ByteSendStream
+from anyio.abc import ByteReceiveStream, ByteSendStream, Process
 
 from .._stdio import stderr_stream, stdin_stream, stdout_stream
 from ..cassette import RedactionRule, default_redaction_rules
@@ -55,6 +56,7 @@ class StdioRecordingProxy:
         if redaction:
             rules.extend(redaction)
         self._recorder = SessionRecorder(rules)
+        self._signal_received = False
 
     def run(self) -> int:
         """Run the proxy to completion, returning a process exit code."""
@@ -73,7 +75,7 @@ class StdioRecordingProxy:
                 our_err = stderr_stream()
                 try:
                     async with anyio.create_task_group() as tg:
-                        tg.start_soon(self._watch_signals, tg.cancel_scope)
+                        tg.start_soon(self._watch_signals, tg.cancel_scope, process)
                         tg.start_soon(
                             self._client_to_server, client_in, process.stdin
                         )
@@ -116,16 +118,54 @@ class StdioRecordingProxy:
     ) -> None:
         await pump_lines(source, dest, tap=None)
 
-    async def _watch_signals(self, cancel_scope: anyio.CancelScope) -> None:
+    async def _watch_signals(
+        self, cancel_scope: anyio.CancelScope, process: Process
+    ) -> None:
         try:
             with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
                 async for _ in signals:
                     cancel_scope.cancel()
                     return
         except (NotImplementedError, ValueError):
-            # Signal handling unsupported on this platform (e.g. Windows / non-main
-            # thread); rely on normal EOF-driven shutdown instead.
+            # asyncio has no add_signal_handler on Windows; fall back to a plain
+            # signal.signal handler that we poll from the loop.
+            await self._watch_signals_windows(process)
+
+    async def _watch_signals_windows(self, process: Process) -> None:
+        # Install a stdlib handler for SIGINT and SIGBREAK (Ctrl+C / Ctrl+Break) that
+        # flips a flag; overriding SIGBREAK also pre-empts the OS default abrupt
+        # termination (STATUS_CONTROL_C_EXIT) so we get to shut down on our terms.
+        self._signal_received = False
+
+        def _handler(signum: int, frame: object) -> None:
+            self._signal_received = True
+
+        installed = False
+        for name in ("SIGINT", "SIGBREAK"):
+            sig = getattr(signal, name, None)
+            if sig is None:
+                continue
+            try:
+                signal.signal(sig, _handler)
+                installed = True
+            except (ValueError, OSError):
+                # Not the main thread; can't install a handler here.
+                pass
+        if not installed:
+            # No graceful-interrupt path available; rely on EOF-driven shutdown.
             await anyio.sleep_forever()
+        while not self._signal_received:
+            await anyio.sleep(0.1)
+        # Windows cannot interrupt the worker thread blocked in our stdin read (no
+        # EINTR), so a clean task-group unwind would hang. Stop the child, finalize the
+        # cassette, then hard-exit — the un-joinable stdin thread dies with the process.
+        with anyio.CancelScope(shield=True):
+            try:
+                process.terminate()
+            except (ProcessLookupError, OSError):
+                pass
+        self._finalize()
+        os._exit(130)
 
     def _finalize(self) -> None:
         cassette = self._recorder.build()

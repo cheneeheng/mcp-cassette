@@ -22,7 +22,7 @@ uv build                                 # build wheel + sdist
 
 Integration tests spawn subprocesses that run the reference server and the proxy/replay server. They shell out to `sys.executable`, so run them through `uv run` so the subprocess inherits the venv.
 
-Platform note: the MVP targets Linux and macOS; Windows is out of scope. Signal-driven proxy shutdown degrades to EOF-driven shutdown where signals are unsupported (`record/proxy.py::_watch_signals`), but the suite is not validated on Windows. Prefer WSL for local runs on this machine.
+Platform note: Linux, macOS, and Windows are supported (CI runs the suite on all three; see ITER_05). Proxy shutdown is signal-driven: on POSIX via `anyio.open_signal_receiver` (SIGINT/SIGTERM) cancelling the task group; on Windows via a `signal.signal` SIGINT/SIGBREAK handler that `_watch_signals_windows` polls (asyncio has no `add_signal_handler` there). The Windows path can't cancel the stdin-read worker thread (no EINTR), so on interrupt it terminates the child, finalizes, and `os._exit(130)` rather than unwinding the task group. Both paths finalize the cassette and exit 130; off the main thread, where no handler can be installed, shutdown degrades to EOF-driven. SIGTERM has no graceful-finalize semantics on Windows — `test_ctrl_break_finalizes_cassette` (CTRL_BREAK_EVENT) is the win32 counterpart to the POSIX-only `test_sigterm_finalizes_cassette`; it needs a real console to deliver the event, so it skips (never hangs) under launchers like `uv run` that run without one.
 
 ## Architecture
 

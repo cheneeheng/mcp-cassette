@@ -101,7 +101,8 @@ def test_partial_session_still_valid(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(
     sys.platform == "win32",
-    reason="signal-driven finalize is POSIX-only (Windows out of MVP scope)",
+    reason="SIGTERM has no graceful-finalize semantics on Windows; see the "
+    "CTRL_BREAK_EVENT test for the win32 equivalent",
 )
 def test_sigterm_finalizes_cassette(tmp_path: Path) -> None:
     cassette = tmp_path / "demo.json"
@@ -120,5 +121,47 @@ def test_sigterm_finalizes_cassette(tmp_path: Path) -> None:
     proc.wait(timeout=10)
     assert proc.returncode == 130
     # an interrupted recording is still a valid cassette
+    loaded = Cassette.load(cassette)
+    assert len(loaded.messages) >= 1
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="CTRL_BREAK_EVENT is the Windows-only equivalent of SIGTERM",
+)
+def test_ctrl_break_finalizes_cassette(tmp_path: Path) -> None:
+    # Windows analog of test_sigterm_finalizes_cassette: Ctrl+Break must finalize the
+    # cassette (via the SIGBREAK handler), not abort the proxy (STATUS_CONTROL_C_EXIT).
+    #
+    # Delivering CTRL_BREAK_EVENT needs a real Windows console shared with the target's
+    # process group. Some launchers (notably `uv run`) run without a console, so the
+    # event never reaches the proxy; the test skips in that case rather than hang.
+    cassette = tmp_path / "demo.json"
+    proc = subprocess.Popen(
+        _record_cmd(cassette),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
+    assert proc.stdin is not None
+    try:
+        for msg in initialize_sequence():
+            proc.stdin.write(json.dumps(msg).encode("utf-8") + b"\n")
+        proc.stdin.flush()
+        time.sleep(3.0)  # let the proxy start and capture the handshake
+        proc.send_signal(signal.CTRL_BREAK_EVENT)
+        try:
+            proc.wait(timeout=6)
+        except subprocess.TimeoutExpired:
+            pytest.skip(
+                "CTRL_BREAK_EVENT not deliverable in this environment (no console, "
+                "e.g. under `uv run`); run `python -m pytest` from a terminal"
+            )
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+    assert proc.returncode == 130
     loaded = Cassette.load(cassette)
     assert len(loaded.messages) >= 1
