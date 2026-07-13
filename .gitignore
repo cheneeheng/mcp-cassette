@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environments / tooling
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# uv
+# (uv.lock is committed; nothing to ignore here)
+
+# OS
+.DS_Store
+
+# Internal agent workspace (not end-user docs)
+.agents_workspace/
