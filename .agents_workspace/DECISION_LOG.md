@@ -95,3 +95,59 @@
 **Decision:** (1) Measure with bare `coverage run -m pytest` + `patch = ["subprocess"]` + `parallel`/`combine` instead of pytest-cov — pytest-cov starts too late to see the pytest11-registered plugin and misses subprocesses; swapped the pytest-cov dev dep for `coverage>=7.10`. (2) Unreachable guards get `# pragma: no cover`/`no branch` with an inline reason rather than deletion (minimal-change bias; the guards document intent). (3) The Windows `os._exit(130)` shutdown path is unmeasurable via subprocess coverage, so it is tested in-process against private methods with a stubbed child process and mocked `os._exit`. (4) `fail_under = 99`, not 100: proxy.py lines 87-88/124-126 are POSIX-only (anyio signal receiver) and unreachable on Windows; 99 holds on every matrix OS. (5) Folder split keeps shared helpers at tests/ root via `pythonpath = ["tests"]`; test basenames stay unique across layers because there are no `__init__.py` files (pytest import-mode constraint); the CLI `--redact` subprocess test moved to integration/test_record.py, session/plugin unit tests split out of the fixture system tests.
 **Impact / Risk:** Tests that reach private methods (`_watch_signals_windows`, `_handle_line`, `_replay`) will need updating if those internals are refactored. The 99 gate would mask a small future regression on the platform that already misses the POSIX-only lines.
 **Outcome:** 118 passed, 2 skipped; every module 100% except record/proxy.py (94% on Windows, POSIX-only lines); gate passes locally; ruff and mypy --strict clean.
+
+### Entry 9
+
+**Type:** Decision
+**Mode:** Autonomous (user-approved)
+**Timestamp:** 2026-07-18T05:05:00Z
+**Task:** First release v1.0.0 blocked by red CI; fix POSIX shutdown hang.
+
+**Context:** First-ever CI run (PR #1) failed test_sigterm_finalizes_cassette on all
+four POSIX jobs (ubuntu/macos x 3.12/3.13); Windows passed. The suite had only run on
+the Windows dev box before, so the POSIX SIGTERM path was never actually exercised.
+**Decision:** Root cause = a targeted SIGTERM hits only the proxy, not the separately
+spawned child; the proxy cancelled its pumps then blocked forever in process.wait() on
+a still-live child. Fixed by terminating the child on the interrupt path (as the Windows
+watcher already did) and keying the 130 exit off the _signal_received flag instead of
+cancelled-exception propagation (a task group absorbs cancellation of its own scope, so
+the old `interrupted` flag was never set on POSIX). Also chose v1.0.0 (not 0.1.0) per
+user and moved the Development Status classifier Alpha -> Production/Stable to match.
+**Impact / Risk:** Terminating the child on interrupt is a behaviour change on the
+success-shutdown path only when a signal was received; recorded data is already captured
+before terminate. Coverage: new POSIX-only lines stay within the per-OS 99% budget
+(Windows 99.12% verified locally; POSIX covers strictly more of proxy.py).
+**Outcome:** Windows suite green locally (118 passed); pushed to PR #1; awaiting POSIX CI.
+
+### Entry 10
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-18T09:30:00Z
+**Task:** Finish the v2 plan implementation (SKELETON_v2 + ITER_01–04_v2): ITER_03
+integration test matrix, stale v1 test cleanup, disconnect regression fix.
+
+**Context:** Three forks the plans left open. (1) The stdio scripted client writes all
+requests upfront, so recordings put every client request before the server's work in
+`seq` and server-request anchors ("the client exchange it followed in seq",
+ITER_03 §04) get misattributed to the last request — the gating tests failed against a
+correct implementation. (2) The MCP SDK routes `create_message` requests without
+`related_request_id` to the standalone GET stream, so the reference HTTP server's
+sampling request never reached a client that held no GET stream — the recording
+fixture hung. (3) The CI coverage gate (`fail_under = 99`) reads 94% locally: the
+prior session's HTTP transport code has untested error/shutdown branches, and no v2
+plan includes a coverage-hardening pass.
+**Decision:** (1) Added an opt-in `sequential=True` mode to `run_session` (test infra
+only) so the recording resembles real agent traffic; anchor semantics in the library
+stay exactly as planned. (2) The reference server's `summarize` now passes
+`related_request_id=ctx.request_id`, putting sampling on the triggering POST stream
+(the spec's related-stream mode); GET-channel emission is covered by a hand-built
+cassette test instead. (3) Left the gate and the code untouched and surfaced the gap
+to the user — inventing ~50 unplanned tests or weakening a deliberate v1 gate are both
+scope changes the user should call.
+**Impact / Risk:** (1) Batched recordings of sampling servers still anchor
+pathologically — inherent to the planned seq-based anchor semantics, now documented in
+the helper's docstring. (3) CI on this branch will fail the coverage step until the
+gap is addressed.
+**Outcome:** Full suite 208 passed / 3 skipped on Windows; ruff and mypy --strict
+clean; all plan-listed tests for ITER_01–04_v2 present and green.

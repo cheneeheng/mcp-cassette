@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from .cassette import Fault, FaultOverlay, MatchConfig
+from .cassette import Cassette, Fault, FaultOverlay, MatchConfig
 from .report import read_report
 
 Mode = Literal["once", "none", "all", "new_episodes"]
@@ -55,6 +55,10 @@ class CassetteSession:
             cassette_path.name + ".faults.json"
         )
         self._last_action: _Action | None = None
+        self._portal_cm: Any = None
+        self._portal: Any = None
+        self._serve_future: Any = None
+        self._http_engine: Any = None
 
     def with_faults(self, *faults: Fault) -> CassetteSession:
         """Return a copy of this session with the given faults applied.
@@ -94,6 +98,12 @@ class CassetteSession:
                 "faults apply to replay only; with_faults cannot run under a recording "
                 f"mode (resolved action: {action})"
             )
+        if action != "record" and self._peek_transport() == "http":
+            raise CassetteError(
+                f"cassette {self.cassette_path} was recorded over Streamable HTTP; "
+                "use mcp_cassette.server_url(real_url) instead of server_command "
+                "for http cassettes"
+            )
         base = [sys.executable, "-m", "mcp_cassette"]
         report = ["--report", str(self.report_path)]
         if action == "record":
@@ -126,13 +136,106 @@ class CassetteSession:
             cmd += ["--faults", str(self._faults_path)]
         return cmd
 
-    def finalize(self) -> None:
-        """Check the session report and raise on violations.
+    def server_url(self, real_url: str) -> str:
+        """Build the MCP server URL the agent should use for this test.
+
+        The HTTP analog of :meth:`server_command` — URL substitution is the whole
+        trick. In record modes the returned URL is a recording proxy in front of
+        ``real_url``; in replay modes it is a local replay server rebuilt from the
+        cassette; under ``new_episodes`` misses fall through to ``real_url`` live
+        and are appended. The server runs in a background thread owned by this
+        session and is stopped (and the cassette/report finalized) in
+        :meth:`finalize`.
+
+        Args:
+            real_url: The real remote MCP endpoint (recorded for provenance).
+
+        Returns:
+            The local ``http://127.0.0.1:<port>/mcp`` URL to plug into the agent's
+            MCP server configuration.
 
         Raises:
-            CassetteError: If a recording captured zero messages, or replay hit any
-                unmatched request.
+            CassetteError: If the cassette is missing under ``none`` mode, faults
+                are configured under a recording action, the cassette was recorded
+                over stdio, or the ``[http]`` extra is not installed.
         """
+        action = self._resolve_action()
+        self._last_action = action
+        if self.faults is not None and action != "replay":
+            raise CassetteError(
+                "faults apply to replay only; with_faults cannot run under a recording "
+                f"mode (resolved action: {action})"
+            )
+        if action != "record" and self._peek_transport() != "http":
+            raise CassetteError(
+                f"cassette {self.cassette_path} was recorded over stdio; use "
+                "mcp_cassette.server_command(real_cmd) instead of server_url "
+                "for stdio cassettes"
+            )
+        try:
+            from .transports.http import HttpReplayServer, RecordingProxy
+        except ImportError as exc:
+            raise CassetteError(str(exc)) from exc
+        if action == "record":
+            engine: Any = RecordingProxy(
+                server_url=real_url,
+                cassette_path=str(self.cassette_path),
+                report_path=str(self.report_path),
+            )
+        elif action == "replay":
+            engine = HttpReplayServer(
+                Cassette.load(self.cassette_path),
+                match=self.match,
+                faults=self.faults,
+                report_path=str(self.report_path),
+            )
+        else:  # new_episodes with an existing cassette
+            engine = HttpReplayServer(
+                Cassette.load(self.cassette_path),
+                match=self.match,
+                report_path=str(self.report_path),
+                fallthrough_url=real_url,
+                cassette_path=str(self.cassette_path),
+            )
+        self._http_engine = engine
+        return self._start_background(engine.serve)
+
+    def _start_background(self, serve: Any) -> str:
+        from anyio.from_thread import start_blocking_portal
+
+        self._portal_cm = start_blocking_portal()
+        self._portal = self._portal_cm.__enter__()
+        try:
+            future, url = self._portal.start_task(serve)
+        except BaseException:
+            self._stop_background()
+            raise
+        self._serve_future = future
+        return str(url)
+
+    def _stop_background(self) -> None:
+        if self._portal_cm is None:
+            return
+        if self._serve_future is not None:
+            self._serve_future.cancel()
+            self._serve_future = None
+        portal_cm = self._portal_cm
+        self._portal_cm = None
+        self._portal = None
+        portal_cm.__exit__(None, None, None)
+
+    def finalize(self) -> None:
+        """Stop any in-process server, check the session report, raise on violations.
+
+        Raises:
+            CassetteError: If a recording captured zero messages (or could not
+                reach the upstream at first contact), or replay hit any unmatched
+                request.
+        """
+        self._stop_background()
+        fatal = getattr(self._http_engine, "fatal_error", None)
+        if fatal is not None:
+            raise CassetteError(f"recording failed: {fatal}")
         if self._last_action is None:
             return
         report = read_report(str(self.report_path))
@@ -150,6 +253,13 @@ class CassetteSession:
                 f"replay had {len(misses)} unmatched request(s):\n{summary}\n"
                 f"Re-record with MCP_CASSETTE_MODE=all or delete {self.cassette_path}."
             )
+
+    def _peek_transport(self) -> str:
+        """The existing cassette's transport (``stdio`` when absent/unreadable)."""
+        try:
+            return Cassette.load(self.cassette_path).transport
+        except (FileNotFoundError, ValueError):
+            return "stdio"
 
     def _resolve_action(self) -> _Action:
         exists = self.cassette_path.exists()

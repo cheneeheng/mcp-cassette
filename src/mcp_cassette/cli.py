@@ -8,17 +8,21 @@ the MVP.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections import Counter
+from urllib.parse import urlsplit
+
+from pydantic import ValidationError
 
 from .cassette import (
     Cassette,
     FaultOverlay,
     MatchConfig,
     RedactionRule,
-    UnsupportedCassetteFeature,
     UnsupportedFormatVersion,
 )
+from .lint import run_with_notes
 from .matching import Matcher
 from .record.proxy import StdioRecordingProxy
 from .replay.faults import Injector
@@ -34,8 +38,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    rec = sub.add_parser("record", help="Wrap a real server command for recording.")
+    rec = sub.add_parser(
+        "record",
+        help="Record a real server: wrap a stdio command, or proxy a remote URL.",
+    )
     rec.add_argument("--cassette", required=True, help="Path to write the cassette.")
+    rec.add_argument(
+        "--url",
+        help=(
+            "Remote Streamable HTTP MCP endpoint to record (mutually exclusive "
+            "with a -- CMD; needs the [http] extra)."
+        ),
+    )
+    rec.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help="Local port for the recording proxy (default: ephemeral).",
+    )
+    rec.add_argument(
+        "--max-idle",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "End the recording after this much client inactivity — the "
+            "unattended-CI escape hatch (default: off; recording ends on signal)."
+        ),
+    )
     rec.add_argument(
         "--redact",
         action="append",
@@ -51,8 +81,27 @@ def build_parser() -> argparse.ArgumentParser:
     rec.add_argument("--report", help="Write a JSON session report to this path.")
     rec.epilog = "Pass the real server command after a -- separator: -- CMD [ARGS...]."
 
-    srv = sub.add_parser("serve", help="Stand up a replay server from a cassette.")
+    srv = sub.add_parser(
+        "serve",
+        help=(
+            "Stand up a replay server from a cassette (transport inferred from "
+            "the cassette: stdio or Streamable HTTP)."
+        ),
+    )
     srv.add_argument("cassette", help="Path to the cassette to replay.")
+    srv.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help="Local port for an http cassette (default: ephemeral; URL printed).",
+    )
+    srv.add_argument(
+        "--url",
+        help=(
+            "Real server URL for --new-episodes with an http cassette "
+            "(default: the cassette's recorded server_url)."
+        ),
+    )
     srv.add_argument(
         "--ordering",
         choices=["per_method", "strict", "none"],
@@ -87,6 +136,43 @@ def build_parser() -> argparse.ArgumentParser:
         "--faults",
         help="Dry-run a fault overlay: report which recorded requests it would hit.",
     )
+
+    lint = sub.add_parser(
+        "lint",
+        help="Heuristic security scan of a cassette (CI-friendly; exit 4 on errors).",
+        description=(
+            "Scan recorded tool descriptions and results for known smells: "
+            "injection phrasing (R001), description drift vs a baseline (R002), "
+            "duplicate tool names (R003), instruction-shaped results (R004). "
+            "These are pattern rules, not a guarantee — a clean lint is absence "
+            "of known smells, nothing more."
+        ),
+    )
+    lint.add_argument("cassette", help="Path to the cassette to lint.")
+    lint.add_argument(
+        "--baseline",
+        help="Older cassette to compare tool surfaces against (enables R002).",
+    )
+    lint.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text; json is deterministic and diffable).",
+    )
+    lint.add_argument(
+        "--select",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Run only these rule ids (repeatable, e.g. --select R001).",
+    )
+    lint.add_argument(
+        "--ignore",
+        action="append",
+        default=[],
+        metavar="RULE",
+        help="Skip these rule ids (repeatable).",
+    )
     return parser
 
 
@@ -110,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_serve(args)
     if args.command == "inspect":
         return _cmd_inspect(args)
+    if args.command == "lint":
+        return _cmd_lint(args)
     parser.error(f"unknown command {args.command}")  # pragma: no cover
     return 2  # pragma: no cover — required subparsers reject unknown commands
 
@@ -131,9 +219,32 @@ def _parse_redaction(spec: str) -> RedactionRule:
 
 def _cmd_record(args: argparse.Namespace) -> int:
     server_cmd = args.server_cmd
-    if not server_cmd:
-        sys.stderr.write("mcp-cassette record: missing server command after --\n")
+    if args.url and server_cmd:
+        sys.stderr.write(
+            "mcp-cassette record: --url and a -- CMD are mutually exclusive\n"
+        )
         return 2
+    if not args.url and not server_cmd:
+        sys.stderr.write(
+            "mcp-cassette record: pass a remote --url URL or a server command "
+            "after --\n"
+        )
+        return 2
+    if args.url:
+        try:
+            from .transports.http import RecordingProxy
+        except ImportError as exc:
+            sys.stderr.write(f"mcp-cassette record: {exc}\n")
+            return 2
+        return RecordingProxy(
+            server_url=args.url,
+            cassette_path=args.cassette,
+            redaction=[_parse_redaction(s) for s in args.redact],
+            include_default_redactions=not args.no_default_redactions,
+            port=args.port,
+            report_path=args.report,
+            max_idle=args.max_idle,
+        ).run()
     proxy = StdioRecordingProxy(
         server_cmd=server_cmd,
         cassette_path=args.cassette,
@@ -155,6 +266,14 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         ordering=args.ordering,
         rewrite_protocol_version=args.rewrite_protocol_version,
     )
+    if cassette.transport == "http":
+        return _cmd_serve_http(args, cassette, config)
+    if args.url:
+        sys.stderr.write(
+            "mcp-cassette serve: --url applies to http cassettes; this cassette "
+            "was recorded over stdio (pass the server command after -- instead)\n"
+        )
+        return 2
     if args.new_episodes:
         server_cmd = args.server_cmd
         if not server_cmd:
@@ -171,14 +290,39 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         ).run()
 
     overlay = FaultOverlay.load(args.faults) if args.faults else None
+    server = ReplayServer(
+        cassette, match=config, faults=overlay, report_path=args.report
+    )
+    return server.run()
+
+
+def _cmd_serve_http(
+    args: argparse.Namespace, cassette: Cassette, config: MatchConfig
+) -> int:
     try:
-        server = ReplayServer(
-            cassette, match=config, faults=overlay, report_path=args.report
-        )
-    except UnsupportedCassetteFeature as exc:
+        from .transports.http import HttpReplayServer
+    except ImportError as exc:
         sys.stderr.write(f"mcp-cassette serve: {exc}\n")
         return 2
-    return server.run()
+    fallthrough_url: str | None = None
+    if args.new_episodes:
+        fallthrough_url = args.url or cassette.server_url
+        if not fallthrough_url:
+            sys.stderr.write(
+                "mcp-cassette serve --new-episodes: no --url given and the "
+                "cassette records no server_url\n"
+            )
+            return 2
+    overlay = FaultOverlay.load(args.faults) if args.faults else None
+    return HttpReplayServer(
+        cassette,
+        match=config,
+        faults=overlay,
+        port=args.port,
+        report_path=args.report,
+        fallthrough_url=fallthrough_url,
+        cassette_path=args.cassette if fallthrough_url else None,
+    ).run()
 
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
@@ -193,7 +337,13 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
 
     print(f"cassette: {args.cassette}")
     print(f"format_version: {cassette.format_version}")
+    print(f"transport: {cassette.transport}")
     print(f"recorded_at: {cassette.recorded_at.isoformat()}")
+    if cassette.transport == "http":
+        if cassette.server_url:
+            print(f"server host: {urlsplit(cassette.server_url).netloc}")
+        exchanges = {m.exchange for m in cassette.messages if m.exchange is not None}
+        print(f"exchanges: {len(exchanges)}")
     if cassette.protocol_version:
         print(f"protocol_version: {cassette.protocol_version}")
     if cassette.server_info:
@@ -210,6 +360,38 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     if args.faults:
         _inspect_faults(cassette, args.faults)
     return 0
+
+
+def _cmd_lint(args: argparse.Namespace) -> int:
+    try:
+        report, notes = run_with_notes(
+            args.cassette,
+            args.baseline,
+            args.select or None,
+            ignore=args.ignore,
+        )
+    except (
+        UnsupportedFormatVersion,
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValidationError,
+    ) as exc:
+        sys.stderr.write(f"mcp-cassette lint: {exc}\n")
+        return 2
+    if args.format == "json":
+        print(report.model_dump_json(indent=2))
+    else:
+        for note in notes:
+            print(note)
+        for finding in report.findings:
+            first, *rest = finding.message.split("\n")
+            print(f"{finding.rule} {finding.severity} {finding.locator} {first}")
+            for line in rest:
+                print(f"    {line}")
+        if not report.findings:
+            print("clean: no findings")
+    has_errors = any(f.severity == "error" for f in report.findings)
+    return 4 if has_errors else 0
 
 
 def _inspect_faults(cassette: Cassette, faults_path: str) -> None:

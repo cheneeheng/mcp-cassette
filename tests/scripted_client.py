@@ -92,6 +92,8 @@ def run_session(
     expected_responses: int | None = None,
     settle: float = 5.0,
     env: dict[str, str] | None = None,
+    responder: Any = None,
+    sequential: bool = False,
 ) -> SessionResult:
     """Run ``cmd`` as a subprocess, send ``messages``, and collect stdout objects.
 
@@ -110,6 +112,14 @@ def run_session(
         settle: Seconds of stdout inactivity after which the wait gives up (for faults
             that never respond).
         env: Optional environment overrides (merged over the current environment).
+        responder: Optional callback for server-initiated requests
+            (sampling/elicitation): called with the decoded request object; a
+            returned dict is written back as the client's response, ``None``
+            leaves the request unanswered.
+        sequential: Wait for each request's response before sending the next message,
+            like a real agent. Recordings meant for server-request anchoring need
+            this — the batched default puts every client request before the server's
+            work in ``seq``, which misattributes anchors.
 
     Returns:
         A :class:`SessionResult`.
@@ -139,29 +149,53 @@ def run_session(
     reader.start()
     err_reader.start()
 
-    for m in messages:
-        proc.stdin.write(json.dumps(m).encode("utf-8") + b"\n")
-    proc.stdin.flush()
-
     objs: list[dict[str, Any]] = []
     responses = 0
     deadline = time.monotonic() + timeout
     last_activity = time.monotonic()
-    while responses < expected and time.monotonic() < deadline:
-        try:
-            item = out_queue.get(timeout=0.2)
-        except queue.Empty:
-            # Only give up on inactivity once the session has actually started
-            # producing output; startup (proxy + server import) can take seconds.
-            if objs and time.monotonic() - last_activity > settle:
+
+    def consume_until(target: int) -> None:
+        nonlocal responses, last_activity
+        while responses < target and time.monotonic() < deadline:
+            try:
+                item = out_queue.get(timeout=0.2)
+            except queue.Empty:
+                # Only give up on inactivity once the session has actually started
+                # producing output; startup (proxy + server import) can take seconds.
+                if objs and time.monotonic() - last_activity > settle:
+                    break
+                continue
+            if item is None:  # stdout closed
                 break
-            continue
-        if item is None:  # stdout closed
-            break
-        objs.append(item)
-        last_activity = time.monotonic()
-        if "id" in item and "method" not in item:
-            responses += 1
+            objs.append(item)
+            last_activity = time.monotonic()
+            if "id" in item and "method" not in item:
+                responses += 1
+            elif responder is not None and "id" in item and "method" in item:
+                reply = responder(item)
+                if reply is not None:
+                    try:
+                        proc.stdin.write(json.dumps(reply).encode("utf-8") + b"\n")
+                        proc.stdin.flush()
+                    except OSError:
+                        pass
+
+    if sequential:
+        sent_requests = 0
+        for m in messages:
+            try:
+                proc.stdin.write(json.dumps(m).encode("utf-8") + b"\n")
+                proc.stdin.flush()
+            except OSError:
+                break
+            if "id" in m and "method" in m:
+                sent_requests += 1
+                consume_until(sent_requests)
+    else:
+        for m in messages:
+            proc.stdin.write(json.dumps(m).encode("utf-8") + b"\n")
+        proc.stdin.flush()
+    consume_until(expected)
 
     # Close stdin so the engine/server shuts down, then drain trailing output
     # (anchored notifications, final lines) until EOF.

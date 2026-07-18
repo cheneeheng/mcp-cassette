@@ -16,10 +16,12 @@ from typing import Any
 
 from ..cassette import (
     Cassette,
+    Channel,
     Message,
     RedactionRule,
     Sender,
     ServerInfo,
+    Transport,
     apply_redactions,
 )
 
@@ -55,13 +57,33 @@ class SessionRecorder:
             sender: Which side emitted the line.
             line: The raw line bytes (newline included).
         """
-        offset_ms = int((time.monotonic() - self._start) * 1000)
         text = line.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+        self.on_message(sender, text)
+
+    def on_message(
+        self,
+        sender: Sender,
+        text: str,
+        *,
+        exchange: int | None = None,
+        channel: Channel | None = None,
+    ) -> None:
+        """Classify and buffer one wire message given as decoded text.
+
+        Classification is identical for every transport — JSON-RPC shape only.
+
+        Args:
+            sender: Which side emitted the message.
+            text: The message text (one JSON-RPC object, or junk recorded as raw).
+            exchange: HTTP exchange number (``None`` for stdio).
+            channel: HTTP stream that carried a server message (``None`` otherwise).
+        """
+        offset_ms = int((time.monotonic() - self._start) * 1000)
         if not text.strip():
             return
         obj = self._try_decode(text)
         if obj is None:
-            self._append(sender, "raw", None, None, text, offset_ms)
+            self._append(sender, "raw", None, None, text, offset_ms, exchange, channel)
             return
 
         method = obj.get("method")
@@ -74,16 +96,31 @@ class SessionRecorder:
         elif has_id:
             kind = "response"
         else:
-            self._append(sender, "raw", None, None, text, offset_ms)
+            self._append(sender, "raw", None, None, text, offset_ms, exchange, channel)
             return
 
         self._watch_initialize(sender, kind, method, msg_id, obj)
-        self._append(sender, kind, method, msg_id, obj, offset_ms)
+        self._append(sender, kind, method, msg_id, obj, offset_ms, exchange, channel)
 
-    def build(self) -> Cassette:
-        """Materialize the buffered session into a :class:`Cassette`."""
+    def build(
+        self,
+        *,
+        transport: Transport = "stdio",
+        server_url: str | None = None,
+        session_id: str | None = None,
+    ) -> Cassette:
+        """Materialize the buffered session into a :class:`Cassette`.
+
+        Args:
+            transport: The transport the session traveled over.
+            server_url: The remote server URL (http only; provenance).
+            session_id: The server's ``Mcp-Session-Id`` (http only; evidence).
+        """
         return Cassette(
             recorded_at=datetime.now(UTC),
+            transport=transport,
+            server_url=server_url,
+            session_id=session_id,
             protocol_version=self._protocol_version,
             server_info=self._server_info,
             messages=list(self._messages),
@@ -102,6 +139,8 @@ class SessionRecorder:
         msg_id: str | int | None,
         payload: dict[str, Any] | str,
         offset_ms: int,
+        exchange: int | None = None,
+        channel: Channel | None = None,
     ) -> None:
         redacted_payload, changed = apply_redactions(payload, self._rules)
         self._messages.append(
@@ -114,6 +153,8 @@ class SessionRecorder:
                 msg_id=msg_id,
                 payload=redacted_payload,
                 redacted=changed,
+                exchange=exchange,
+                channel=channel,
             )
         )
         self._seq += 1

@@ -54,7 +54,7 @@ def test_record_without_server_cmd_exits_2(
 ) -> None:
     rc = main(["record", "--cassette", str(tmp_path / "c.json")])
     assert rc == 2
-    assert "missing server command" in capsys.readouterr().err
+    assert "pass a remote --url URL or a server command" in capsys.readouterr().err
 
 
 def test_serve_missing_cassette_exits_2(

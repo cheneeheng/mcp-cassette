@@ -1,7 +1,8 @@
 """mcp-cassette: record/replay and mocking for MCP agent test suites.
 
-Public API. Operates at the stdio transport level (newline-delimited JSON-RPC) and does
-not depend on the official ``mcp`` SDK at runtime.
+Public API. Operates at the transport level — newline-delimited JSON-RPC over stdio,
+or Streamable HTTP with the ``[http]`` extra — and does not depend on the official
+``mcp`` SDK at runtime.
 """
 
 from __future__ import annotations
@@ -15,14 +16,14 @@ from .cassette import (
     Message,
     RedactionRule,
     ServerInfo,
-    UnsupportedCassetteFeature,
     UnsupportedFormatVersion,
 )
+from .lint import LintFinding, LintReport
 from .record.proxy import StdioRecordingProxy
 from .replay.server import ReplayServer
 from .session import CassetteSession
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "Cassette",
@@ -30,13 +31,14 @@ __all__ = [
     "Fault",
     "FaultOverlay",
     "FaultTarget",
+    "LintFinding",
+    "LintReport",
     "MatchConfig",
     "Message",
     "RedactionRule",
     "ReplayServer",
     "ServerInfo",
     "StdioRecordingProxy",
-    "UnsupportedCassetteFeature",
     "UnsupportedFormatVersion",
     "__version__",
 ]

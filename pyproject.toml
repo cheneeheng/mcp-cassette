@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-cassette"
-version = "0.1.0"
+version = "0.2.0"
 description = "Record/replay and mocking for MCP (Model Context Protocol) agent test suites — vcrpy for MCP."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -36,6 +36,7 @@ mcp_cassette = "mcp_cassette.pytest_plugin"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+http = ["httpx>=0.27", "h11>=0.14"]
 
 [dependency-groups]
 dev = [
@@ -45,6 +46,8 @@ dev = [
     "mcp>=1.0",
     "coverage>=7.10",
     "pre-commit>=4.6.0",
+    "httpx>=0.27",
+    "h11>=0.14",
 ]
 
 [tool.hatch.build.targets.wheel]
