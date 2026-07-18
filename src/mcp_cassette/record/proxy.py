@@ -64,7 +64,6 @@ class StdioRecordingProxy:
 
     async def _arun(self) -> int:
         exit_code = 0
-        interrupted = False
         try:
             async with await anyio.open_process(self.server_cmd) as process:
                 assert process.stdin is not None
@@ -85,12 +84,22 @@ class StdioRecordingProxy:
                         )
                         tg.start_soon(self._forward_stderr, process.stderr, our_err)
                 except anyio.get_cancelled_exc_class():
-                    interrupted = True
+                    pass
+                if self._signal_received:
+                    # The signal was delivered to us, not the child. Stop the child so
+                    # its pipes close and process.wait() returns instead of hanging on a
+                    # server that never saw the signal (it only reaches the whole group
+                    # for a terminal Ctrl+C, not a targeted SIGTERM).
+                    with anyio.CancelScope(shield=True):
+                        try:
+                            process.terminate()
+                        except (ProcessLookupError, OSError):
+                            pass
                 await process.wait()
                 exit_code = process.returncode or 0
         finally:
             self._finalize()
-        return 130 if interrupted else exit_code
+        return 130 if self._signal_received else exit_code
 
     async def _client_to_server(
         self, source: ByteReceiveStream, dest: ByteSendStream
@@ -122,6 +131,7 @@ class StdioRecordingProxy:
         try:
             with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
                 async for _ in signals:
+                    self._signal_received = True
                     cancel_scope.cancel()
                     return
         except (NotImplementedError, ValueError):
