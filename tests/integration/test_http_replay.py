@@ -350,6 +350,129 @@ def test_new_episodes_appends_exactly_the_novel_exchange(tmp_path: Path) -> None
         proc.wait(timeout=10)
 
 
+def test_new_episodes_unreachable_upstream_answers_502(
+    recorded: Path, tmp_path: Path
+) -> None:
+    dead_url = f"http://127.0.0.1:{free_port()}/mcp"
+    server = HttpReplayServer(
+        Cassette.load(recorded),
+        fallthrough_url=dead_url,
+        cassette_path=str(tmp_path / "ne-dead.json"),
+    )
+    with in_process_server(server.serve) as url:
+        result = run_http_session(
+            url,
+            [*initialize_sequence(), tool_call(9, "add", {"a": 1, "b": 2})],
+        )
+    # The recorded exchanges still replay; the novel one names the dead upstream.
+    assert result.response_for(1) is not None
+    assert 502 in result.statuses
+
+
+def test_new_episodes_json_mode_appends_two_novel_exchanges(tmp_path: Path) -> None:
+    port = free_port()
+    proc = start_reference_http_server(port, json_response=True)
+    real_url = f"http://127.0.0.1:{port}/mcp"
+    cassette_path = tmp_path / "ne-json.json"
+    try:
+        proxy = RecordingProxy(server_url=real_url, cassette_path=str(cassette_path))
+        with in_process_server(proxy.serve) as url:
+            run_http_session(
+                url, [*initialize_sequence(), tool_call(2, "echo", {"text": "hi"})]
+            )
+        before = Cassette.load(cassette_path)
+
+        server = HttpReplayServer(
+            before, fallthrough_url=real_url, cassette_path=str(cassette_path)
+        )
+        with in_process_server(server.serve) as url:
+            result = run_http_session(
+                url,
+                [
+                    *initialize_sequence(),
+                    tool_call(2, "echo", {"text": "hi"}),  # replays
+                    tool_call(3, "add", {"a": 2, "b": 3}),  # novel
+                    tool_call(4, "add", {"a": 5, "b": 8}),  # novel, reuses upstream
+                ],
+            )
+        assert result.response_for(3)["result"]["content"][0]["text"] == "5"
+        assert result.response_for(4)["result"]["content"][0]["text"] == "13"
+        after = Cassette.load(cassette_path)
+        appended = after.messages[len(before.messages) :]
+        assert len(appended) == 4  # two novel request/response pairs, nothing else
+        assert len({m.exchange for m in appended}) == 2
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+
+def test_new_episodes_upstream_death_mid_session_answers_502(tmp_path: Path) -> None:
+    port = free_port()
+    proc = start_reference_http_server(port)
+    real_url = f"http://127.0.0.1:{port}/mcp"
+    cassette_path = tmp_path / "ne-death.json"
+    try:
+        proxy = RecordingProxy(server_url=real_url, cassette_path=str(cassette_path))
+        with in_process_server(proxy.serve) as url:
+            run_http_session(
+                url, [*initialize_sequence(), tool_call(2, "echo", {"text": "hi"})]
+            )
+        server = HttpReplayServer(
+            Cassette.load(cassette_path),
+            fallthrough_url=real_url,
+            cassette_path=str(cassette_path),
+        )
+        with in_process_server(server.serve) as url:
+            with httpx.Client(timeout=10) as client:
+                headers = _open_session(client, url)
+                ok = client.post(
+                    url, json=tool_call(3, "add", {"a": 1, "b": 1}), headers=headers
+                )
+                assert ok.status_code == 200  # first novel call reached the live server
+                proc.terminate()
+                proc.wait(timeout=10)
+                dead = client.post(
+                    url, json=tool_call(4, "add", {"a": 2, "b": 2}), headers=headers
+                )
+                assert dead.status_code == 502
+                assert "fall-through failed" in dead.text
+    finally:
+        if proc.poll() is None:  # pragma: no cover - only on assertion failure
+            proc.terminate()
+            proc.wait(timeout=10)
+
+
+def test_cli_serve_http_disconnect_fault_exits_0(
+    recorded: Path, tmp_path: Path
+) -> None:
+    # The disconnect fault ends the server from within, so the CLI's http serve
+    # branch is testable without signal delivery on every OS.
+    faults_path = tmp_path / "f.json"
+    overlay = FaultOverlay(faults=[Fault.disconnect("tools/call")])
+    faults_path.write_text(overlay.model_dump_json(), encoding="utf-8")
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "mcp_cassette",
+            "serve",
+            str(recorded),
+            "--faults",
+            str(faults_path),
+        ],
+        stderr=subprocess.PIPE,
+    )
+    assert proc.stderr is not None
+    banner = proc.stderr.readline().decode("utf-8", errors="replace")
+    url = banner.split("replaying at ", 1)[1].strip()
+    result = run_http_session(
+        url, [*initialize_sequence(), tool_call(3, "echo", {"text": "hi"})]
+    )
+    rc = proc.wait(timeout=30)
+    assert rc == 0  # a disconnect fault is a scripted outcome, not a failure
+    assert -1 in result.statuses  # the faulted call died mid-connection
+
+
 def test_transport_mismatch_fails_fast(tmp_path: Path) -> None:
     from datetime import UTC, datetime
 

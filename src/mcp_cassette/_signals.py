@@ -23,7 +23,7 @@ async def wait_for_interrupt() -> None:
     """
     try:
         with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
-            async for _ in signals:
+            async for _ in signals:  # pragma: no branch — yields or raises, never ends
                 return
     except (NotImplementedError, ValueError):
         await _wait_windows()

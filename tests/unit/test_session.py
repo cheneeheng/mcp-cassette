@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
+import anyio.abc
 import pytest
 
 from mcp_cassette.cassette import Fault, MatchConfig
@@ -127,3 +129,33 @@ def test_marker_cassette_kwarg_overrides_path() -> None:
     assert _cassette_path(explicit, {"cassette": "x/y.mcp.json"}) == Path(
         "x/y.mcp.json"
     )
+
+
+def test_server_url_without_http_extra_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # None in sys.modules makes the guarded import raise ImportError, exactly as
+    # a core-only install (no [http] extra) would.
+    monkeypatch.setitem(sys.modules, "mcp_cassette.transports.http", None)
+    session = _session("all", tmp_path / "c.mcp.json", tmp_path)
+    with pytest.raises(CassetteError, match="halted"):
+        session.server_url("http://127.0.0.1:9/mcp")
+
+
+def test_server_url_start_failure_closes_portal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_cassette.transports.http import RecordingProxy
+
+    async def broken_serve(
+        self: Any,
+        *,
+        task_status: anyio.abc.TaskStatus[str] = anyio.TASK_STATUS_IGNORED,
+    ) -> None:
+        raise RuntimeError("bind failed")
+
+    monkeypatch.setattr(RecordingProxy, "serve", broken_serve)
+    session = _session("all", tmp_path / "c.mcp.json", tmp_path)
+    with pytest.raises(RuntimeError, match="bind failed"):
+        session.server_url("http://127.0.0.1:9/mcp")
+    assert session._portal_cm is None  # the portal thread was torn down

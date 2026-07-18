@@ -185,3 +185,109 @@ def test_abort_closes_connection_mid_body() -> None:
                 await http.post(url)
 
     anyio.run(partial(_with_server, handler, client))
+
+
+def test_sse_field_without_space_after_colon() -> None:
+    events = anyio.run(partial(_collect, b"data:tight\n\n"))
+    assert events == [SseEvent(data="tight")]
+
+
+def test_encode_sse_event_with_event_type() -> None:
+    encoded = encode_sse_event("x", event_type="message")
+    events = anyio.run(partial(_collect, encoded))
+    assert events[0].event_type == "message"
+    assert events[0].data == "x"
+
+
+def test_send_body_empty_chunk_is_a_noop() -> None:
+    async def handler(request: HttpRequest, responder: Responder) -> None:
+        await responder.start(200, content_type="text/event-stream")
+        await responder.send_body(b"")  # must not emit a zero-length chunk (EOF)
+        await responder.send_body(encode_sse_event("still alive"))
+        await responder.end()
+
+    async def client(url: str) -> None:
+        async with httpx.AsyncClient() as http:
+            async with http.stream("GET", url) as response:
+                events = [event async for event in sse_events(response.aiter_bytes())]
+        assert [e.data for e in events] == ["still alive"]
+
+    anyio.run(partial(_with_server, handler, client))
+
+
+def test_abort_tolerates_already_broken_stream() -> None:
+    import h11
+
+    class _BrokenStream:
+        async def aclose(self) -> None:
+            raise anyio.BrokenResourceError
+
+    responder = Responder(h11.Connection(h11.SERVER), _BrokenStream())  # type: ignore[arg-type]
+    anyio.run(responder.abort)
+    assert responder.aborted
+
+
+def test_connection_cleanup_tolerates_broken_stream() -> None:
+    # The final aclose in serve_connection must swallow a socket that broke
+    # after the response was already written.
+    class _Stream:
+        def __init__(self) -> None:
+            self.sent = b""
+            self._chunks = [b"GET / HTTP/1.1\r\nhost: t\r\n\r\n"]
+
+        async def receive(self) -> bytes:
+            if self._chunks:
+                return self._chunks.pop(0)
+            raise anyio.EndOfStream
+
+        async def send(self, data: bytes) -> None:
+            self.sent += data
+
+        async def aclose(self) -> None:
+            raise anyio.BrokenResourceError
+
+    async def handler(request: HttpRequest, responder: Responder) -> None:
+        await responder.send(200, b"ok", content_type="text/plain")
+
+    stream = _Stream()
+    anyio.run(partial(wire.serve_connection, stream, handler))  # type: ignore[arg-type]
+    assert b"200" in stream.sent
+
+
+def test_connection_close_header_ends_keep_alive() -> None:
+    served: list[str] = []
+
+    async def handler(request: HttpRequest, responder: Responder) -> None:
+        served.append(request.method)
+        await responder.send(200, b"ok", content_type="text/plain")
+
+    async def client(url: str) -> None:
+        async with httpx.AsyncClient() as http:
+            response = await http.post(
+                url, content=b"a", headers={"connection": "close"}
+            )
+            assert response.status_code == 200
+
+    anyio.run(partial(_with_server, handler, client))
+    assert served == ["POST"]
+
+
+def test_garbage_request_closes_connection_quietly() -> None:
+    async def handler(request: HttpRequest, responder: Responder) -> None:
+        raise AssertionError(
+            "handler must not run for an unparseable request"
+        )  # pragma: no cover
+
+    async def client(url: str) -> None:
+        port = int(url.rsplit(":", 1)[1])
+        stream = await anyio.connect_tcp("127.0.0.1", port)
+        async with stream:
+            await stream.send(b"\x00\x01 utter garbage\r\n\r\n")
+            with anyio.fail_after(5):
+                try:
+                    data = await stream.receive()
+                except (anyio.EndOfStream, anyio.BrokenResourceError):
+                    data = b""
+        assert data == b""  # closed without a response, no crash
+
+    anyio.run(partial(_with_server, handler, client))

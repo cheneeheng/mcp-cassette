@@ -52,7 +52,7 @@ Key modules:
 - Redaction happens at capture time on a deep copy; bytes in flight are never altered. Defaults (`*token*`, `*secret*`, `authorization`, etc.) are always on unless disabled.
 - Cross-process failure signal: the replay server exits `3` on any unmatched request; the fixture surfaces misses (and empty recordings) as test failures via the report sidecar in `finalize()`.
 - CI must set `MCP_CASSETTE_MODE=none` so no pipeline silently records against a live server.
-- Server-initiated requests (sampling/elicitation) are recorded generically but not replayable in the MVP; `ReplayServer` refuses such cassettes at load with `UnsupportedCassetteFeature`.
+- Server-initiated requests (sampling/elicitation) are recorded generically and replay on both transports (v2): anchored emission with the recorded `msg_id`, accept-anything response handling (the agent's answer is never matched against the recording), and release-on-response gating for messages recorded after the original response. There is deliberately no internal timeout when the agent never answers — pytest's own timeout applies, and the shutdown summary names the pending request.
 
 ## Conventions
 

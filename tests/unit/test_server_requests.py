@@ -91,6 +91,14 @@ def test_plan_free_floating_before_any_request() -> None:
     assert len(tracker.triggered_by(None, "initialize")) == 1
 
 
+def test_state_for_seq_looks_up_by_recorded_seq() -> None:
+    tracker = ServerRequestTracker(_sampling_cassette())
+    state = tracker.state_for_seq(4)
+    assert state is not None
+    assert state.message.method == "sampling/createMessage"
+    assert tracker.state_for_seq(99) is None
+
+
 def test_gate_blocks_only_after_emission() -> None:
     tracker = ServerRequestTracker(_sampling_cassette())
     assert not tracker.would_block(6, None)  # not emitted yet

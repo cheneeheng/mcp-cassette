@@ -3,7 +3,7 @@ artifact: SKELETON_v2
 status: ready
 created: 2026-07-17
 app: mcp-cassette v2 — remote (Streamable HTTP) record/replay, sampling/elicitation replay, cassette security lint
-stack: Python 3.10+, anyio, pydantic v2, httpx + h11 ([http] extra), pytest plugin, hatchling/uv
+stack: Python 3.12+, anyio, pydantic v2, httpx + h11 ([http] extra), pytest plugin, hatchling/uv
 sections: [01, 02, 03, 04, 05]
 ---
 
@@ -118,7 +118,7 @@ No auth of our own, no database, no queues. Cross-origin: the local servers bind
 
 ## §03 · Tech Stack
 
-- **Language/runtime:** Python ≥ 3.10; Linux, macOS, Windows (v1 delivered Windows in
+- **Language/runtime:** Python ≥ 3.12; Linux, macOS, Windows (v1 delivered Windows in
   ITER_05; v2 inherits the platform claim and its CI matrix).
 - **Packaging:** hatchling + uv, unchanged. New **optional extra** `mcp-cassette[http]`:
   - `httpx` — upstream client for the recording proxy: async, anyio-compatible,

@@ -98,6 +98,7 @@ class RecordingProxy:
         self.bound_url: str | None = None
         self._client: httpx.AsyncClient | None = None
         self._serve_scope: anyio.CancelScope | None = None
+        self._run_scope: anyio.CancelScope | None = None
 
     @property
     def message_count(self) -> int:
@@ -122,6 +123,7 @@ class RecordingProxy:
 
     async def _arun(self) -> int:
         async with anyio.create_task_group() as tg:
+            self._run_scope = tg.cancel_scope
             url = await tg.start(self.serve)
             sys.stderr.write(
                 f"mcp-cassette: recording at {url} -> point the agent there\n"
@@ -236,8 +238,13 @@ class RecordingProxy:
         await responder.send(
             502, f"mcp-cassette: {message}\n".encode(), content_type="text/plain"
         )
-        if self._fatal is not None and self._serve_scope is not None:
-            self._serve_scope.cancel()
+        if self._fatal is not None:
+            # Cancel the whole run, not just serve(): under run() the outer task
+            # group also holds the signal watcher, which would otherwise keep the
+            # process alive until an operator interrupt.
+            for scope in (self._serve_scope, self._run_scope):
+                if scope is not None:
+                    scope.cancel()
 
     def _relay_headers(self, upstream: httpx.Response) -> list[tuple[str, str]]:
         skip = _HOP_BY_HOP | {"content-type", "content-encoding", "date"}

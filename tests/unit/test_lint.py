@@ -285,6 +285,83 @@ def test_cli_lint_missing_cassette_exits_2(
     assert "mcp-cassette lint:" in capsys.readouterr().err
 
 
+def test_r004_redacted_result_text_is_skipped(tmp_path: Path) -> None:
+    path = _save(
+        _tools_cassette([_tool("echo", BENIGN)], results=["REDACTED"]),
+        tmp_path / "c.json",
+    )
+    assert run(path).findings == []  # redaction cannot manufacture findings
+
+
+def test_engine_tolerates_malformed_surfaces(tmp_path: Path) -> None:
+    def req(seq: int, msg_id: int, method: str, params: Any = None) -> Message:
+        payload: dict[str, Any] = {"jsonrpc": "2.0", "id": msg_id, "method": method}
+        if params is not None:
+            payload["params"] = params
+        return Message(
+            seq=seq,
+            t_offset_ms=seq,
+            sender="client",
+            kind="request",
+            method=method,
+            msg_id=msg_id,
+            payload=payload,
+        )
+
+    def resp(seq: int, msg_id: int, result: Any) -> Message:
+        return Message(
+            seq=seq,
+            t_offset_ms=seq,
+            sender="server",
+            kind="response",
+            msg_id=msg_id,
+            payload={"jsonrpc": "2.0", "id": msg_id, "result": result},
+        )
+
+    messages = [
+        # response with no matching recorded request
+        resp(0, 99, {"tools": [_tool("orphan", INJECTED)]}),
+        # tools/list whose result is not an object
+        req(1, 1, "tools/list"),
+        Message(
+            seq=2,
+            t_offset_ms=2,
+            sender="server",
+            kind="response",
+            msg_id=1,
+            payload={"jsonrpc": "2.0", "id": 1, "result": "nope"},
+        ),
+        # tools/list whose tools field is not a list
+        req(3, 2, "tools/list"),
+        resp(4, 2, {"tools": "nope"}),
+        # tools/list with malformed tool entries
+        req(5, 3, "tools/list"),
+        resp(6, 3, {"tools": [42, {"description": INJECTED}, {"name": 7}]}),
+        # tools/call whose params/content are malformed
+        req(7, 4, "tools/call", params="not an object"),
+        resp(8, 4, {"content": "nope"}),
+        req(9, 5, "tools/call", params={"name": "echo"}),
+        resp(10, 5, {"content": [{"type": "image"}, "raw", {"type": "text"}]}),
+    ]
+    cassette = Cassette(
+        recorded_at=datetime(2026, 7, 17, tzinfo=UTC), messages=messages
+    )
+    path = _save(cassette, tmp_path / "c.json")
+    # Nothing lintable survives the shape checks: no findings, no crash.
+    assert run(path).findings == []
+
+
+def test_cli_lint_prints_redaction_note(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _save(_tools_cassette([_tool("secretive", "REDACTED")]), tmp_path / "c.json")
+    rc = main(["lint", str(path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "note: skipped redacted description" in out
+    assert "clean: no findings" in out
+
+
 def test_cli_lint_baseline_flag(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

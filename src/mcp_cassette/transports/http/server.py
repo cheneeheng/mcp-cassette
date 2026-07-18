@@ -91,6 +91,7 @@ class HttpReplayServer:
         self._finalized = False
         self.bound_url: str | None = None
         self._serve_scope: anyio.CancelScope | None = None
+        self._run_scope: anyio.CancelScope | None = None
 
         self._post_messages: dict[int, list[Message]] = {}
         for m in cassette.messages:
@@ -157,6 +158,7 @@ class HttpReplayServer:
 
     async def _arun(self) -> int:
         async with anyio.create_task_group() as tg:
+            self._run_scope = tg.cancel_scope
             url = await tg.start(self.serve)
             sys.stderr.write(f"mcp-cassette: replaying at {url}\n")
             sys.stderr.flush()
@@ -397,7 +399,7 @@ class HttpReplayServer:
             await responder.send_body(encode_sse_event(json.dumps(payload)))
             if m.kind == "request":
                 state = self._tracker.state_for_seq(m.seq)
-                if state is not None:
+                if state is not None:  # pragma: no branch — tracker plans every one
                     self._tracker.mark_emitted(state)
         await responder.end()
 
@@ -459,8 +461,12 @@ class HttpReplayServer:
             )
         await responder.abort()
         self._disconnected = True
-        if self._serve_scope is not None:  # pragma: no branch — set before serving
-            self._serve_scope.cancel()
+        # Cancel the whole run, not just serve(): under run() the outer task group
+        # also holds the signal watcher, which would otherwise keep the process
+        # alive until an operator interrupt.
+        for scope in (self._serve_scope, self._run_scope):
+            if scope is not None:
+                scope.cancel()
         return True
 
     def _restamp(self, response: Message, live_id: str | int | None) -> dict[str, Any]:
@@ -516,7 +522,7 @@ class HttpReplayServer:
                 self._get_delivered += 1
                 if message.kind == "request":
                     state = self._tracker.state_for_seq(message.seq)
-                    if state is not None:
+                    if state is not None:  # pragma: no branch — tracker plans every one
                         self._tracker.mark_emitted(state)
         finally:
             self._get_connected = False

@@ -33,7 +33,7 @@ from scripted_http_client import (
     start_reference_http_server,
 )
 
-from mcp_cassette.cassette import Cassette, Message
+from mcp_cassette.cassette import Cassette, Fault, FaultOverlay, Message
 from mcp_cassette.transports.http.proxy import RecordingProxy
 from mcp_cassette.transports.http.server import HttpReplayServer
 from mcp_cassette.transports.http.wire import SseParser
@@ -204,6 +204,31 @@ def test_stdio_unanswered_keeps_others_answerable(stdio_sampling: Path) -> None:
     assert result.response_for(2) is None
     assert "sampling/createMessage" in result.stderr
     assert "still awaiting" in result.stderr
+
+
+def test_stdio_gated_disconnect_fault_exits_0(
+    stdio_sampling: Path, tmp_path: Path
+) -> None:
+    # The gated response path: the sampling request is emitted, the agent answers
+    # (gate opens), and only then does the disconnect fault fire — mid-gate, on
+    # the deferred finish task.
+    faults_path = tmp_path / "f.json"
+    overlay = FaultOverlay(faults=[Fault.disconnect("tools/call")])
+    faults_path.write_text(overlay.model_dump_json(), encoding="utf-8")
+    result = run_session(
+        [*_serve_cmd(stdio_sampling), "--faults", str(faults_path)],
+        [*initialize_sequence(), tool_call(2, "summarize", SUMMARIZE_ARGS)],
+        expected_responses=2,  # summarize never answers; stdout close ends the wait
+        responder=_live_responder,
+        settle=2.0,
+    )
+    assert result.returncode == 0  # a disconnect fault is a scripted outcome
+    emitted = [
+        m for m in result.messages if m.get("method") == "sampling/createMessage"
+    ]
+    assert emitted  # the server request was emitted before the disconnect
+    assert result.response_for(2) is None  # the gated response died with the fault
+    assert "still awaiting" not in result.stderr  # the gate did open
 
 
 def test_v1_format_sampling_cassette_loads_and_replays(tmp_path: Path) -> None:

@@ -151,3 +151,44 @@ the helper's docstring. (3) CI on this branch will fail the coverage step until 
 gap is addressed.
 **Outcome:** Full suite 208 passed / 3 skipped on Windows; ruff and mypy --strict
 clean; all plan-listed tests for ITER_01–04_v2 present and green.
+
+### Entry 11
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-18T00:00:00+08:00
+**Task:** Review codebase against v2 plans (review-against-plan)
+
+**Context:** SKELETON_v2 frontmatter/stack says "Python 3.10+", but the repo (pyproject requires-python, ruff/mypy targets, CI matrix, datetime.UTC usage) is >= 3.12 and shipped v1 that way. Both could be "correct": the plan text vs the established repo floor.
+**Decision:** Keep requires-python >= 3.12; treat the plan's "3.10+" as a stale stack line, not a directive. Lowering the floor mid-review would be a semver/support decision with code changes (datetime.UTC, 3.12-only typing) far beyond audit scope.
+**Impact / Risk:** None to existing users; the plan text remains inconsistent with the repo until the plan doc is amended.
+**Outcome:** Flagged in the plan-compliance report instead of changed.
+
+### Entry 12
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-18T12:00:00+08:00
+**Task:** Close the remaining coverage gaps (unit/integration/system, full coverage)
+
+**Context:** After the prior session's edge tests, 12 statement misses and 10 partial
+branches remained. Three classes needed a call: (1) two `state is not None` checks in
+http/server.py whose False side is provably unreachable (the tracker plans a state for
+every server request in the same cassette); (2) the POSIX-only interrupt lines in
+record/proxy.py (120-122) that Windows cannot execute, already named in the coverage
+config comment; (3) an identical-shape guard in replay/server.py (non-dict server
+request payload) that IS reachable via a hand-edited cassette.
+**Decision:** (1) annotated with `# pragma: no branch` + reason, matching the repo's
+existing pragma convention, rather than writing tests that cannot construct the state;
+(2) left uncovered — the documented reason fail_under is 99, covered by the POSIX CI
+legs; (3) covered with a real test (hand-built cassette) instead of a pragma, since a
+user-edited cassette is a legitimate input. Everything else got targeted tests in the
+existing edge-test files. Also fixed a latent cross-test mutation in
+test_http_replay_edges.py (protocol rewrite mutated the module-level INIT_RESP dict in
+place), surfaced as stray UserWarnings in unrelated tests.
+**Impact / Risk:** Two new no-branch pragmas hide those branches from future coverage
+reports; if the tracker's planning invariant ever weakens, the guards are silently
+untested.
+**Outcome:** 262 passed / 3 skipped; every module 100% (statements and branches)
+except record/proxy.py 120-122, the documented POSIX-only lines covered by the
+POSIX CI legs. ruff and mypy --strict clean.
