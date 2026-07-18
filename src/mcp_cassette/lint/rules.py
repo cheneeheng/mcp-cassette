@@ -136,7 +136,7 @@ def rule_r002(
             )
             message = (
                 f'tool "{name}": description changed vs baseline '
-                f"(+{added} −{removed} lines)\n" + "\n".join(diff)
+                f"(+{added} -{removed} lines)\n" + "\n".join(diff)
             )
             findings.append(
                 LintFinding(

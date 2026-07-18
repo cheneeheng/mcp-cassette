@@ -140,7 +140,7 @@ def test_r002_description_drift_with_diff(tmp_path: Path) -> None:
     assert finding.severity == "error"
     first_line = finding.message.split("\n")[0]
     assert "changed vs baseline" in first_line
-    assert "(+1 −1 lines)" in first_line
+    assert "(+1 -1 lines)" in first_line
     assert "--- baseline" in finding.message  # unified diff included
     assert finding.tool == "search"
 
