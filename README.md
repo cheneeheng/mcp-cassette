@@ -80,6 +80,8 @@ mcp-cassette inspect demo.json                                       # per-metho
 mcp-cassette inspect demo.json --faults demo.faults.json             # dry-run: which requests a fault hits
 ```
 
+A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — inspect it, rename it over the real path to keep it — and is removed once the recording finalizes normally. It is deliberately never written to the cassette path itself: `once` mode decides record-vs-replay by that file's existence, and a truncated cassette there would silently replay as a finished one.
+
 ## Linting your cassettes
 
 Recorded tool descriptions and results are third-party content; lint them in CI before they reach a model:

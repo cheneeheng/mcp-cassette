@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-19
+
+Remote servers, server-initiated requests, and supply-chain linting. Cassettes now
+record and replay Streamable HTTP sessions as well as stdio, sampling and elicitation
+round-trip on both transports, and recorded third-party text can be linted in CI.
+
+### Added
+
+- Streamable HTTP transport (`mcp-cassette[http]` extra): `mcp-cassette record --url`
+  stands up a local recording reverse proxy in front of a remote MCP endpoint, and
+  `mcp-cassette serve` infers the transport from the cassette and replays it as a local
+  mock HTTP server — offline, with no contact with the real server. SSE is passthrough
+  (never buffered), and `Mcp-Session-Id` is captured as evidence while replay issues its
+  own fresh id.
+- `mcp_cassette.server_url(real_url)` — the HTTP twin of `server_command`, returning a
+  local URL to plug into the agent's MCP config. The fixture still never monkeypatches
+  the agent.
+- Server-initiated request replay (sampling, elicitation) on both transports: anchored
+  emission with the recorded `msg_id`, accept-anything response handling (the agent's
+  answer is never matched against the recording), and release-on-response gating. v1
+  refused such cassettes at load; they now replay.
+- `mcp-cassette lint` — heuristic rules over recorded tool descriptions and results
+  (third-party content that reaches a model), with `--baseline` drift detection and
+  `--format json`. Exposed programmatically as `LintFinding` and `LintReport`.
+- Periodic crash-safety checkpoints during recording (`--checkpoint-interval SECONDS`,
+  default 5, `0` disables). A recording is written to a `<cassette>.partial` sidecar as
+  it runs, so a hard kill loses only what arrived since the last checkpoint instead of
+  the whole session. The sidecar is never written to the cassette path itself, because
+  `once` mode resolves record-vs-replay by that file's existence.
+- Cassette format version 2, widening version 1 with optional HTTP metadata
+  (`transport`, `server_url`, `session_id`, per-message `exchange` and `channel`).
+
+### Changed
+
+- Recording is no longer purely in-memory-until-shutdown; see checkpoints above.
+- `Authorization` and every other HTTP header is forwarded upstream untouched but never
+  written to a cassette — stronger than redaction, since no field could hold it.
+
+### Removed
+
+- **Breaking:** `UnsupportedCassetteFeature` is gone from the public API. It existed
+  only to refuse cassettes containing server-initiated requests at load; those cassettes
+  now replay, so nothing raises it. Remove any `except UnsupportedCassetteFeature`
+  handler — v1 cassettes themselves load unchanged.
+
+### Fixed
+
+- HTTP proxy: cancel the run scope on a fatal first-contact error or a `disconnect`
+  fault, instead of hanging until the client gave up.
+- Lint: use an ASCII minus in the R002 finding message, which crashed
+  `lint --baseline` on cp1252 Windows consoles.
+
 ## [0.1.0] - 2026-07-18
 
 First stable release. `mcp-cassette` is "vcrpy for MCP": record real MCP stdio
@@ -46,5 +98,6 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v2.0.0...HEAD
+[0.2.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cheneeheng/mcp-cassette/releases/tag/v0.1.0
