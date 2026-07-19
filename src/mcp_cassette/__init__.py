@@ -23,7 +23,7 @@ from .record.proxy import StdioRecordingProxy
 from .replay.server import ReplayServer
 from .session import CassetteSession
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "Cassette",

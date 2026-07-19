@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-19
+
+Documentation only; no code changes.
+
+### Added
+
+- `.agents_workspace/ARCHITECTURE.md`: living architecture doc — the standard
+  Mermaid diagram set (system context, components, record/replay sequences, data
+  model) plus a Key Decisions log.
+
+### Fixed
+
+- Two CHANGELOG references left stale by the v0.x version relabel: the 0.1.0
+  release note (Beta, not "stable") and the `[Unreleased]` compare link.
+
 ## [0.2.0] - 2026-07-19
 
 Remote servers, server-initiated requests, and supply-chain linting. Cassettes now
@@ -98,6 +113,7 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cheneeheng/mcp-cassette/releases/tag/v0.1.0
