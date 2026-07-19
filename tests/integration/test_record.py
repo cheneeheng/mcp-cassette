@@ -20,7 +20,9 @@ from scripted_client import (
 from mcp_cassette.cassette import Cassette
 
 
-def _record_cmd(cassette: Path, *server_extra: str) -> list[str]:
+def _record_cmd(
+    cassette: Path, *server_extra: str, extra: tuple[str, ...] = ()
+) -> list[str]:
     return [
         sys.executable,
         "-m",
@@ -28,6 +30,7 @@ def _record_cmd(cassette: Path, *server_extra: str) -> list[str]:
         "record",
         "--cassette",
         str(cassette),
+        *extra,
         "--",
         *reference_server_cmd(*server_extra),
     ]
@@ -131,6 +134,69 @@ def test_partial_session_still_valid(tmp_path: Path) -> None:
     run_session(_record_cmd(cassette), initialize_sequence())
     loaded = Cassette.load(cassette)
     assert loaded.protocol_version == "2024-11-05"
+
+
+def _handshake_proc(cmd: list[str]) -> subprocess.Popen[bytes]:
+    """Start a recording proxy and push the handshake through it."""
+    proc = subprocess.Popen(
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    assert proc.stdin is not None
+    for msg in initialize_sequence():
+        proc.stdin.write(json.dumps(msg).encode("utf-8") + b"\n")
+    proc.stdin.flush()
+    return proc
+
+
+def test_hard_kill_leaves_a_recoverable_checkpoint(tmp_path: Path) -> None:
+    # The whole point of checkpointing: SIGKILL runs no finalize path, so without a
+    # sidecar the entire session would be lost with the process.
+    cassette = tmp_path / "demo.json"
+    partial_file = cassette.with_name(cassette.name + ".partial")
+    cmd = _record_cmd(cassette, extra=("--checkpoint-interval", "0.2"))
+    proc = _handshake_proc(cmd)
+    try:
+        # Poll for a checkpoint that has caught the server's reply, not just the
+        # client's opening lines — the first one can land before the server answers.
+        deadline = time.monotonic() + 20
+        captured = None
+        while time.monotonic() < deadline:
+            if partial_file.exists():
+                captured = Cassette.load(partial_file)
+                if any(m.sender == "server" for m in captured.messages):
+                    break
+            time.sleep(0.1)
+        assert captured is not None, "no checkpoint was written mid-session"
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+    # The cassette path stays clean, so mode="once" re-records instead of replaying a
+    # truncated session; the traffic itself survives in the sidecar.
+    assert not cassette.exists()
+    assert captured.protocol_version == "2024-11-05"
+
+
+def test_clean_shutdown_removes_the_checkpoint(tmp_path: Path) -> None:
+    cassette = tmp_path / "demo.json"
+    run_session(
+        _record_cmd(cassette, extra=("--checkpoint-interval", "0.2")),
+        initialize_sequence(),
+    )
+    assert Cassette.load(cassette).protocol_version == "2024-11-05"
+    assert not cassette.with_name(cassette.name + ".partial").exists()
+
+
+def test_checkpoint_interval_zero_writes_no_sidecar(tmp_path: Path) -> None:
+    cassette = tmp_path / "demo.json"
+    partial_file = cassette.with_name(cassette.name + ".partial")
+    proc = _handshake_proc(_record_cmd(cassette, extra=("--checkpoint-interval", "0")))
+    try:
+        time.sleep(2.0)
+        assert not partial_file.exists()
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
 
 
 @pytest.mark.skipif(

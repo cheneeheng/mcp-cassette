@@ -14,8 +14,10 @@ import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream, Process
 
 from .._stdio import stderr_stream, stdin_stream, stdout_stream
-from ..cassette import RedactionRule, default_redaction_rules
+from ..cassette import Cassette, RedactionRule, default_redaction_rules
 from ..report import write_report as _write_report
+from . import checkpoint
+from .checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from .pump import pump_lines
 from .recorder import SessionRecorder
 
@@ -36,6 +38,7 @@ class StdioRecordingProxy:
         redaction: list[RedactionRule] | None = None,
         include_default_redactions: bool = True,
         report_path: str | None = None,
+        checkpoint_interval: float | None = DEFAULT_CHECKPOINT_INTERVAL,
     ) -> None:
         """Initialize the proxy.
 
@@ -46,10 +49,13 @@ class StdioRecordingProxy:
             include_default_redactions: Whether to prepend the default rule set.
             report_path: Optional path to write a JSON session report (message count),
                 used by the pytest fixture to detect empty recordings across processes.
+            checkpoint_interval: Seconds between crash-safety checkpoints to
+                ``<cassette>.partial``; ``None`` or non-positive disables them.
         """
         self.server_cmd = server_cmd
         self.cassette_path = cassette_path
         self.report_path = report_path
+        self.checkpoint_interval = checkpoint_interval
         rules: list[RedactionRule] = []
         if include_default_redactions:
             rules.extend(default_redaction_rules())
@@ -82,6 +88,12 @@ class StdioRecordingProxy:
                         tg.cancel_scope,
                     )
                     tg.start_soon(self._forward_stderr, process.stderr, our_err)
+                    tg.start_soon(
+                        checkpoint.run,
+                        self.checkpoint_interval,
+                        self._snapshot,
+                        self.cassette_path,
+                    )
                 await process.wait()
                 exit_code = process.returncode or 0
         finally:
@@ -172,8 +184,14 @@ class StdioRecordingProxy:
         self._finalize()
         os._exit(130)
 
+    def _snapshot(self) -> Cassette | None:
+        if self._recorder.message_count == 0:
+            return None
+        return self._recorder.build()
+
     def _finalize(self) -> None:
         cassette = self._recorder.build()
         cassette.save(self.cassette_path)
+        checkpoint.discard(self.cassette_path)
         if self.report_path is not None:
             _write_report(self.report_path, {"messages": self._recorder.message_count})

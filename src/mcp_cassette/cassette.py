@@ -18,11 +18,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-FORMAT_VERSION = 1
-"""Current on-disk cassette format version. Bumped only on breaking schema changes."""
+FORMAT_VERSION = 2
+"""Current on-disk cassette format version. Bumped only on breaking schema changes.
+
+Version 2 widens version 1 with optional-with-defaults fields only (HTTP transport
+metadata), so v1 cassettes load unchanged; new recordings always write 2.
+"""
 
 Sender = Literal["client", "server"]
 MessageKind = Literal["request", "response", "notification", "raw"]
+Transport = Literal["stdio", "http"]
+Channel = Literal["post", "get"]
 Ordering = Literal["per_method", "strict", "none"]
 FaultType = Literal["delay", "timeout", "error", "malformed", "disconnect"]
 MalformedStrategy = Literal["truncate", "not_json", "wrong_id"]
@@ -48,6 +54,10 @@ class Message(BaseModel):
         payload: Verbatim decoded JSON object, or the raw line (``str``) for
             ``kind == "raw"``.
         redacted: Whether any redaction rule altered this message's payload.
+        exchange: Groups messages that traveled in one HTTP request/response pair
+            (``None`` for stdio).
+        channel: Which stream carried a server-to-client message over HTTP
+            (``None`` for stdio and client-sent messages).
     """
 
     seq: int
@@ -58,14 +68,24 @@ class Message(BaseModel):
     msg_id: str | int | None = None
     payload: dict[str, Any] | str
     redacted: bool = False
+    exchange: int | None = None
+    channel: Channel | None = None
 
 
 class Cassette(BaseModel):
-    """An ordered recording of one MCP stdio session."""
+    """An ordered recording of one MCP session (stdio or Streamable HTTP).
+
+    Attributes:
+        server_url: The recorded remote server URL (http only; provenance).
+        session_id: The server's recorded ``Mcp-Session-Id`` (http only). Evidence
+            only — replay issues its own fresh id and never reuses this one.
+    """
 
     format_version: int = FORMAT_VERSION
     recorded_at: datetime
-    transport: Literal["stdio"] = "stdio"
+    transport: Transport = "stdio"
+    server_url: str | None = None
+    session_id: str | None = None
     protocol_version: str | None = None
     server_info: ServerInfo | None = None
     messages: list[Message] = Field(default_factory=list)
@@ -107,6 +127,9 @@ class Cassette(BaseModel):
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = self.model_dump(mode="json", exclude_none=False)
+        # Every write is the current format, even for a cassette loaded as v1
+        # (the v2 widening is optional-with-defaults, so the content round-trips).
+        payload["format_version"] = FORMAT_VERSION
         text = json.dumps(payload, indent=2, ensure_ascii=False)
         tmp = target.with_name(target.name + ".tmp")
         tmp.write_text(text + "\n", encoding="utf-8")
@@ -361,11 +384,6 @@ class FaultOverlay(BaseModel):
 
 class UnsupportedFormatVersion(Exception):  # noqa: N818 — public API name per plan
     """Raised when a cassette's format_version is newer than supported."""
-
-
-class UnsupportedCassetteFeature(Exception):  # noqa: N818 — public API name per plan
-    """Raised when a cassette uses a feature replay cannot serve (e.g. server->client
-    requests)."""
 
 
 Fault.model_rebuild()

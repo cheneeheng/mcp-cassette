@@ -1,0 +1,162 @@
+{
+  "format_version": 2,
+  "recorded_at": "2026-07-18T19:23:09.805479Z",
+  "transport": "stdio",
+  "server_url": null,
+  "session_id": null,
+  "protocol_version": "2024-11-05",
+  "server_info": {
+    "name": "echo-example",
+    "version": "1.0.0"
+  },
+  "messages": [
+    {
+      "seq": 0,
+      "t_offset_ms": 125,
+      "sender": "client",
+      "kind": "request",
+      "method": "initialize",
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "cli",
+            "version": "1.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 1,
+      "t_offset_ms": 125,
+      "sender": "client",
+      "kind": "notification",
+      "method": "notifications/initialized",
+      "msg_id": null,
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 2,
+      "t_offset_ms": 125,
+      "sender": "client",
+      "kind": "request",
+      "method": "tools/list",
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list"
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 3,
+      "t_offset_ms": 171,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {
+            "tools": {}
+          },
+          "serverInfo": {
+            "name": "echo-example",
+            "version": "1.0.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 4,
+      "t_offset_ms": 171,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "tools": [
+            {
+              "name": "echo",
+              "description": "Echo text back, with a random per-call token.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            },
+            {
+              "name": "add",
+              "description": "Add two integers.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "integer"
+                  },
+                  "b": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              }
+            },
+            {
+              "name": "summarize",
+              "description": "Summarize text by asking the client's LLM (sampling).",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    }
+  ]
+}

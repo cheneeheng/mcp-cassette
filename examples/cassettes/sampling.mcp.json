@@ -1,0 +1,175 @@
+{
+  "format_version": 2,
+  "recorded_at": "2026-07-18T19:22:31.662011Z",
+  "transport": "stdio",
+  "server_url": null,
+  "session_id": null,
+  "protocol_version": "2024-11-05",
+  "server_info": {
+    "name": "echo-example",
+    "version": "1.0.0"
+  },
+  "messages": [
+    {
+      "seq": 0,
+      "t_offset_ms": 125,
+      "sender": "client",
+      "kind": "request",
+      "method": "initialize",
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "example-client",
+            "version": "1.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 1,
+      "t_offset_ms": 125,
+      "sender": "client",
+      "kind": "notification",
+      "method": "notifications/initialized",
+      "msg_id": null,
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 2,
+      "t_offset_ms": 125,
+      "sender": "client",
+      "kind": "request",
+      "method": "tools/call",
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "summarize",
+          "arguments": {
+            "text": "a very long document"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 3,
+      "t_offset_ms": 186,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {
+            "tools": {}
+          },
+          "serverInfo": {
+            "name": "echo-example",
+            "version": "1.0.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 4,
+      "t_offset_ms": 186,
+      "sender": "server",
+      "kind": "request",
+      "method": "sampling/createMessage",
+      "msg_id": "s1",
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": "s1",
+        "method": "sampling/createMessage",
+        "params": {
+          "messages": [
+            {
+              "role": "user",
+              "content": {
+                "type": "text",
+                "text": "Summarize: a very long document"
+              }
+            }
+          ],
+          "maxTokens": "REDACTED"
+        }
+      },
+      "redacted": true,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 5,
+      "t_offset_ms": 186,
+      "sender": "client",
+      "kind": "response",
+      "method": null,
+      "msg_id": "s1",
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": "s1",
+        "result": {
+          "role": "assistant",
+          "content": {
+            "type": "text",
+            "text": "A tiny summary."
+          },
+          "model": "example-llm"
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 6,
+      "t_offset_ms": 186,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "summary: A tiny summary."
+            }
+          ],
+          "isError": false
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    }
+  ]
+}

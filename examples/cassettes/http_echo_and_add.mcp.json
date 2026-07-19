@@ -1,0 +1,171 @@
+{
+  "format_version": 2,
+  "recorded_at": "2026-07-18T19:22:32.454515Z",
+  "transport": "http",
+  "server_url": "http://127.0.0.1:58990/mcp",
+  "session_id": null,
+  "protocol_version": "2024-11-05",
+  "server_info": {
+    "name": "echo-example",
+    "version": "1.0.0"
+  },
+  "messages": [
+    {
+      "seq": 0,
+      "t_offset_ms": 125,
+      "sender": "client",
+      "kind": "request",
+      "method": "initialize",
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "example-client",
+            "version": "1.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": 0,
+      "channel": null
+    },
+    {
+      "seq": 1,
+      "t_offset_ms": 140,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {
+            "tools": {}
+          },
+          "serverInfo": {
+            "name": "echo-example",
+            "version": "1.0.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": 0,
+      "channel": "post"
+    },
+    {
+      "seq": 2,
+      "t_offset_ms": 156,
+      "sender": "client",
+      "kind": "notification",
+      "method": "notifications/initialized",
+      "msg_id": null,
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      },
+      "redacted": false,
+      "exchange": 1,
+      "channel": null
+    },
+    {
+      "seq": 3,
+      "t_offset_ms": 188,
+      "sender": "client",
+      "kind": "request",
+      "method": "tools/call",
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "echo",
+          "arguments": {
+            "text": "hello remote"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": 2,
+      "channel": null
+    },
+    {
+      "seq": 4,
+      "t_offset_ms": 188,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "hello remote [8668605e]"
+            }
+          ],
+          "isError": false
+        }
+      },
+      "redacted": false,
+      "exchange": 2,
+      "channel": "post"
+    },
+    {
+      "seq": 5,
+      "t_offset_ms": 203,
+      "sender": "client",
+      "kind": "request",
+      "method": "tools/call",
+      "msg_id": 3,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "add",
+          "arguments": {
+            "a": 40,
+            "b": 2
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": 3,
+      "channel": null
+    },
+    {
+      "seq": 6,
+      "t_offset_ms": 203,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 3,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "42"
+            }
+          ],
+          "isError": false
+        }
+      },
+      "redacted": false,
+      "exchange": 3,
+      "channel": "post"
+    }
+  ]
+}

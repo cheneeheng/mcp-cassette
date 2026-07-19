@@ -31,7 +31,7 @@ Everything operates at the transport level: newline-delimited JSON-RPC over stdi
 
 Data flow, both directions:
 
-- Record: `cli.py record` -> `record/proxy.py` (`StdioRecordingProxy`) spawns the real server and runs three line pumps (`record/pump.py`) in one anyio task group: client->server, server->client, and server-stderr->our-stderr (stderr is forwarded, never swallowed, to avoid hiding logs and deadlocking on a full pipe). A `SessionRecorder` (`record/recorder.py`) taps each line, classifies it by JSON-RPC shape, timestamps against a monotonic clock, and applies redaction to a deep copy at capture time. On any shutdown path the session is finalized into a `Cassette` and saved atomically.
+- Record: `cli.py record` -> `record/proxy.py` (`StdioRecordingProxy`) spawns the real server and runs three line pumps (`record/pump.py`) in one anyio task group: client->server, server->client, and server-stderr->our-stderr (stderr is forwarded, never swallowed, to avoid hiding logs and deadlocking on a full pipe). A `SessionRecorder` (`record/recorder.py`) taps each line, classifies it by JSON-RPC shape, timestamps against a monotonic clock, and applies redaction to a deep copy at capture time. On any shutdown path the session is finalized into a `Cassette` and saved atomically. While the session runs, `record/checkpoint.py` writes it periodically to a `<cassette>.partial` sidecar (both transports; `--checkpoint-interval`, default 5s) so a hard kill loses only the tail — never to the cassette path itself, because `session.py` resolves `once` mode by that file's existence and a truncated cassette there would replay as a finished one.
 - Replay: `cli.py serve` -> `replay/server.py` (`ReplayServer`) reads client requests from stdin and answers from recorded responses. No network, no subprocess, no wall-clock reads in the response path.
 
 Key modules:
@@ -52,7 +52,7 @@ Key modules:
 - Redaction happens at capture time on a deep copy; bytes in flight are never altered. Defaults (`*token*`, `*secret*`, `authorization`, etc.) are always on unless disabled.
 - Cross-process failure signal: the replay server exits `3` on any unmatched request; the fixture surfaces misses (and empty recordings) as test failures via the report sidecar in `finalize()`.
 - CI must set `MCP_CASSETTE_MODE=none` so no pipeline silently records against a live server.
-- Server-initiated requests (sampling/elicitation) are recorded generically but not replayable in the MVP; `ReplayServer` refuses such cassettes at load with `UnsupportedCassetteFeature`.
+- Server-initiated requests (sampling/elicitation) are recorded generically and replay on both transports (v2): anchored emission with the recorded `msg_id`, accept-anything response handling (the agent's answer is never matched against the recording), and release-on-response gating for messages recorded after the original response. There is deliberately no internal timeout when the agent never answers — pytest's own timeout applies, and the shutdown summary names the pending request.
 
 ## Conventions
 

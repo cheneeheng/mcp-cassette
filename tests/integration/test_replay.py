@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 from scripted_client import (
@@ -12,8 +11,6 @@ from scripted_client import (
     run_session,
     tool_call,
 )
-
-from mcp_cassette.cassette import Cassette, Message
 
 
 def _record(cassette: Path, messages: list[dict], *server_extra: str) -> None:
@@ -139,33 +136,6 @@ def test_notification_anchored_after_response(tmp_path: Path) -> None:
         if m == "notifications/message" and i > resp_idx
     )
     assert note_idx > resp_idx
-
-
-def test_sampling_cassette_refused(tmp_path: Path) -> None:
-    # Hand-build a cassette with a server-initiated request (sampling/elicitation).
-    cassette = tmp_path / "sampling.json"
-    Cassette(
-        recorded_at=datetime(2026, 7, 5, tzinfo=UTC),
-        messages=[
-            Message(
-                seq=0,
-                t_offset_ms=0,
-                sender="server",
-                kind="request",
-                method="sampling/createMessage",
-                msg_id=99,
-                payload={
-                    "jsonrpc": "2.0",
-                    "id": 99,
-                    "method": "sampling/createMessage",
-                },
-            )
-        ],
-    ).save(cassette)
-
-    replayed = run_session(_serve_cmd(cassette), [*initialize_sequence()])
-    assert replayed.returncode == 2
-    assert "server-initiated" in replayed.stderr
 
 
 def test_protocol_version_verbatim_vs_rewrite(tmp_path: Path) -> None:

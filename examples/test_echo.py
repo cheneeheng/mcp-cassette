@@ -85,3 +85,41 @@ def test_survives_injected_error(mcp_cassette: mcc.CassetteSession) -> None:
     faulted = _response_for(objects, 2)
     assert faulted["error"]["code"] == -32000
     assert faulted["error"]["message"] == "simulated outage"
+
+
+def _answer_sampling(request: dict[str, Any]) -> dict[str, Any]:
+    """A canned client-side LLM: answer any sampling request with fixed text."""
+    return {
+        "jsonrpc": "2.0",
+        "id": request["id"],
+        "result": {
+            "role": "assistant",
+            "content": {"type": "text", "text": "A tiny summary."},
+            "model": "example-llm",
+        },
+    }
+
+
+@pytest.mark.mcp_cassette(cassette=CASSETTES / "sampling.mcp.json")
+def test_server_initiated_sampling(mcp_cassette: mcc.CassetteSession) -> None:
+    """Sampling replays too (v2): the server asks the *client* mid-call.
+
+    The ``summarize`` tool sends a ``sampling/createMessage`` request and only
+    responds once the client answers. On replay, mcp-cassette re-emits the recorded
+    sampling request, accepts *whatever* the client answers (the answer comes from an
+    LLM and legitimately differs every run — it is never matched), and only then
+    releases the recorded tool result.
+    """
+    cmd = mcp_cassette.server_command(ECHO_SERVER)
+    objects = run(
+        cmd,
+        [*initialize(), tool_call(2, "summarize", {"text": "a very long document"})],
+        responder=_answer_sampling,
+    )
+
+    sampling = [o for o in objects if o.get("method") == "sampling/createMessage"]
+    assert sampling, "server never asked the client to sample"
+    # The recorded answer, not the live one, lands in the replayed result — change
+    # _answer_sampling's text and replay still returns "A tiny summary.".
+    result = _response_for(objects, 2)
+    assert result["result"]["content"][0]["text"] == "summary: A tiny summary."

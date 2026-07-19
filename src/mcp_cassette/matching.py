@@ -36,16 +36,6 @@ class Exchange:
     consumed: bool = False
 
 
-def detect_server_initiated_requests(cassette: Cassette) -> bool:
-    """Return True if the cassette contains any server-to-client request.
-
-    Server-initiated requests (sampling/elicitation) are recorded generically but not
-    replayable in the MVP; :class:`~mcp_cassette.replay.server.ReplayServer` refuses
-    such cassettes at load.
-    """
-    return any(m.sender == "server" and m.kind == "request" for m in cassette.messages)
-
-
 class Matcher:
     """Matches incoming replay requests against a cassette's recorded exchanges."""
 

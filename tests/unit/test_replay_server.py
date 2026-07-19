@@ -277,3 +277,24 @@ def test_new_episodes_finalize_without_report(tmp_path: Any) -> None:
     saved = Cassette.load(target)
     assert [m.seq for m in saved.messages] == [0]
     assert not (tmp_path / "merged.json.report.json").exists()
+
+
+def test_server_request_with_raw_payload_is_never_emitted() -> None:
+    # A hand-edited cassette can hold a server "request" whose payload is a raw
+    # string; the tracker plans it, but emission must skip it rather than crash.
+    messages = [
+        _msg(
+            0,
+            "server",
+            "request",
+            "hand-edited junk",
+            method="sampling/createMessage",
+            msg_id=0,
+        ),
+        *[m.model_copy(update={"seq": m.seq + 1}) for m in _init_exchange_messages({})],
+    ]
+    server = ReplayServer(_cassette(messages))
+    sink = _drive(server, [INIT_LINE])
+    assert len(sink.lines) == 1  # only the initialize response; no junk emitted
+    assert isinstance(sink.lines[0], dict)
+    assert sink.lines[0]["id"] == 10

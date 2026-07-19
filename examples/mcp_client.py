@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+from collections.abc import Callable
 from typing import Any
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -43,7 +44,11 @@ def tool_call(msg_id: int, name: str, arguments: dict[str, Any]) -> dict[str, An
     }
 
 
-def run(cmd: list[str], messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def run(
+    cmd: list[str],
+    messages: list[dict[str, Any]],
+    responder: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
+) -> list[dict[str, Any]]:
     """Run ``cmd``, send every message, and return the JSON objects it emits.
 
     Stdin is held open until every request has a response, so a real server is never
@@ -52,6 +57,9 @@ def run(cmd: list[str], messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Args:
         cmd: The server command to launch (real, recording proxy, or replay server).
         messages: JSON-RPC objects to send, in order.
+        responder: Optional callback for server-initiated requests (sampling,
+            elicitation): called with the decoded request; a returned dict is written
+            back as the client's response, ``None`` leaves it unanswered.
 
     Returns:
         The JSON objects the server wrote to stdout, in arrival order.
@@ -64,22 +72,37 @@ def run(cmd: list[str], messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     objects: list[dict[str, Any]] = []
     stdout = proc.stdout
+    stdin = proc.stdin
+    write_lock = threading.Lock()  # the reader thread answers server requests
+
+    def send(obj: dict[str, Any]) -> None:
+        with write_lock:
+            stdin.write(json.dumps(obj).encode("utf-8") + b"\n")
+            stdin.flush()
 
     def reader() -> None:
         for raw in stdout:
             text = raw.decode("utf-8", "replace").strip()
-            if text:
-                try:
-                    objects.append(json.loads(text))
-                except json.JSONDecodeError:
-                    pass  # non-JSON server chatter; ignore
+            if not text:
+                continue
+            try:
+                obj = json.loads(text)
+            except json.JSONDecodeError:
+                continue  # non-JSON server chatter; ignore
+            objects.append(obj)
+            if responder is not None and "id" in obj and "method" in obj:
+                reply = responder(obj)
+                if reply is not None:
+                    try:
+                        send(reply)
+                    except OSError:
+                        pass  # stdin already closed at session end
 
     thread = threading.Thread(target=reader)
     thread.start()
 
     for message in messages:
-        proc.stdin.write(json.dumps(message).encode("utf-8") + b"\n")
-    proc.stdin.flush()
+        send(message)
 
     # Wait for all responses to land before closing stdin (startup can take a second).
     import time
@@ -91,7 +114,8 @@ def run(cmd: list[str], messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ):
         time.sleep(0.05)
 
-    proc.stdin.close()
+    with write_lock:
+        proc.stdin.close()
     proc.wait(timeout=10)
     thread.join(timeout=5)
     return objects

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from mcp_cassette.cassette import Cassette, MatchConfig, Message
-from mcp_cassette.matching import Matcher, detect_server_initiated_requests
+from mcp_cassette.matching import Matcher
 
 
 def _msg(
@@ -168,15 +168,6 @@ def test_request_with_raw_string_payload_gets_empty_key() -> None:
     matcher = Matcher(_cassette([raw_request]), MatchConfig(ordering="none"))
     # a request whose canonical key is that of an empty object matches it
     assert matcher.find({}) is not None
-
-
-def test_detect_server_initiated_requests() -> None:
-    plain = _cassette(TWO_CALLS)
-    assert detect_server_initiated_requests(plain) is False
-    sampling = _cassette(
-        [_msg(0, "server", "request", method="sampling/createMessage", msg_id=9)]
-    )
-    assert detect_server_initiated_requests(sampling) is True
 
 
 class TestIgnoreParams:

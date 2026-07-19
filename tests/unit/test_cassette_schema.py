@@ -178,6 +178,54 @@ def test_empty_pointer_is_noop() -> None:
     assert _redact_pointer({"a": 1}, "", "REDACTED") is False
 
 
+def test_v2_defaults_keep_v1_cassettes_loading(tmp_path: Path) -> None:
+    # A format-1 file with none of the v2 fields loads unchanged.
+    path = tmp_path / "v1.json"
+    data = json.loads(_cassette().model_dump_json())
+    data["format_version"] = 1
+    for message in data["messages"]:
+        message.pop("exchange", None)
+        message.pop("channel", None)
+    for key in ("server_url", "session_id"):
+        data.pop(key, None)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded = Cassette.load(path)
+    assert loaded.transport == "stdio"
+    assert loaded.server_url is None
+    assert loaded.session_id is None
+    assert loaded.messages[0].exchange is None
+    assert loaded.messages[0].channel is None
+
+
+def test_save_always_writes_current_format_version(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    cassette = _cassette().model_copy(update={"format_version": 1})
+    cassette.save(path)
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert on_disk["format_version"] == 2
+
+
+def test_http_fields_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "h.json"
+    cassette = Cassette(
+        recorded_at=datetime(2026, 7, 5, tzinfo=UTC),
+        transport="http",
+        server_url="https://mcp.example.com/mcp",
+        session_id="abc123",
+        messages=[
+            _message(0, exchange=0),
+            _message(1, sender="server", kind="response", exchange=0, channel="post"),
+        ],
+    )
+    cassette.save(path)
+    loaded = Cassette.load(path)
+    assert loaded.transport == "http"
+    assert loaded.server_url == "https://mcp.example.com/mcp"
+    assert loaded.session_id == "abc123"
+    assert loaded.messages[1].exchange == 0
+    assert loaded.messages[1].channel == "post"
+
+
 def test_fault_constructors() -> None:
     assert Fault.timeout("tools/call", nth=2).type == "timeout"
     assert Fault.timeout("tools/call", nth=2).target.nth == 2

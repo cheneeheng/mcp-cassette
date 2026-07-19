@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -54,7 +55,7 @@ def test_record_without_server_cmd_exits_2(
 ) -> None:
     rc = main(["record", "--cassette", str(tmp_path / "c.json")])
     assert rc == 2
-    assert "missing server command" in capsys.readouterr().err
+    assert "pass a remote --url URL or a server command" in capsys.readouterr().err
 
 
 def test_serve_missing_cassette_exits_2(
@@ -150,3 +151,102 @@ def test_inspect_faults_dry_run(
     assert rc == 0
     assert "seq 0 tools/call -> error" in out
     assert "WARNING: timeout on tools/none matches nothing" in out
+
+
+# --- v2 surfaces: http branches without the extra, transport mismatches --------------
+
+
+def _save_http_cassette(path: Path, *, server_url: str | None = None) -> None:
+    Cassette(
+        recorded_at=datetime(2026, 7, 18, tzinfo=UTC),
+        transport="http",
+        server_url=server_url,
+    ).save(path)
+
+
+def test_record_url_without_http_extra_exits_2(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # None in sys.modules makes the guarded import raise ImportError, exactly as
+    # a core-only install (no [http] extra) would.
+    monkeypatch.setitem(sys.modules, "mcp_cassette.transports.http", None)
+    rc = main(
+        [
+            "record",
+            "--cassette",
+            str(tmp_path / "c.json"),
+            "--url",
+            "http://127.0.0.1:9/mcp",
+        ]
+    )
+    assert rc == 2
+    assert "mcp-cassette record:" in capsys.readouterr().err
+
+
+def test_serve_http_cassette_without_http_extra_exits_2(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "h.json"
+    _save_http_cassette(path)
+    monkeypatch.setitem(sys.modules, "mcp_cassette.transports.http", None)
+    rc = main(["serve", str(path)])
+    assert rc == 2
+    assert "mcp-cassette serve:" in capsys.readouterr().err
+
+
+def test_serve_stdio_cassette_with_url_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "c.json"
+    _full_cassette().save(path)
+    rc = main(["serve", str(path), "--url", "http://127.0.0.1:9/mcp"])
+    assert rc == 2
+    assert "--url applies to http cassettes" in capsys.readouterr().err
+
+
+def test_serve_http_new_episodes_without_url_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "h.json"
+    _save_http_cassette(path, server_url=None)
+    rc = main(["serve", str(path), "--new-episodes"])
+    assert rc == 2
+    assert "records no server_url" in capsys.readouterr().err
+
+
+def test_serve_http_new_episodes_with_recorded_url_starts_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_cassette.transports.http import HttpReplayServer
+
+    path = tmp_path / "h.json"
+    _save_http_cassette(path, server_url="http://127.0.0.1:9/mcp")
+    seen: dict[str, str | None] = {}
+
+    def fake_run(self: HttpReplayServer) -> int:
+        seen["fallthrough"] = self._fallthrough_url
+        seen["cassette_path"] = self._cassette_path
+        return 0
+
+    monkeypatch.setattr(HttpReplayServer, "run", fake_run)
+    rc = main(["serve", str(path), "--new-episodes"])
+    assert rc == 0
+    assert seen["fallthrough"] == "http://127.0.0.1:9/mcp"  # from the recording
+    assert seen["cassette_path"] == str(path)  # novel episodes append in place
+
+
+def test_inspect_http_cassette_without_server_url(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "h.json"
+    _save_http_cassette(path, server_url=None)
+    rc = main(["inspect", str(path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "transport: http" in out
+    assert "exchanges: 0" in out
+    assert "server host" not in out
