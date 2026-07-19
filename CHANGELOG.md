@@ -61,7 +61,7 @@ round-trip on both transports, and recorded third-party text can be linted in CI
 
 ## [0.1.0] - 2026-07-18
 
-First stable release. `mcp-cassette` is "vcrpy for MCP": record real MCP stdio
+First public release. `mcp-cassette` is "vcrpy for MCP": record real MCP stdio
 sessions between an agent and an MCP server into cassettes, then replay them as
 deterministic mock servers so agent test suites stop hitting live servers.
 
@@ -98,6 +98,6 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cheneeheng/mcp-cassette/releases/tag/v0.1.0
