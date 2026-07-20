@@ -1,0 +1,102 @@
+# CI pipeline
+
+**Audience:** operators who own the pipeline.
+**Goal:** cassette-backed tests run offline and deterministically, and no pipeline can
+silently record against a live server.
+
+## The one non-negotiable setting
+
+```
+MCP_CASSETTE_MODE=none
+```
+
+Set it for the whole test job. In `none` mode a missing cassette fails the test instead
+of recording it, so a deleted or unmerged cassette surfaces as a red build rather than a
+live call with production credentials.
+
+Example, GitHub Actions:
+
+```yaml
+- name: Test
+  env:
+    MCP_CASSETTE_MODE: none
+  run: uv run pytest
+```
+
+**Verify:** delete a cassette on a scratch branch and push. The job must fail with
+`no cassette at <path> and recording is forbidden (mode=none)`.
+
+## Do not give CI upstream credentials
+
+Replay contacts nothing — no network, no subprocess, no wall-clock reads in the response
+path. A cassette-backed test job needs no MCP server credentials at all. Removing them
+turns "CI accidentally hit production" from a policy into an impossibility.
+
+Recording runs are a developer activity. If you must record from CI, do it in a separate,
+manually triggered job with its own credentials, never in the pull-request pipeline.
+
+## Lint cassettes before they reach a model
+
+Recorded tool descriptions and results are third-party content headed for a model's
+context window. Gate them:
+
+```yaml
+- name: Lint cassettes
+  run: |
+    for f in tests/cassettes/**/*.mcp.json; do
+      uv run mcp-cassette lint "$f" --format json
+    done
+```
+
+Exit `0` means no error-severity findings; exit `4` fails the step. Warnings (`R003`
+duplicate tool names, `R004` instruction-shaped results) do not fail the run on their own.
+
+To catch the "rug pull" — a tool whose description quietly changed between recordings —
+lint the new cassette against the committed one as a baseline:
+
+```
+uv run mcp-cassette lint new.json --baseline tests/cassettes/old.json --format json
+```
+
+That enables `R002`, which reports a unified diff of the drifted tool surface.
+
+> Heuristic pattern rules, not a guarantee. Treat a clean lint as "no known smells".
+
+## Reviewing cassette changes
+
+Cassettes are JSON with stable key order and two-space indentation, so `git diff` on them
+is meaningful. In review, a cassette diff deserves the same scrutiny as a code diff:
+
+- Did a tool `description` change? That is a supply-chain event, not a test fixture edit.
+- Did any value that should be `REDACTED` come through in the clear?
+- Did the message count change in a way the PR does not explain?
+
+## Keeping cassettes fresh
+
+Replay hides upstream drift by design — that is the point, and also the risk. Schedule a
+job that re-records against the real servers on a cadence you choose and opens a PR with
+the diff:
+
+```
+MCP_CASSETTE_MODE=all uv run pytest tests/test_agent.py
+```
+
+Run it against the *real* servers with real credentials, on a schedule, in its own job.
+Review the resulting diff by hand. Note that `all` mode cannot produce a green run for
+tests that depend on replay semantics (determinism assertions, `with_faults`); those are
+refreshed per-file by deleting the cassette and running in `once` mode.
+
+## Platform notes
+
+Linux, macOS, and Windows are all supported. Shutdown is signal-driven on both families
+and converges on the same behaviour: finalize the cassette, then exit `130`. SIGTERM has
+no graceful-finalize semantics on Windows — use CTRL_BREAK there, or `--max-idle` for
+unattended runs.
+
+## Escalation
+
+The runbook stops here when: a test fails on replay with no cassette diff and no code
+diff, `serve` exits `2` on a cassette that previously loaded, or `format_version` is
+newer than the installed library understands. Those are library-level issues — capture
+the cassette, the failing command, and the exact error, and file them at
+[github.com/cheneeheng/mcp-cassette](https://github.com/cheneeheng/mcp-cassette).

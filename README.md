@@ -4,6 +4,9 @@ vcrpy for MCP. Record real MCP sessions between an agent and an MCP server — l
 
 mcp-cassette operates at the **transport level** (newline-delimited JSON-RPC over stdio; h11 + hand-rolled SSE framing over Streamable HTTP), treats messages semi-opaquely, and does **not** depend on the official `mcp` SDK at runtime — so it works with any MCP client (Claude Code included) unmodified. Sessions containing server-initiated requests (sampling, elicitation) record and replay too.
 
+Full documentation: **[docs/guide/](docs/guide/index.md)** — getting started, how-to
+guides, and the operator runbook.
+
 ## Install
 
 ```
