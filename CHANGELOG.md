@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-20
+
+Documentation only; no code changes.
+
+### Added
+
+- `docs/guide/` — a task-oriented user and operator guide, split by audience.
+  For test authors: getting started, and how-to pages for stdio record/replay,
+  remote Streamable HTTP, fault injection, and redaction. For operators:
+  install, configuration (every mode, ini option, marker, and matching
+  setting), CI pipeline, CLI reference with exit codes, and an incident
+  runbook for replay misses and failed recordings. Plus a symptom-to-fix
+  troubleshooting table.
+- README now links to the guide.
+
 ## [0.2.1] - 2026-07-19
 
 Documentation only; no code changes.
@@ -113,7 +128,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cheneeheng/mcp-cassette/releases/tag/v0.1.0

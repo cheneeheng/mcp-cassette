@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`mcp-cassette` is "vcrpy for MCP": record real MCP stdio sessions between an agent and an MCP server into cassettes (structured JSON), then replay them as deterministic mock servers so agent test suites stop hitting live servers. See `README.md` for the user-facing surface.
+`mcp-cassette` is "vcrpy for MCP": record real MCP stdio sessions between an agent and an MCP server into cassettes (structured JSON), then replay them as deterministic mock servers so agent test suites stop hitting live servers. See `README.md` for the user-facing surface, and `docs/guide/` for the task-oriented user
+and operator guide (keep it in sync when flags, modes, error strings, or exit codes change).
 
 ## Commands
 
