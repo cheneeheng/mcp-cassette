@@ -1,4 +1,4 @@
-"""Command-line interface: ``record``, ``serve``, ``inspect``.
+"""Command-line interface: ``record``, ``serve``, ``inspect``, ``diff``, ``lint``.
 
 A near-zero-dependency argparse tree. The full subcommand and flag surface is registered
 so ``--help`` shows the intended interface; every subcommand is a real implementation at
@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
+from typing import Any
 from urllib.parse import urlsplit
 
 from pydantic import ValidationError
@@ -19,10 +21,14 @@ from .cassette import (
     Cassette,
     FaultOverlay,
     MatchConfig,
+    Message,
+    PaceConfig,
     RedactionRule,
     UnsupportedFormatVersion,
 )
-from .lint import run_with_notes
+from .diffing import CassetteDiff, ToolChange, diff_cassettes
+from .lint import ProjectLintConfig, discover_config, run_with_notes
+from .lint.engine import latest_tools
 from .matching import Matcher
 from .record.checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from .record.proxy import StdioRecordingProxy
@@ -134,6 +140,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     srv.add_argument("--faults", help="Path to a fault overlay JSON sidecar.")
     srv.add_argument(
+        "--pace",
+        choices=["none", "recorded"],
+        default="none",
+        help=(
+            "Replay recorded inter-message latency (default: off — replay is instant)."
+        ),
+    )
+    srv.add_argument(
+        "--pace-scale",
+        type=float,
+        default=None,
+        metavar="FLOAT",
+        help="Multiply every recorded gap (default: 1.0; must be > 0).",
+    )
+    srv.add_argument(
+        "--pace-cap-ms",
+        type=int,
+        default=None,
+        metavar="MS",
+        help=(
+            "Per-gap upper bound (default: 5000; 0 = uncapped). Keeps one "
+            "pathological recorded pause from looking like a hung job."
+        ),
+    )
+    srv.add_argument(
         "--new-episodes",
         action="store_true",
         help="Replay matches; fall through misses to the real server (needs -- CMD).",
@@ -148,6 +179,52 @@ def build_parser() -> argparse.ArgumentParser:
         "--faults",
         help="Dry-run a fault overlay: report which recorded requests it would hit.",
     )
+    ins.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text; json is deterministic and diffable).",
+    )
+    ins.add_argument(
+        "--timeline",
+        action="store_true",
+        help="One line per message: who sent what, when, with which id and size.",
+    )
+    ins.add_argument(
+        "--tools",
+        action="store_true",
+        help="One line per recorded tool (deduplicated by name, last seen wins).",
+    )
+    ins.add_argument(
+        "--grep",
+        metavar="PATTERN",
+        help="Regex matched against each message payload; composes with --method.",
+    )
+
+    dif = sub.add_parser(
+        "diff",
+        help="Structurally compare two cassettes (exit 5 when they differ).",
+        description=(
+            "Compare metadata, per-method counts, tool surfaces, and the exchange "
+            "sequence. JSON-RPC ids, t_offset_ms, and seq are never compared — they "
+            "are re-stamped or clock-derived, so comparing them would make every "
+            "re-recording differ. Descriptive, not a gate: for a CI gate on tool "
+            "surfaces use lint's R002 (exit 4) or diff --tools-only (exit 5)."
+        ),
+    )
+    dif.add_argument("old", help="Baseline cassette.")
+    dif.add_argument("new", help="Current cassette.")
+    dif.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text; json is deterministic and diffable).",
+    )
+    dif.add_argument(
+        "--tools-only",
+        action="store_true",
+        help="Compare tool surfaces only — the common CI use.",
+    )
 
     lint = sub.add_parser(
         "lint",
@@ -157,7 +234,8 @@ def build_parser() -> argparse.ArgumentParser:
             "injection phrasing (R001), description drift vs a baseline (R002), "
             "duplicate tool names (R003), instruction-shaped results (R004). "
             "These are pattern rules, not a guarantee — a clean lint is absence "
-            "of known smells, nothing more."
+            "of known smells, nothing more. Packs extend the bundled rules; they "
+            "never replace them."
         ),
     )
     lint.add_argument("cassette", help="Path to the cassette to lint.")
@@ -185,6 +263,24 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="RULE",
         help="Skip these rule ids (repeatable).",
     )
+    lint.add_argument(
+        "--pattern-pack",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="TOML pattern pack to load (repeatable; additive to project config).",
+    )
+    lint.add_argument(
+        "--fail-on",
+        choices=["error", "warning"],
+        default=None,
+        help="Lowest severity that exits 4 (default: error, or the project config).",
+    )
+    lint.add_argument(
+        "--no-config",
+        action="store_true",
+        help="Ignore [tool.mcp_cassette.lint] in the nearest pyproject.toml.",
+    )
     return parser
 
 
@@ -208,6 +304,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_serve(args)
     if args.command == "inspect":
         return _cmd_inspect(args)
+    if args.command == "diff":
+        return _cmd_diff(args)
     if args.command == "lint":
         return _cmd_lint(args)
     parser.error(f"unknown command {args.command}")  # pragma: no cover
@@ -269,12 +367,37 @@ def _cmd_record(args: argparse.Namespace) -> int:
     return proxy.run()
 
 
+def _build_pace(args: argparse.Namespace) -> tuple[PaceConfig | None, str | None]:
+    """Resolve the pacing flags into a config, or a usage error to print."""
+    if args.pace != "recorded":
+        if args.pace_scale is not None or args.pace_cap_ms is not None:
+            return None, (
+                "--pace-scale/--pace-cap-ms have no effect without --pace recorded"
+            )
+        return None, None
+    if args.pace_scale is not None and args.pace_scale <= 0:
+        return None, f"--pace-scale {args.pace_scale} is invalid: must be > 0"
+    return (
+        PaceConfig(
+            mode="recorded",
+            scale=1.0 if args.pace_scale is None else args.pace_scale,
+            cap_ms=5000 if args.pace_cap_ms is None else args.pace_cap_ms,
+        ),
+        None,
+    )
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     try:
         cassette = Cassette.load(args.cassette)
     except (UnsupportedFormatVersion, FileNotFoundError) as exc:
         sys.stderr.write(f"mcp-cassette serve: {exc}\n")
         return 2
+    pace, pace_error = _build_pace(args)
+    if pace_error is not None:
+        sys.stderr.write(f"mcp-cassette serve: {pace_error}\n")
+        return 2
+    args.pace_config = pace
     config = MatchConfig(
         ignore_params=args.ignore_param,
         ordering=args.ordering,
@@ -301,11 +424,12 @@ def _cmd_serve(args: argparse.Namespace) -> int:
             server_cmd=server_cmd,
             match=config,
             report_path=args.report,
+            pace=pace,
         ).run()
 
     overlay = FaultOverlay.load(args.faults) if args.faults else None
     server = ReplayServer(
-        cassette, match=config, faults=overlay, report_path=args.report
+        cassette, match=config, faults=overlay, report_path=args.report, pace=pace
     )
     return server.run()
 
@@ -336,7 +460,14 @@ def _cmd_serve_http(
         report_path=args.report,
         fallthrough_url=fallthrough_url,
         cassette_path=args.cassette if fallthrough_url else None,
+        pace=args.pace_config,
     ).run()
+
+
+_TIMELINE_COLUMNS = (
+    "{seq:<5} {t:>11}  {dir:<4} {kind:<13} {method:<24} {id:<8} {size:>7}"
+)
+_TIMELINE_HTTP = "  {exch:>5} {chan:<5}"
 
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
@@ -345,10 +476,51 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     except (UnsupportedFormatVersion, FileNotFoundError) as exc:
         sys.stderr.write(f"mcp-cassette inspect: {exc}\n")
         return 2
-    messages = cassette.messages
-    if args.method:
-        messages = [m for m in messages if m.method == args.method]
+    try:
+        messages = _filter_messages(cassette, args.method, args.grep)
+    except re.error as exc:
+        sys.stderr.write(
+            f"mcp-cassette inspect: invalid --grep pattern {args.grep!r}: {exc}\n"
+        )
+        return 2
 
+    if args.format == "json":
+        print(json.dumps(_inspect_document(args, cassette, messages), indent=2))
+        return 0
+    if args.timeline:
+        _inspect_timeline(cassette, messages)
+        return 0
+    if args.tools:
+        _inspect_tools(cassette)
+        return 0
+    _inspect_summary(args, cassette, messages)
+    if args.faults:
+        _inspect_faults(cassette, args.faults)
+    return 0
+
+
+def _filter_messages(
+    cassette: Cassette, method: str | None, grep: str | None
+) -> list[Message]:
+    """Apply ``--method`` and ``--grep`` (AND) to the cassette's messages."""
+    messages = cassette.messages
+    if method:
+        messages = [m for m in messages if m.method == method]
+    if grep:
+        pattern = re.compile(grep)
+        messages = [m for m in messages if pattern.search(_payload_text(m))]
+    return messages
+
+
+def _payload_text(message: Message) -> str:
+    if isinstance(message.payload, str):
+        return message.payload
+    return json.dumps(message.payload, sort_keys=True, separators=(",", ":"))
+
+
+def _inspect_summary(
+    args: argparse.Namespace, cassette: Cassette, messages: list[Message]
+) -> None:
     print(f"cassette: {args.cassette}")
     print(f"format_version: {cassette.format_version}")
     print(f"transport: {cassette.transport}")
@@ -364,31 +536,209 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         print(f"server: {cassette.server_info.name} {cassette.server_info.version}")
     print(f"messages: {len(messages)}")
 
-    by_method: Counter[str] = Counter(m.method or f"<{m.kind}>" for m in messages)
-    for name, count in sorted(by_method.items()):
+    for name, count in sorted(_method_counts(messages).items()):
         print(f"  {name}: {count}")
     if messages:
-        span = messages[-1].t_offset_ms - messages[0].t_offset_ms
-        print(f"timing span: {span} ms")
+        print(f"timing span: {_timing_span(messages)} ms")
 
-    if args.faults:
-        _inspect_faults(cassette, args.faults)
+
+def _inspect_timeline(cassette: Cassette, messages: list[Message]) -> None:
+    http = cassette.transport == "http"
+    header = _TIMELINE_COLUMNS.format(
+        seq="seq",
+        t="t_offset_ms",
+        dir="dir",
+        kind="kind",
+        method="method",
+        id="id",
+        size="bytes",
+    )
+    if http:
+        header += _TIMELINE_HTTP.format(exch="exch", chan="chan")
+    print(header)
+    for m in messages:
+        row = _TIMELINE_COLUMNS.format(
+            seq=m.seq,
+            t=m.t_offset_ms,
+            dir="->" if m.sender == "client" else "<-",
+            kind=m.kind,
+            method=m.method or "-",
+            id="-" if m.msg_id is None else m.msg_id,
+            size=len(_payload_text(m)),
+        )
+        if http:
+            row += _TIMELINE_HTTP.format(
+                exch="-" if m.exchange is None else m.exchange,
+                chan=m.channel or "-",
+            )
+        print(row)
+
+
+def _inspect_tools(cassette: Cassette) -> None:
+    for name, tool in sorted(latest_tools(cassette).items()):
+        args_count = _schema_arg_count(tool.input_schema)
+        first_line = (tool.description or "").split("\n")[0]
+        print(f"{name}  ({args_count} args)  {first_line}")
+
+
+def _schema_arg_count(schema: Any) -> int:
+    if isinstance(schema, dict) and isinstance(schema.get("properties"), dict):
+        return len(schema["properties"])
     return 0
+
+
+def _inspect_document(
+    args: argparse.Namespace, cassette: Cassette, messages: list[Message]
+) -> dict[str, Any]:
+    """The deterministic ``--format json`` document (byte-stable for one input)."""
+    document: dict[str, Any] = {
+        "cassette": args.cassette,
+        "format_version": cassette.format_version,
+        "message_counts": dict(sorted(_method_counts(messages).items())),
+        "messages": len(messages),
+        "protocol_version": cassette.protocol_version,
+        "recorded_at": cassette.recorded_at.isoformat(),
+        "server_info": (
+            {"name": cassette.server_info.name, "version": cassette.server_info.version}
+            if cassette.server_info
+            else None
+        ),
+        "timing_span_ms": _timing_span(messages),
+        "tools": [
+            {
+                "name": name,
+                "description": tool.description,
+                "args": _schema_arg_count(tool.input_schema),
+            }
+            for name, tool in sorted(latest_tools(cassette).items())
+        ],
+        "transport": cassette.transport,
+    }
+    if cassette.transport == "http":
+        document["server_host"] = (
+            urlsplit(cassette.server_url).netloc if cassette.server_url else None
+        )
+        document["exchanges"] = len(
+            {m.exchange for m in cassette.messages if m.exchange is not None}
+        )
+    if args.timeline:
+        document["timeline"] = [
+            {
+                "seq": m.seq,
+                "t_offset_ms": m.t_offset_ms,
+                "sender": m.sender,
+                "kind": m.kind,
+                "method": m.method,
+                "id": m.msg_id,
+                "bytes": len(_payload_text(m)),
+                "exchange": m.exchange,
+                "channel": m.channel,
+            }
+            for m in messages
+        ]
+    return document
+
+
+def _method_counts(messages: list[Message]) -> Counter[str]:
+    return Counter(m.method or f"<{m.kind}>" for m in messages)
+
+
+def _timing_span(messages: list[Message]) -> int:
+    if not messages:
+        return 0
+    return messages[-1].t_offset_ms - messages[0].t_offset_ms
+
+
+def _cmd_diff(args: argparse.Namespace) -> int:
+    try:
+        result = diff_cassettes(args.old, args.new)
+    except (UnsupportedFormatVersion, FileNotFoundError, ValidationError) as exc:
+        sys.stderr.write(f"mcp-cassette diff: {exc}\n")
+        return 2
+    if args.tools_only:
+        result = result.model_copy(
+            update={
+                "metadata": [],
+                "methods": [],
+                "sequence": [],
+                "identical": not result.tools,
+            }
+        )
+    if args.format == "json":
+        print(result.model_dump_json(indent=2))
+    else:
+        _print_diff(result)
+    return 0 if result.identical else 5
+
+
+def _print_diff(result: CassetteDiff) -> None:
+    if result.identical:
+        print("identical: no structural differences")
+        return
+    if result.metadata:
+        print("metadata:")
+        for change in result.metadata:
+            print(f"  {change.field}: {change.old} -> {change.new}")
+    if result.methods:
+        print("methods:")
+        for delta in result.methods:
+            print(f"  {delta.method}: {delta.old_count} -> {delta.new_count}")
+    if result.tools:
+        print("tools:")
+        for tool_change in result.tools:
+            print(f"  {tool_change.tool}: {_tool_change_summary(tool_change)}")
+            for line in tool_change.diff:
+                print(f"    {line}")
+    if result.sequence:
+        print("sequence:")
+        for line in result.sequence:
+            print(f"  {line}")
+
+
+def _tool_change_summary(change: ToolChange) -> str:
+    if change.change == "description":
+        added = sum(1 for d in change.diff if d.startswith("+") and d[:3] != "+++")
+        removed = sum(1 for d in change.diff if d.startswith("-") and d[:3] != "---")
+        return f"description changed (+{added} -{removed} lines)"
+    if change.change == "input_schema":
+        return "inputSchema changed"
+    return change.change
+
+
+def _resolve_lint_config(args: argparse.Namespace) -> ProjectLintConfig:
+    """Layer CLI flags over the project config.
+
+    Packs compose (a developer adding a personal pack should not lose the team's);
+    ``--select``, ``--ignore`` and ``--fail-on`` replace their config counterparts,
+    because an explicit selection is an override, not a merge.
+    """
+    config = ProjectLintConfig() if args.no_config else discover_config()
+    return config.model_copy(
+        update={
+            "select": args.select or config.select,
+            "ignore": args.ignore or config.ignore,
+            "fail_on": args.fail_on or config.fail_on,
+        }
+    )
 
 
 def _cmd_lint(args: argparse.Namespace) -> int:
     try:
+        config = _resolve_lint_config(args)
         report, notes = run_with_notes(
             args.cassette,
             args.baseline,
-            args.select or None,
-            ignore=args.ignore,
+            config.select or None,
+            ignore=config.ignore,
+            packs=list(args.pattern_pack),
+            config=config,
         )
     except (
         UnsupportedFormatVersion,
         FileNotFoundError,
         json.JSONDecodeError,
         ValidationError,
+        ValueError,
     ) as exc:
         sys.stderr.write(f"mcp-cassette lint: {exc}\n")
         return 2
@@ -404,8 +754,10 @@ def _cmd_lint(args: argparse.Namespace) -> int:
                 print(f"    {line}")
         if not report.findings:
             print("clean: no findings")
-    has_errors = any(f.severity == "error" for f in report.findings)
-    return 4 if has_errors else 0
+    # fail_on changes only the exit code; a finding's own severity is never
+    # rewritten, so JSON output stays a faithful record.
+    threshold = ("warning", "error") if config.fail_on == "warning" else ("error",)
+    return 4 if any(f.severity in threshold for f in report.findings) else 0
 
 
 def _inspect_faults(cassette: Cassette, faults_path: str) -> None:

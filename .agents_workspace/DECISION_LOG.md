@@ -228,3 +228,63 @@ POSIX CI legs. ruff and mypy --strict clean.
 **Decision:** (a) Checkpoints go to a `<cassette>.partial` sidecar, never the cassette path. `CassetteSession._resolve_action` decides record-vs-replay by cassette file existence under `mode="once"`, so an in-place checkpoint left by a crash would be silently replayed as a complete recording — a correctness regression worse than the data loss it fixes. The sidecar is a valid cassette (inspectable, promotable by `mv`) and is unlinked on finalize. (b) Default ON at 5.0s (`--checkpoint-interval`, 0 disables), because data-loss handling is not something to leave opt-in. (c) HTTP checkpoints are gated on `_upstream_ok`, preserving ITER_01_v2's "no cassette file for a first-contact failure" rule.
 **Impact / Risk:** Recording now touches disk periodically (only when new messages arrived). A crashed run leaves a `.partial` file the user must promote by hand — deliberate, so no truncated cassette is ever mistaken for a finished one.
 **Outcome:** Verified by hard-killing a stdio recording mid-session: cassette absent, `.partial` holds the traffic. ruff + mypy strict clean; tests/unit/test_proxy_shutdown.py + tests/integration green (61 passed, 3 skipped).
+
+### Entry 16
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-20T00:00:00Z
+**Task:** Plan v3 (library mode, replay pacing, inspect/diff, lint pattern packs)
+
+**Context:** Three unspecified forks. (a) Whether v3 needs its own `SKELETON_v3`. (b) How far pluggable lint should go. (c) Whether embedded library mode implies in-process stdio replay.
+**Decision:** (a) v3 is planned as an **iterations-only family**: no `SKELETON_v3`, `ITER_01_v3` depends_on the v2 terminal artifacts `[SKELETON_v2, ITER_04_v2]`. All four features are additive over the v2 scaffold — no new subsystem, no transport change, and no cassette-schema change (`format_version` stays 2) — so a fresh self-contained skeleton would restate v2 verbatim. (b) User chose TOML pattern packs only (asked via AskUserQuestion); a Python `Rule` API is deferred on the SKILL's terms and named in ITER_04_v3's Out of MVP scope, with the reason recorded (public contract to keep semver-stable + executing third-party code on a security surface). (c) In-process stdio replay is deferred on cost/benefit, not declared impossible (an earlier draft of this entry overstated it): it is feasible behind an optional `mcp-cassette[sdk]` extra — the invariant bans a *runtime* SDK dep, not an optional extra — but only for agents wired directly against the SDK's `ClientSession`, since anything configured by JSON `command`/`args` spawns a subprocess with no stream seam. It buys ~30-50 ms per test and debugger reachability, for a second replay code path. Library mode for stdio therefore returns a command list, same as the fixture; only HTTP gets an in-process server, because an HTTP config carries no command and something must already be listening.
+**Impact / Risk:** v3 planning docs point across a version boundary for §03 and rely on `SKELETON_v2` staying accurate; if a later v3 iteration reshapes the scaffold, that iteration must introduce the skeleton instead of amending v2's. ITER_02_v3 knowingly adds a documented exception to the "no wall-clock reads in the response path" invariant, gated behind an opt-in default-off flag.
+**Outcome:** Four artifacts written to `.agents_workspace/planning/v3/` on branch `docs/planning-v3`. No source changes yet.
+
+### Entry 17
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-21T00:00:00Z
+**Task:** Implement the v3 plan family (ITER_01_v3 .. ITER_04_v3)
+
+**Context:** The global CLAUDE.md rule is "do not write or run tests unless asked". Each v3 iteration's §04 specifies a named test file with an enumerated case list, and `fail_under = 99` gates the repo — new modules with no tests would fail the build the plan itself demands.
+**Decision:** Wrote the tests each iteration specifies, and only those. The user's instruction was "implement all v3 plans", and the test list is part of the plan spec, so implementing it is execution rather than unrequested test authoring. Six new test files (`test_library_api`, `test_pacing`, `test_diffing`, `test_inspect_views`, `test_lint_packs`, `test_lint_project_config`, `test_lint_regression`, plus five integration files) and two added system-layer cases.
+**Impact / Risk:** The diff is roughly half tests. If the intent was source-only, those files are separable — no source depends on them.
+**Outcome:** 369 passed, 3 skipped; coverage 99% total with every new module at 100%.
+
+### Entry 18
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-21T00:00:00Z
+**Task:** Iteration sequencing within one working session
+
+**Context:** ITER_01_v3 changes `CassetteSession.__init__` and `use_cassette`'s signature; ITER_02_v3 adds a `pace=` parameter to both. Implementing strictly in order means writing those signatures twice.
+**Decision:** Landed ITER_02's `pace=` plumbing (`cassette.PaceConfig`, the session/plugin/CLI parameters) during the ITER_01 pass, so each signature was written once. The final state is identical to a strict-order run; only the edit order differs, and everything landed in the same session.
+**Impact / Risk:** No intermediate commit represents "ITER_01 only". If the iterations need to land as separate reviewable commits, this diff must be split by hand.
+**Outcome:** All four iterations complete; ruff, ruff format, and mypy strict clean.
+
+### Entry 19
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-21T00:00:00Z
+**Task:** `--select` versus `--ignore` when both name a rule
+
+**Context:** ITER_04_v3 §04 decision 4 says "`--select` wins over `--ignore` when a rule id appears in both, and the run prints a note". v2's engine computed `[r for r in (rules or RULE_IDS) if r not in ignore]`, so `--select R001 --ignore R001` produced an empty rule set.
+**Decision:** When `--select`/`rules` is given it now defines the enabled set outright and `ignore` is not subtracted from it; the conflict prints `note: rule <id> is both selected and ignored; selection wins`. This is a **behavior change** to `lint.run(rules=..., ignore=...)`, not just to the CLI.
+**Impact / Risk:** A caller relying on the old subtraction gets more rules than before. It is the safer direction on a security surface — a contradictory pair now runs the rule and says so, rather than silently gating on nothing — and it is recorded in the changelog under Changed.
+**Outcome:** Covered by `tests/unit/test_lint_project_config.py::test_select_beats_ignore_and_prints_a_note`.
+
+### Entry 20
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-21T00:00:00Z
+**Task:** Where pacing is paid when a fault also fires on HTTP
+
+**Context:** ITER_02_v3 pins "pace, then fault", but the HTTP server's `_serve_exchange` also paces each emission, and `delay`/`disconnect(after_response=True)` reach it after `_apply_fault` has already run. A naive implementation pays the request-to-response gap twice.
+**Decision:** `_respond_matched` pays that gap once before dispatching a non-`timeout` fault and then passes `prev=None` into `_serve_exchange`, so the gap is not paid again. Consequence: for an SSE exchange with a fault, the first event is spaced by the recorded request-to-*response* gap rather than the request-to-first-*event* gap. Total elapsed is correct; only the internal attribution differs, and only in the fault+SSE+pacing combination.
+**Impact / Risk:** A test asserting exact first-event timing under a `delay` fault on an SSE exchange would see the response gap, not the notification gap. Nothing asserts that today.
+**Outcome:** `tests/integration/test_replay_pacing.py` verifies additivity for `delay` and no sleep for `timeout`; `tests/integration/test_http_pacing.py` verifies unfaulted SSE spacing.

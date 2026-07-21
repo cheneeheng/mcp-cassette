@@ -10,22 +10,17 @@ from __future__ import annotations
 
 import difflib
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .patterns import INJECTION_PATTERNS
+from .packs import PatternMatch, PatternSet
 
 Severity = Literal["warning", "error"]
 
 RULE_IDS = ("R001", "R002", "R003", "R004")
-
-_COMPILED = [
-    (label, re.compile(pattern, flags)) for label, pattern, flags in INJECTION_PATTERNS
-]
 
 REDACTED_MARKER = "REDACTED"
 """The default redaction replacement; redacted surfaces are skipped, not matched."""
@@ -76,25 +71,29 @@ class ResultText:
     locator: str
 
 
-def match_injection(text: str) -> list[str]:
-    """Labels of every injection pattern the text matches."""
-    return [label for label, regex in _COMPILED if regex.search(text)]
+def rule_r001(
+    tools: list[ToolSurface], patterns: PatternSet | None = None
+) -> list[LintFinding]:
+    """Instruction injection in tool descriptions (error).
 
-
-def rule_r001(tools: list[ToolSurface]) -> list[LintFinding]:
-    """Instruction injection in tool descriptions (error)."""
+    Iterates the :class:`PatternSet` rather than a module-level list, so a pack
+    pattern fires here with its own id and severity while a bundled pattern still
+    emits ``R001`` with the wording it has always had.
+    """
+    patterns = patterns or PatternSet()
     findings: list[LintFinding] = []
     for tool in tools:
         if tool.description is None or tool.description == REDACTED_MARKER:
             continue
-        for label in match_injection(tool.description):
+        for hit in patterns.match(tool.description, "description"):
             findings.append(
                 LintFinding(
-                    rule="R001",
-                    severity="error",
-                    message=(
+                    rule=hit.rule_id or "R001",
+                    severity=hit.severity or "error",
+                    message=hit.message
+                    or (
                         f'tool "{tool.name}": description matches injection '
-                        f"pattern ({label})"
+                        f"pattern ({hit.label})"
                     ),
                     locator=f"{tool.locator_base}/description",
                     tool=tool.name,
@@ -188,27 +187,35 @@ def rule_r003(tool_lists: list[list[ToolSurface]]) -> list[LintFinding]:
     return findings
 
 
-def rule_r004(results: list[ResultText]) -> list[LintFinding]:
+def rule_r004(
+    results: list[ResultText], patterns: PatternSet | None = None
+) -> list[LintFinding]:
     """Instruction-shaped tool result text — data trying to be instructions.
 
     Warning, not error: result text legitimately quotes such phrases more often
     than descriptions do.
     """
+    patterns = patterns or PatternSet()
     findings: list[LintFinding] = []
     for result in results:
         if result.text == REDACTED_MARKER:
             continue
-        for label in match_injection(result.text):
+        for hit in patterns.match(result.text, "result"):
             findings.append(
                 LintFinding(
-                    rule="R004",
-                    severity="warning",
-                    message=(
-                        f"tools/call result text matches injection pattern ({label})"
-                        + (f' — tool "{result.tool}"' if result.tool else "")
-                    ),
+                    rule=hit.rule_id or "R004",
+                    severity=hit.severity or "warning",
+                    message=_result_message(hit, result),
                     locator=result.locator,
                     tool=result.tool,
                 )
             )
     return findings
+
+
+def _result_message(hit: PatternMatch, result: ResultText) -> str:
+    if hit.message is not None:
+        return hit.message
+    return f"tools/call result text matches injection pattern ({hit.label})" + (
+        f' — tool "{result.tool}"' if result.tool else ""
+    )

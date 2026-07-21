@@ -1,0 +1,26 @@
+# A starter mcp-cassette lint pattern pack. Copy it, rename the ids, edit the regexes.
+#
+#   mcp-cassette lint demo.mcp.json --pattern-pack examples/lint-pack.toml
+#
+# Or make it the project default in pyproject.toml:
+#
+#   [tool.mcp_cassette.lint]
+#   pattern_packs = ["examples/lint-pack.toml"]
+
+version = 1
+
+[[patterns]]
+id = "P001"
+label = "exfiltrate-env"
+regex = '\b(?:env|environ|\.env)\b[^.\n]{0,40}\b(?:send|post|upload|exfiltrat\w*)\b'
+flags = ["i"]
+severity = "error"
+surfaces = ["description"]
+message = "description describes sending environment variables off-host"
+
+[[patterns]]
+id = "P002"
+label = "internal-hostname"
+regex = '\b[\w.-]+\.(?:internal|corp|local)\b'
+flags = ["i"]
+severity = "warning"

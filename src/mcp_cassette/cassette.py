@@ -146,6 +146,29 @@ class MatchConfig(BaseModel):
     rewrite_protocol_version: bool = False
 
 
+class PaceConfig(BaseModel):
+    """Whether and how replay reproduces the recorded inter-message latency.
+
+    Lives beside :class:`MatchConfig` for the same reason: it is replay policy that
+    must serialize and cross a process boundary. Off by default — with
+    ``mode="none"`` the response path performs no sleep and reads no clock.
+
+    Attributes:
+        mode: ``recorded`` replays the recorded ``t_offset_ms`` gaps; ``none``
+            (default) answers instantly.
+        scale: Multiplier on every recorded gap; must be greater than zero
+            (``0`` would be indistinguishable from ``mode="none"`` but reads as a
+            mistake, so it is rejected rather than silently accepted).
+        cap_ms: Per-gap upper bound in milliseconds; ``0`` means uncapped. The
+            default keeps one pathological recorded pause — a 40-second human
+            think-time between interactive calls — from looking like a hung CI job.
+    """
+
+    mode: Literal["none", "recorded"] = "none"
+    scale: float = Field(default=1.0, gt=0)
+    cap_ms: int = Field(default=5000, ge=0)
+
+
 class RedactionRule(BaseModel):
     """A rule scrubbing sensitive values from payloads at record time.
 

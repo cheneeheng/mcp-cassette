@@ -11,8 +11,8 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .cassette import MatchConfig
-from .session import CassetteSession, Mode
+from .cassette import MatchConfig, PaceConfig
+from .session import CassetteSession, Mode, _validate_mode, resolve_mode
 
 try:
     import pytest
@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from _pytest.config.argparsing import Parser
     from _pytest.fixtures import FixtureRequest
 
-_VALID_MODES = ("once", "none", "all", "new_episodes")
 _SANITIZE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
@@ -47,25 +46,23 @@ def pytest_configure(config: Config) -> None:
     config.addinivalue_line(
         "markers",
         "mcp_cassette(mode=, cassette=, ordering=, ignore_params=, "
-        "rewrite_protocol_version=): configure the mcp_cassette fixture.",
+        "rewrite_protocol_version=, pace=, pace_scale=, pace_cap_ms=): "
+        "configure the mcp_cassette fixture.",
     )
 
 
 def _resolve_mode(marker_kwargs: dict[str, Any], config: Config) -> Mode:
     # Precedence: env var > marker > ini > "once". Env is read here, at fixture setup
-    # time, and nothing is cached module-level, so monkeypatch-set env behaves.
-    env = os.environ.get("MCP_CASSETTE_MODE")
-    if env:
-        mode = env
-    elif "mode" in marker_kwargs:
-        mode = marker_kwargs["mode"]
-    else:
-        mode = str(config.getini("mcp_cassette_mode")) or "once"
-    if mode not in _VALID_MODES:
-        raise ValueError(
-            f"invalid mcp_cassette mode {mode!r}; expected one of {_VALID_MODES}"
-        )
-    return mode  # type: ignore[return-value]
+    # time, and nothing is cached module-level, so monkeypatch-set env behaves. What
+    # counts as a valid mode is delegated to session.resolve_mode so the fixture and
+    # the library door cannot drift; only the tier names are local.
+    if os.environ.get("MCP_CASSETTE_MODE"):
+        return resolve_mode()
+    if "mode" in marker_kwargs:
+        return _validate_mode(marker_kwargs["mode"], "marker mode=")
+    return _validate_mode(
+        str(config.getini("mcp_cassette_mode")) or "once", "ini mcp_cassette_mode"
+    )
 
 
 def _cassette_path(request: FixtureRequest, marker_kwargs: dict[str, Any]) -> Path:
@@ -89,6 +86,16 @@ def _match_config(marker_kwargs: dict[str, Any]) -> MatchConfig:
     )
 
 
+def _pace_config(marker_kwargs: dict[str, Any]) -> PaceConfig | None:
+    if "pace" not in marker_kwargs:
+        return None
+    return PaceConfig(
+        mode=marker_kwargs["pace"],
+        scale=float(marker_kwargs.get("pace_scale", 1.0)),
+        cap_ms=int(marker_kwargs.get("pace_cap_ms", 5000)),
+    )
+
+
 if pytest is not None:  # pragma: no branch — pytest is always present in the test env
 
     @pytest.fixture
@@ -108,6 +115,7 @@ if pytest is not None:  # pragma: no branch — pytest is always present in the 
             mode=mode,
             cassette_path=cassette_path,
             match=_match_config(marker_kwargs),
+            pace=_pace_config(marker_kwargs),
             report_path=report_path,
         )
         yield session

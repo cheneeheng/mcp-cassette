@@ -62,6 +62,24 @@ That enables `R002`, which reports a unified diff of the drifted tool surface.
 
 > Heuristic pattern rules, not a guarantee. Treat a clean lint as "no known smells".
 
+### The two-step gate
+
+Lint with the project's own pattern packs, then diff tool surfaces. Each step gates on
+its own exit code, so a failure tells you which one fired:
+
+```yaml
+- name: Lint cassettes with project packs
+  run: uv run mcp-cassette lint tests/cassettes/search.mcp.json --format json
+- name: Fail on a changed server surface
+  run: uv run mcp-cassette diff tests/cassettes/search.mcp.json fresh.mcp.json --tools-only
+```
+
+The first step reads `[tool.mcp_cassette.lint]` from your `pyproject.toml`, so the CI
+command stays generic while meaning something project-specific — see
+[Lint with your own pattern packs](../how-to/lint-pattern-packs.md). The second exits `5`
+when tool descriptions or schemas moved; see
+[Inspect and diff](../how-to/inspect-and-diff.md) for how it differs from `R002`.
+
 ## Reviewing cassette changes
 
 Cassettes are JSON with stable key order and two-space indentation, so `git diff` on them

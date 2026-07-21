@@ -24,6 +24,7 @@ from ..cassette import (
     Cassette,
     MatchConfig,
     Message,
+    PaceConfig,
     RedactionRule,
     default_redaction_rules,
 )
@@ -31,6 +32,7 @@ from ..matching import Matcher
 from ..record.pump import buffered_lines, pump_lines
 from ..record.recorder import SessionRecorder
 from ..report import write_report
+from .pacing import Pacer
 
 
 class NewEpisodesProxy:
@@ -45,6 +47,7 @@ class NewEpisodesProxy:
         redaction: list[RedactionRule] | None = None,
         include_default_redactions: bool = True,
         report_path: str | None = None,
+        pace: PaceConfig | None = None,
     ) -> None:
         """Initialize the proxy.
 
@@ -56,6 +59,9 @@ class NewEpisodesProxy:
             redaction: Additional redaction rules for newly recorded messages.
             include_default_redactions: Whether to prepend the default rule set.
             report_path: Optional path for a JSON session report.
+            pace: Optional pacing configuration. Applies to replayed hits only —
+                fall-through misses go to the real server and are inherently
+                live-timed.
         """
         self.cassette = cassette
         self.cassette_path = cassette_path
@@ -63,6 +69,7 @@ class NewEpisodesProxy:
         self.config = match or MatchConfig()
         self.report_path = report_path
         self._matcher = Matcher(cassette, self.config)
+        self._pacer = Pacer(pace)
         rules: list[RedactionRule] = []
         if include_default_redactions:
             rules.extend(default_redaction_rules())
@@ -132,12 +139,17 @@ class NewEpisodesProxy:
         payload = exchange.response.payload
         resp: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
         resp["id"] = request_obj.get("id")
+        prev: Message | None = exchange.request
+        await self._pacer.wait(prev, exchange.response)
+        prev = exchange.response
         await self._emit(client_out, (json.dumps(resp) + "\n").encode("utf-8"))
         for note in exchange.notifications:
             if isinstance(note.payload, dict):
+                await self._pacer.wait(prev, note)
                 await self._emit(
                     client_out, (json.dumps(note.payload) + "\n").encode("utf-8")
                 )
+            prev = note
 
     def _finalize(self) -> None:
         appended = self._recorder.build().messages

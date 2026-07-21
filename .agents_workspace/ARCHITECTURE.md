@@ -6,11 +6,13 @@ show what exists today; the Key Decisions log carries the durable "why".
 
 ## System context
 
-Where the library sits between an agent test suite and a real MCP server.
+Where the library sits between its three callers and a real MCP server.
 
 ```mermaid
 flowchart LR
     suite(["Agent test suite (pytest)"]) -->|"mcp_cassette fixture / marker"| cass["mcp-cassette"]
+    code(["Plain Python (harness, notebook, benchmark)"]) -->|"use_cassette()"| cass
+    op(["Operator shell"]) -->|"record / serve / inspect / diff / lint"| cass
     cass -->|"record: proxy in front of"| server["Real MCP server (stdio or HTTP)"]
     cass -->|"replay: mock, no server"| suite
     cass <-->|"read / write"| file[("Cassette JSON (+ .faults.json)")]
@@ -18,13 +20,15 @@ flowchart LR
 
 ## Components
 
-Internal modules, grouped by record path, replay path, and shared core.
+Internal modules, grouped by record path, replay path, read-only analysis, and core.
 
 ```mermaid
 flowchart TB
     cli["cli.py / __main__"] --> rec
     cli --> rep
-    fixture["pytest_plugin.py"] --> session["session.py<br/>(mode -> command)"]
+    cli --> tools
+    fixture["pytest_plugin.py"] --> session["session.py<br/>resolve_mode, mode -> command,<br/>use_cassette()"]
+    library["plain Python caller"] --> session
     session --> report["report.py<br/>(sidecar)"]
 
     subgraph rec["Record"]
@@ -37,22 +41,37 @@ flowchart TB
     subgraph rep["Replay"]
         rserver["replay/server.py<br/>ReplayServer"] --> matching["matching.py<br/>Exchanges"]
         rserver --> faults["replay/faults.py"]
+        rserver --> pacing["replay/pacing.py<br/>Pacer (opt-in)"]
         rserver --> sreq["replay/server_requests.py<br/>sampling / elicitation"]
         rserver --> newep["replay/new_episodes.py"]
         httpserver["transports/http/server.py"] --> matching
+        httpserver --> pacing
+    end
+
+    subgraph tools["Read-only analysis"]
+        diffing["diffing.py<br/>diff_cassettes"]
+        lint["lint/engine + rules<br/>R001-R004"]
+        packs["lint/packs.py<br/>TOML pattern packs,<br/>pyproject config"]
+        packs --> lint
+        lint --> diffing
     end
 
     subgraph core["Core"]
         cassette["cassette.py<br/>schema + redaction + IO"]
         signals["_signals.py"]
         stdio["_stdio.py<br/>unbuffered"]
-        lint["lint/*<br/>engine, patterns, rules"]
     end
 
+    session -->|"in-process for HTTP only;<br/>stdio gets a subprocess command"| rep
     recorder --> cassette
     matching --> cassette
     faults --> cassette
+    pacing --> cassette
+    diffing --> cassette
 ```
+
+`diffing.py` depends on lint only for `latest_tools`, the shared tool-surface
+extractor, so `diff` and rule R002 can never disagree about what a tool surface is.
 
 ## Record flow
 
@@ -76,53 +95,70 @@ sequenceDiagram
 
 ## Replay flow
 
-Answers from the recording; no server, no network, no wall-clock in the path.
+Answers from the recording; no server, no network, and no wall-clock unless paced.
 
 ```mermaid
 sequenceDiagram
     participant A as Agent
     participant V as ReplayServer
     participant M as matching.py
+    participant P as Pacer
     participant C as Cassette
     A->>V: JSON-RPC request line
     V->>M: match request per MatchConfig (id ignored)
     M->>C: locate Exchange
     C-->>V: recorded response + anchored notifications
+    V->>P: wait(previous, current)
+    Note over P: no-op when pacing off (default):<br/>no sleep, no clock read
+    P-->>V: recorded gap elapsed
     V-->>A: response with re-stamped id
+    Note over V: pace precedes faults, so an injected delay is additive
     Note over V: server-initiated requests emitted with recorded msg_id
     Note over V: unmatched request -> exit code 3
 ```
 
 ## Data model
 
-Pydantic v2 schema. Faults live in a separate overlay and never mutate the cassette.
+Pydantic v2 schema. Only `Cassette` is persisted by us; overlays and configs sit
+beside it and never mutate it.
 
 ```mermaid
 erDiagram
     Cassette ||--o{ Message : contains
     Cassette ||--|| MatchConfig : configures
+    Cassette ||--|| PaceConfig : configures
     Cassette ||--o{ RedactionRule : "redacts with"
     FaultOverlay ||--o{ Fault : holds
     Fault ||--|| FaultTarget : targets
     FaultOverlay }o..|| Cassette : "overlays (by path)"
 
     Cassette {
-        int format_version
+        int format_version "2 since v0.2.0"
         string transport
         string server_url
     }
     Message {
         string kind
         string channel
-        float ts_offset
+        int t_offset_ms "replayed only when paced"
     }
     MatchConfig {
         string ordering "per_method|strict|none"
+    }
+    PaceConfig {
+        string mode "none|recorded"
+        float scale
+        int cap_ms "0 = uncapped"
     }
     Fault {
         string type "delay|timeout|error|malformed|disconnect"
     }
 ```
+
+Read-only outputs - `LintReport`/`LintFinding` and `CassetteDiff` - are report models,
+never written into a cassette. `PatternRule` and `ProjectLintConfig` are loaded from
+user TOML (a pattern pack, or `[tool.mcp_cassette.lint]` in `pyproject.toml`) and are
+never persisted by us.
 
 ## Key Decisions
 
@@ -242,3 +278,81 @@ heuristic rules, `--baseline` drift detection, and `--format json`. Exposed
 programmatically as `LintFinding` and `LintReport`.
 **Consequences:** CI can gate on recorded-content drift. Rules are heuristic, not a
 security guarantee.
+
+### 2026-07-21 - v0.3.0: a third front door, and why stdio still returns a command
+
+**Status:** Accepted
+**Context:** Everything behind the fixture was already pytest-free, but a harness that
+is not a pytest suite - a notebook, a benchmark runner, another test framework - had
+no supported entry point. The open question was whether "library mode" should also
+mean replaying stdio in-process, without a subprocess.
+**Decision:** Add `use_cassette()`, a context manager over the same `CassetteSession`,
+plus `resolve_mode()` which the fixture now delegates its mode validation to so the two
+doors cannot drift. For stdio it returns a **command list**, exactly as the fixture
+does, because an MCP stdio server *is* a program the client launches and the only seam
+is which command it launches. Only Streamable HTTP gets an in-process server, because
+an HTTP config carries no command and something must already be listening before the
+agent connects.
+**Consequences:** Three callers share one code path. In-process stdio replay stays
+deferred, not blocked: it would need SDK-shaped types behind an optional
+`mcp-cassette[sdk]` extra and would only serve agents wired directly against
+`ClientSession`, so anything configured by JSON `command`/`args` could not use it.
+Library callers get their session report in a temp directory rather than beside the
+cassette, and an exception inside the block skips report checks so the real failure is
+never buried under a replay-miss error.
+
+### 2026-07-21 - v0.3.0: replay pacing is a deliberate, default-off exception to the no-clock invariant
+
+**Status:** Accepted, amends "no wall-clock reads in the response path"
+**Context:** `t_offset_ms` has been recorded since v0.1.0 and always ignored. Instant
+replay hides a class of agent bug - timeout handling, progress-stream UX, retry and
+backoff logic - that only appears when the server answers in 800 ms instead of 0.
+**Decision:** Add `replay/pacing.py` (`Pacer`) and `PaceConfig`, wired at every
+emission point on both transports including SSE inter-event spacing. Off by default;
+with pacing off the pacer returns without sleeping and without reading a clock, which
+a unit test enforces rather than a comment. Pacing precedes fault injection, so a
+`delay` fault is additive and a `timeout` spends no sleep before its silence. Gaps are
+replayed, never the absolute recorded timeline, and each gap is capped at 5000 ms by
+default so one interactive human pause cannot look like a hung CI job.
+**Consequences:** The standing invariant now reads "...unless pacing is explicitly
+enabled", recorded here and in CLAUDE.md so a future reader does not mistake it for an
+accident. Paced tests trade determinism for latency fidelity by choice. Under
+`new_episodes` only replayed hits are paced - fall-through misses are inherently
+live-timed.
+
+### 2026-07-21 - v0.3.0: lint extensibility is declarative TOML, never a Python plugin API
+
+**Status:** Accepted
+**Context:** The bundled rules catch generic smells but not project-specific ones - a
+vendor name, an internal hostname, domain-specific exfiltration phrasing. The obvious
+design is a `Rule` protocol with `register_rule()` and entry-point discovery.
+**Decision:** Rejected the Python tier. Add `lint/packs.py`: TOML pattern packs
+(`PatternRule`, `PatternSet`) with their own ids and severities, plus
+`[tool.mcp_cassette.lint]` discovery from the nearest `pyproject.toml`
+(`ProjectLintConfig`). Pack regexes are compiled, never evaluated, and no code is
+imported from a pack. Packs extend the bundled set and cannot replace it - there is no
+`--no-bundled` flag, because "disable all built-in security rules" is an attractive
+nuisance on this surface.
+**Consequences:** A public rule contract that would need semver stability forever is
+avoided, and `lint` never executes third-party code on a supply-chain-security surface.
+The cost is that a project needing non-regex logic has no escape hatch. Bundled
+R001-R004 findings stay byte-identical when no pack is configured, pinned by a
+regression test, so extensibility did not move the existing rules.
+
+### 2026-07-21 - v0.3.0: diff is descriptive, R002 is the gate
+
+**Status:** Accepted
+**Context:** Re-recording after a server upgrade produces a cassette whose interesting
+content is the delta, but `git diff` on the raw JSON drowns it in re-stamped ids and
+shifted offsets. Lint's R002 already compares tool surfaces against a baseline, so the
+two overlap.
+**Decision:** Add `diffing.py` and a `diff OLD NEW` subcommand that compares metadata,
+per-method counts, tool surfaces, and the exchange sequence - ignoring exactly what
+replay ignores (ids, `t_offset_ms`, `seq`). Keep the overlap and make the split
+explicit: **R002 is a gate** (error severity, tool surfaces only, exit 4) while
+**`diff` is descriptive** (everything that changed, no severity, exit 5 for a human to
+read). Both draw tool surfaces from one shared extractor.
+**Consequences:** A new exit code 5 joins the contract (0 clean, 2 usage/load, 3 replay
+miss, 4 lint findings). CI can gate on either or both, and a failure names which fired.
+Neither command replaces the other, which the guide states in one line so the overlap
+does not read as duplication.
