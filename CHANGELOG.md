@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - 2026-07-21
 
-Three additions, all opt-in: a library front door, replay pacing, richer
+Four additions, all opt-in: a library front door, replay pacing, richer
 inspect/diff, and per-project lint packs. Every existing command, flag, and
 export behaves exactly as in 0.2.x when the new flags are absent, and the
 cassette `format_version` stays 2.
