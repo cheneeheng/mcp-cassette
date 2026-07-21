@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..cassette import Cassette
+from .packs import ProjectLintConfig, build_pattern_set
 from .rules import (
     REDACTED_MARKER,
     RULE_IDS,
@@ -34,20 +35,26 @@ def run(
     rules: list[str] | None = None,
     *,
     ignore: list[str] | None = None,
+    packs: list[str | os.PathLike[str]] | None = None,
+    config: ProjectLintConfig | None = None,
 ) -> LintReport:
     """Lint a cassette, returning a deterministic report.
 
     Args:
         cassette: Path to the cassette to lint.
         baseline: Optional older cassette for drift comparison (enables R002).
-        rules: Rule ids to run (default: all bundled rules).
+        rules: Rule ids to run (default: all bundled rules plus every pack rule).
         ignore: Rule ids to skip.
+        packs: Pattern pack files, additive to those named by ``config``.
+        config: Resolved project configuration.
 
     Returns:
         The :class:`LintReport`, findings sorted by locator (then rule id) so
         ``--format json`` output is byte-identical for identical inputs.
     """
-    report, _ = run_with_notes(cassette, baseline, rules, ignore=ignore)
+    report, _ = run_with_notes(
+        cassette, baseline, rules, ignore=ignore, packs=packs, config=config
+    )
     return report
 
 
@@ -57,33 +64,46 @@ def run_with_notes(
     rules: list[str] | None = None,
     *,
     ignore: list[str] | None = None,
+    packs: list[str | os.PathLike[str]] | None = None,
+    config: ProjectLintConfig | None = None,
 ) -> tuple[LintReport, list[str]]:
     """Like :func:`run`, also returning note-level lines for text output.
 
     Notes record skipped surfaces (e.g. redacted descriptions, which are never
-    pattern-matched so redaction cannot manufacture findings).
+    pattern-matched so redaction cannot manufacture findings) and contradictory
+    rule selection.
     """
-    enabled = [r for r in (rules or list(RULE_IDS)) if r not in (ignore or [])]
+    config = config or ProjectLintConfig()
+    all_packs: list[str | os.PathLike[str]] = [*config.pattern_packs, *(packs or [])]
+    pattern_set = build_pattern_set(all_packs)
+    selected = list(rules) if rules else [*RULE_IDS, *pattern_set.rule_ids]
+    ignored = list(ignore or [])
+    notes = [
+        f"note: rule {rule_id} is both selected and ignored; selection wins"
+        for rule_id in selected
+        if rule_id in ignored
+    ]
+    enabled = selected if rules else [r for r in selected if r not in ignored]
     loaded = Cassette.load(cassette)
     tool_lists, results = extract_surfaces(loaded)
     tools = [tool for tools in tool_lists for tool in tools]
-    notes = [
+    notes += [
         f'note: skipped redacted description of tool "{t.name}" '
         f"({t.locator_base}/description)"
         for t in tools
         if t.description == REDACTED_MARKER
     ]
     findings: list[LintFinding] = []
-    if "R001" in enabled:
-        findings += rule_r001(tools)
+    # Pack rules live on the same surfaces as the bundled patterns but carry their
+    # own ids, so enabling is filtered per surface rather than per rule function.
+    findings += rule_r001(tools, pattern_set.filtered(enabled, "R001" in enabled))
     if "R002" in enabled and baseline is not None:
         baseline_lists, _ = extract_surfaces(Cassette.load(baseline))
         baseline_tools = [tool for tools in baseline_lists for tool in tools]
         findings += rule_r002(tools, baseline_tools)
     if "R003" in enabled:
         findings += rule_r003(tool_lists)
-    if "R004" in enabled:
-        findings += rule_r004(results)
+    findings += rule_r004(results, pattern_set.filtered(enabled, "R004" in enabled))
     findings.sort(key=lambda f: (f.locator, f.rule))
     report = LintReport(
         cassette=Path(cassette),
@@ -156,6 +176,22 @@ def extract_surfaces(
                             )
                         )
     return tool_lists, results
+
+
+def latest_tools(cassette: Cassette) -> dict[str, ToolSurface]:
+    """The cassette's tool surfaces by name, last seen winning.
+
+    The dedup rule R002 uses, shared with ``inspect --tools`` and ``diff`` so the
+    three surfaces can never disagree about what a tool surface is.
+
+    Args:
+        cassette: The loaded cassette.
+
+    Returns:
+        Tool surfaces keyed by tool name.
+    """
+    tool_lists, _ = extract_surfaces(cassette)
+    return {tool.name: tool for tools in tool_lists for tool in tools}
 
 
 def _extract_tools(tools: list[Any], message_index: int) -> list[ToolSurface]:

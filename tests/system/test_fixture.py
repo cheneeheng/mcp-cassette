@@ -116,6 +116,52 @@ def test_marker_overrides_ini(pytester: pytest.Pytester, monkeypatch) -> None:  
     pytester.runpytest_inprocess().assert_outcomes(passed=1)
 
 
+def test_fixture_and_library_agree_on_the_env_mode(
+    pytester: pytest.Pytester,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    # The two front doors must never drift on what MCP_CASSETTE_MODE means.
+    monkeypatch.setenv("MCP_CASSETTE_MODE", "none")
+    pytester.makepyfile(
+        """
+        from mcp_cassette import resolve_mode
+
+        def test_mode(mcp_cassette):
+            assert mcp_cassette.mode == resolve_mode("all") == "none"
+        """
+    )
+    pytester.runpytest_inprocess().assert_outcomes(passed=1)
+
+
+def test_marker_pacing_reaches_the_serve_command(
+    pytester: pytest.Pytester,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.mcp_cassette(
+            mode="none", pace="recorded", pace_scale=0.2, pace_cap_ms=1000
+        )
+        def test_pace(mcp_cassette, tmp_path):
+            cassette = tmp_path / "c.mcp.json"
+            cassette.write_text(
+                '{"format_version": 2, "recorded_at": "2026-07-20T00:00:00Z",'
+                ' "messages": []}'
+            )
+            mcp_cassette.cassette_path = cassette
+            cmd = mcp_cassette.server_command(["python", "-m", "server"])
+            assert "--pace" in cmd
+            assert cmd[cmd.index("--pace") + 1] == "recorded"
+            assert cmd[cmd.index("--pace-scale") + 1] == "0.2"
+            assert cmd[cmd.index("--pace-cap-ms") + 1] == "1000"
+        """
+    )
+    pytester.runpytest_inprocess().assert_outcomes(passed=1)
+
+
 def test_parametrized_paths_are_unique(pytester: pytest.Pytester, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
     pytester.makepyfile(

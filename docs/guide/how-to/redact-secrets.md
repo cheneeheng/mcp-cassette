@@ -77,3 +77,7 @@ rules = [
 Redaction protects *your* secrets. Linting checks the *other* direction — whether the
 recorded tool descriptions and results carry prompt-injection smells before they reach a
 model. See [CI pipeline](../operations/ci.md#lint-cassettes-before-they-reach-a-model).
+
+Redaction and pattern packs are often confused: redaction hides **values** at record
+time, while a pack detects **phrasing** at lint time. Different jobs — see
+[Lint with your own pattern packs](lint-pattern-packs.md).

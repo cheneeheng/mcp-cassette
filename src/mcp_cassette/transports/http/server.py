@@ -27,11 +27,13 @@ from ...cassette import (
     FaultOverlay,
     MatchConfig,
     Message,
+    PaceConfig,
     default_redaction_rules,
 )
 from ...matching import Exchange, Matcher
 from ...record.recorder import SessionRecorder
 from ...replay.faults import Injector, make_error_response
+from ...replay.pacing import Pacer
 from ...replay.server import UNMATCHED_CODE, apply_protocol_version
 from ...replay.server_requests import ServerRequestTracker
 from ...report import write_report
@@ -53,6 +55,7 @@ class HttpReplayServer:
         report_path: str | None = None,
         fallthrough_url: str | None = None,
         cassette_path: str | None = None,
+        pace: PaceConfig | None = None,
     ) -> None:
         """Initialize the replay server.
 
@@ -65,6 +68,8 @@ class HttpReplayServer:
             fallthrough_url: Real server URL for ``new_episodes``: a replay miss is
                 forwarded live and the novel exchange appended to the cassette.
             cassette_path: Where the merged cassette is saved (``new_episodes``).
+            pace: Optional pacing configuration; off by default, in which case the
+                response path performs no sleep and reads no clock.
 
         Raises:
             ValueError: If the cassette's transport is not ``http`` (a stdio
@@ -82,6 +87,7 @@ class HttpReplayServer:
         self._port = port
         self._matcher = Matcher(cassette, self.config)
         self._injector = Injector(faults)
+        self._pacer = Pacer(pace)
         self._tracker = ServerRequestTracker(cassette)
         digest = hashlib.sha256(cassette.model_dump_json().encode("utf-8")).hexdigest()
         self.session_id = f"mcc-{digest[:8]}"
@@ -343,14 +349,21 @@ class HttpReplayServer:
     ) -> None:
         assert exchange.response is not None
         live_id = obj.get("id")
+        prev: Message | None = exchange.request
         if fault is not None:
+            # Pace, then apply the fault: an injected delay is additive on top of
+            # the recorded latency. A timeout never responds, so it spends no
+            # pacing sleep before its silence.
+            if fault.type != "timeout":
+                await self._pacer.wait(prev, exchange.response)
+                prev = None  # the response gap is already paid
             handled = await self._apply_fault(
                 fault, exchange, live_id, responder, extra_headers, transform
             )
             if handled:
                 return
         await self._serve_exchange(
-            exchange, live_id, responder, extra_headers, transform
+            exchange, live_id, responder, extra_headers, transform, prev
         )
         self._release_get(exchange.request.seq)
 
@@ -361,6 +374,7 @@ class HttpReplayServer:
         responder: Responder,
         extra_headers: list[tuple[str, str]] | None = None,
         transform: Any = None,
+        prev: Message | None = None,
     ) -> None:
         assert exchange.response is not None
         response_msg = exchange.response
@@ -373,6 +387,7 @@ class HttpReplayServer:
             if transform is not None:
                 transform(payload)
             await self._tracker.wait_ready(response_msg.seq, ex_id)
+            await self._pacer.wait(prev, response_msg)
             await responder.send(
                 200,
                 json.dumps(payload).encode("utf-8"),
@@ -382,12 +397,15 @@ class HttpReplayServer:
             return
         # Recorded as an SSE stream -> replay the exchange's messages in seq order
         # (progress notifications before the response, exactly as captured), then
-        # close the stream. t_offset_ms is ignored — no sleeps.
+        # close the stream. Inter-event gaps are honored only when pacing is on;
+        # with pacing off t_offset_ms is ignored and there are no sleeps.
         await responder.start(
             200, content_type="text/event-stream", headers=extra_headers
         )
         for m in msgs:
             await self._tracker.wait_ready(m.seq, ex_id)
+            await self._pacer.wait(prev, m)
+            prev = m
             if m.seq == response_msg.seq:
                 payload = self._restamp(response_msg, live_id)
                 if transform is not None:
@@ -508,9 +526,12 @@ class HttpReplayServer:
         self._get_connected = True
         try:
             await responder.start(200, content_type="text/event-stream")
+            prev: Message | None = None
             while True:
                 message = await self._next_get_message()
                 await self._tracker.wait_ready(message.seq, message.exchange)
+                await self._pacer.wait(prev, message)
+                prev = message
                 if not isinstance(message.payload, dict):
                     continue  # pragma: no cover — raw messages excluded at planning
                 try:

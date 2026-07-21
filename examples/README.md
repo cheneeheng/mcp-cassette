@@ -13,6 +13,8 @@ replays.
 | `echo_http_server.py` | The same server exposed over Streamable HTTP (stdlib only): one `POST /mcp` endpoint, JSON response mode. The "remote server" for the HTTP examples. |
 | `mcp_client.py` | A tiny transport-level JSON-RPC stdio client, including answering server-initiated requests. |
 | `mcp_http_client.py` | Its Streamable HTTP twin: POSTs JSON-RPC, echoes the issued `Mcp-Session-Id`. |
+| `library_mode.py` | A runnable script using `use_cassette` — the third front door, no pytest involved. Records on the first run, replays on every run after. |
+| `lint-pack.toml` | A starter lint pattern pack: copy it, rename the ids, edit the regexes. |
 | `test_echo.py` | Four pytest examples built on the `mcp_cassette` fixture (stdio). |
 | `test_echo_http.py` | One pytest example built on `mcp_cassette.server_url` (Streamable HTTP; needs the `[http]` extra — the repo's dev group has it). |
 | `cassettes/` | The committed cassettes those tests replay, plus two for the lint demo: `tools.mcp.json` (a clean `tools/list` recording) and `injected.mcp.json` (the same recording with a deliberately poisoned tool description). |
@@ -23,6 +25,7 @@ From the repo root:
 
 ```
 uv run pytest examples/                        # replay the committed cassettes (offline, deterministic)
+uv run python examples/library_mode.py         # the library door: records once, replays thereafter
 MCP_CASSETTE_MODE=none uv run pytest examples/ # same, but forbid recording (what CI does)
 
 # refresh one cassette: delete it, then a normal run re-records just that one
@@ -215,6 +218,9 @@ mcp-cassette lint examples/cassettes/injected.mcp.json \
   --baseline examples/cassettes/tools.mcp.json             # + R002 with a unified diff
 
 mcp-cassette lint examples/cassettes/injected.mcp.json --format json   # for CI
+
+# your own rules, declaratively — packs extend the bundled set, never replace it
+mcp-cassette lint examples/cassettes/tools.mcp.json   --pattern-pack examples/lint-pack.toml
 ```
 
 Each finding carries a JSON-pointer locator into the cassette (open it and jump

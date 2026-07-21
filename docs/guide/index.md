@@ -21,10 +21,18 @@ This guide has two audiences. Do not mix them up:
   record modes, re-recording.
 - [Record and replay a remote HTTP server](how-to/remote-http.md) — `server_url`, the
   `[http]` extra.
+- [Use it as a library](how-to/use-as-a-library.md) — `use_cassette` for harnesses that
+  are not pytest suites.
 - [Inject faults](how-to/inject-faults.md) — drive a resilience matrix off one
   recording.
+- [Replay timing](how-to/replay-timing.md) — replay recorded latency when your agent's
+  timeout or retry logic depends on it.
+- [Inspect and diff cassettes](how-to/inspect-and-diff.md) — read the timeline, grep
+  payloads, compare two recordings.
 - [Redact secrets](how-to/redact-secrets.md) — what is scrubbed by default and how to
   add rules.
+- [Lint with your own pattern packs](how-to/lint-pattern-packs.md) — extend the bundled
+  rules with project-specific regexes.
 - [Troubleshooting](troubleshooting.md) — symptom to fix.
 
 ### Operators
@@ -41,8 +49,9 @@ This guide has two audiences. Do not mix them up:
 
 mcp-cassette works at the transport level (newline-delimited JSON-RPC over stdio, or
 Streamable HTTP) and treats messages semi-opaquely, so it works with any MCP client
-unmodified and never imports the `mcp` SDK at runtime. The pytest fixture never
-monkeypatches your agent: it hands you a **command list** (stdio) or a **URL** (HTTP) to
+unmodified and never imports the `mcp` SDK at runtime. There are three front doors — the
+pytest fixture, the CLI, and `use_cassette` for plain Python — and none of them
+monkeypatches your agent: each hands you a **command list** (stdio) or a **URL** (HTTP) to
 plug into the agent's MCP server configuration. On the first run that command is a
 recording proxy wrapping the real server; on every run after it is a replay server
 reading from the cassette.

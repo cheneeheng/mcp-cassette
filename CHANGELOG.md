@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-21
+
+Three additions, all opt-in: a library front door, replay pacing, richer
+inspect/diff, and per-project lint packs. Every existing command, flag, and
+export behaves exactly as in 0.2.x when the new flags are absent, and the
+cassette `format_version` stays 2.
+
+### Added
+
+- **Embedded library mode.** `use_cassette(...)` is a context manager giving
+  plain Python code — an agent harness, a notebook, a benchmark runner, a
+  non-pytest test framework — the same session the pytest fixture gets: same
+  modes, same fault matrix, same failure semantics. New exports:
+  `use_cassette`, `resolve_mode`, `CassetteSession.close()`, `CassetteError`,
+  `Mode`, and `lint_cassette`. The session report goes to a temporary directory
+  removed on exit, so no untracked JSON lands next to committed cassettes; a
+  raising `with` body propagates untouched rather than being buried under a
+  replay-miss error. `examples/library_mode.py` is runnable.
+- **Replay pacing.** `--pace recorded` replays the recorded `t_offset_ms` gaps
+  on both transports, including SSE inter-event spacing; `--pace-scale` and
+  `--pace-cap-ms` (default 5000, `0` uncapped) bound it. Also available as
+  `PaceConfig`, the `pace=`/`pace_scale=`/`pace_cap_ms=` marker arguments, and
+  `use_cassette(pace=...)`. Off by default — with pacing off the response path
+  still performs no sleep and reads no clock. Pacing precedes faults, so a
+  `delay` fault is additive and a `timeout` spends no sleep.
+- **`inspect` views.** `--timeline` (one line per message with direction, kind,
+  method, id, and payload bytes; `exch`/`chan` for http), `--tools`,
+  `--grep PATTERN`, and `--format json` with byte-stable output.
+- **`diff OLD NEW`.** Structural comparison of two cassettes — metadata, method
+  counts, tool surfaces, exchange sequence — with `--tools-only` and
+  `--format json`. Exit `0` identical, `5` differ, `2` load error. Ids,
+  `t_offset_ms`, and `seq` are never compared. Also `diff_cassettes()` and
+  `CassetteDiff` as library exports.
+- **Lint pattern packs.** `--pattern-pack PATH` loads declarative TOML rules
+  with their own ids and severities; `[tool.mcp_cassette.lint]` in
+  `pyproject.toml` makes a project's packs, selection, and `fail_on` threshold
+  the default for every invocation; `--fail-on warning` and `--no-config`.
+  Packs extend the bundled rules and never replace them, and bundled findings
+  stay byte-identical. New exports: `PatternRule`, `ProjectLintConfig`.
+  `examples/lint-pack.toml` is a starter pack. There is deliberately no Python
+  rule-plugin API — `lint` should not execute third-party code on a
+  supply-chain-security surface.
+- Guide pages: use as a library, replay timing, inspect and diff, lint pattern
+  packs. CLI reference, CI recipe, troubleshooting, and redaction pages updated.
+
+### Changed
+
+- `--select` now wins over `--ignore` when a rule id appears in both, and the
+  run prints a note naming the id (previously the id was silently dropped).
+- Mode validation is shared: the pytest fixture delegates to
+  `session.resolve_mode`, so the error message now names its source
+  (`env MCP_CASSETTE_MODE`, `marker mode=`, `ini mcp_cassette_mode`, or
+  `mode= argument`).
+
 ## [0.2.2] - 2026-07-20
 
 Documentation only; no code changes.
@@ -128,7 +182,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.1.0...v0.2.0

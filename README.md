@@ -51,6 +51,22 @@ Set via `MCP_CASSETTE_MODE` (env) > `@pytest.mark.mcp_cassette(mode=...)` > `mcp
 
 CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server.
 
+## Use it as a library
+
+Not a pytest suite? `use_cassette` is the same machinery behind a context manager — same modes, same fault matrix, same failure semantics:
+
+```python
+from mcp_cassette import use_cassette
+
+with use_cassette("cassettes/search.mcp.json", mode="once") as session:
+    cmd = session.server_command(["python", "-m", "my_server"])
+    run_my_agent(mcp_servers={"search": {"command": cmd[0], "args": cmd[1:]}})
+# clean exit -> finalize(): background server stopped, report checked,
+#               CassetteError raised on an empty recording or any replay miss
+```
+
+Mode precedence is `MCP_CASSETTE_MODE` > the `mode=` argument > `once`, so the CI invariant holds through this door too. The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable. Full page: [Use it as a library](docs/guide/how-to/use-as-a-library.md).
+
 ## Fault injection
 
 One recorded cassette drives a whole resilience matrix:
@@ -72,6 +88,17 @@ def test_agent_survives_tool_trouble(mcp_cassette, fault):
 
 Fault types: `delay`, `timeout`, `error`, `malformed`, `disconnect`. Faults live in a `FaultOverlay`; the recorded cassette is never mutated.
 
+## Replay timing
+
+Replay is instant by default. When your agent's timeout, progress-stream, or retry logic depends on *how long* the server took, replay the recorded gaps instead:
+
+```
+mcp-cassette serve demo.json --pace recorded                     # recorded latency
+mcp-cassette serve demo.json --pace recorded --pace-scale 0.2    # 5x faster
+```
+
+Also `@pytest.mark.mcp_cassette(pace="recorded", pace_scale=0.2)` and `use_cassette(..., pace=PaceConfig(mode="recorded"))`. Per-gap cap defaults to 5000 ms so one pathological recorded pause cannot look like a hung job; `--pace-cap-ms 0` opts into uncapped. A `delay` fault stacks on top of recorded latency. Full page: [Replay timing](docs/guide/how-to/replay-timing.md).
+
 ## CLI
 
 ```
@@ -80,7 +107,10 @@ mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp   # p
 mcp-cassette serve demo.json                                         # drop-in replay server (transport inferred)
 mcp-cassette serve demo.json --faults demo.faults.json               # replay with faults
 mcp-cassette inspect demo.json                                       # per-method counts + timing
+mcp-cassette inspect demo.json --timeline --grep 'tools/call'        # message timeline, payload-grepped
+mcp-cassette inspect demo.json --format json > summary.json          # deterministic, diffable
 mcp-cassette inspect demo.json --faults demo.faults.json             # dry-run: which requests a fault hits
+mcp-cassette diff old.json new.json --tools-only                     # exit 5 when the server surface moved
 ```
 
 A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — inspect it, rename it over the real path to keep it — and is removed once the recording finalizes normally. It is deliberately never written to the cassette path itself: `once` mode decides record-vs-replay by that file's existence, and a truncated cassette there would silently replay as a finished one.
@@ -95,6 +125,15 @@ mcp-cassette lint new.json --baseline tests/cassettes/old.json --format json
 ```
 
 Rules: `R001` instruction injection in a tool description (error), `R002` description/schema drift vs a baseline — the "rug pull" (error), `R003` duplicate tool names (warning), `R004` instruction-shaped tool results (warning). Exit `0` = no error-severity findings, `4` = at least one. Each finding carries a JSON-pointer locator into the cassette.
+
+Bring your own rules with a declarative TOML pattern pack — no Python plugin API, deliberately, because `lint` should never execute third-party code on a supply-chain-security surface:
+
+```
+mcp-cassette lint demo.json --pattern-pack examples/lint-pack.toml
+mcp-cassette lint demo.json --fail-on warning
+```
+
+`[tool.mcp_cassette.lint]` in `pyproject.toml` makes your packs, selection, and failure threshold the default for every invocation, so the CI command stays generic. Packs extend the bundled rules; they never replace them. Full page: [Lint with your own pattern packs](docs/guide/how-to/lint-pattern-packs.md).
 
 These are heuristic pattern rules, not a guarantee — a clean lint is absence of *known* smells, nothing more.
 

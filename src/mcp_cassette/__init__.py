@@ -14,19 +14,24 @@ from .cassette import (
     FaultTarget,
     MatchConfig,
     Message,
+    PaceConfig,
     RedactionRule,
     ServerInfo,
     UnsupportedFormatVersion,
 )
-from .lint import LintFinding, LintReport
+from .diffing import CassetteDiff, diff_cassettes
+from .lint import LintFinding, LintReport, PatternRule, ProjectLintConfig
+from .lint import run as lint_cassette
 from .record.proxy import StdioRecordingProxy
 from .replay.server import ReplayServer
-from .session import CassetteSession
+from .session import CassetteError, CassetteSession, Mode, resolve_mode, use_cassette
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 
 __all__ = [
     "Cassette",
+    "CassetteDiff",
+    "CassetteError",
     "CassetteSession",
     "Fault",
     "FaultOverlay",
@@ -35,10 +40,18 @@ __all__ = [
     "LintReport",
     "MatchConfig",
     "Message",
+    "Mode",
+    "PaceConfig",
+    "PatternRule",
+    "ProjectLintConfig",
     "RedactionRule",
     "ReplayServer",
     "ServerInfo",
     "StdioRecordingProxy",
     "UnsupportedFormatVersion",
     "__version__",
+    "diff_cassettes",
+    "lint_cassette",
+    "resolve_mode",
+    "use_cassette",
 ]

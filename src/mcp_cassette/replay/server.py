@@ -18,11 +18,12 @@ import anyio.abc
 from anyio.abc import ByteSendStream
 
 from .._stdio import stdin_stream, stdout_stream
-from ..cassette import Cassette, FaultOverlay, MatchConfig, Message
+from ..cassette import Cassette, FaultOverlay, MatchConfig, Message, PaceConfig
 from ..matching import Matcher
 from ..record.pump import buffered_lines
 from ..report import write_report
 from .faults import Injector, make_error_response, make_malformed_line
+from .pacing import Pacer
 from .server_requests import ServerRequestTracker
 
 UNMATCHED_CODE = -32001
@@ -78,6 +79,7 @@ class ReplayServer:
         match: MatchConfig | None = None,
         faults: FaultOverlay | None = None,
         report_path: str | None = None,
+        pace: PaceConfig | None = None,
     ) -> None:
         """Initialize the replay server.
 
@@ -87,12 +89,15 @@ class ReplayServer:
             faults: Optional fault overlay applied at replay time.
             report_path: Optional path to write a JSON session report (misses), used by
                 the pytest fixture to fail tests across processes.
+            pace: Optional pacing configuration; off by default, in which case the
+                response path performs no sleep and reads no clock.
         """
         self.report_path = report_path
         self.cassette = cassette
         self.config = match or MatchConfig()
         self._matcher = Matcher(cassette, self.config)
         self._injector = Injector(faults)
+        self._pacer = Pacer(pace)
         self._tracker = ServerRequestTracker(cassette)
         self._initialize_exchange = self._find_initialize_exchange()
         self._emitted_leading = False
@@ -181,7 +186,9 @@ class ReplayServer:
         # the recorded response only existed because the agent answered. A gated
         # response is finished in a deferred task so later stdin lines (the agent's
         # answer, other calls) keep being processed.
-        await self._emit_server_requests(exchange.request.seq, "during", out)
+        await self._emit_server_requests(
+            exchange.request.seq, "during", out, exchange.request
+        )
         if self._tracker.would_block(exchange.response.seq, None):
             assert self._deferred is not None  # set before any line is handled
             self._deferred.start_soon(
@@ -189,9 +196,17 @@ class ReplayServer:
             )
             return
         await self._apply_fault_and_respond(
-            fault, recorded, msg_id, exchange.notifications, out
+            fault,
+            recorded,
+            msg_id,
+            exchange.notifications,
+            out,
+            response_msg=exchange.response,
+            prev=exchange.request,
         )
-        await self._emit_server_requests(exchange.request.seq, "after", out)
+        await self._emit_server_requests(
+            exchange.request.seq, "after", out, exchange.response
+        )
 
     async def _finish_gated(
         self,
@@ -205,9 +220,17 @@ class ReplayServer:
         try:
             await self._tracker.wait_ready(exchange.response.seq, None)
             await self._apply_fault_and_respond(
-                fault, recorded, msg_id, exchange.notifications, out
+                fault,
+                recorded,
+                msg_id,
+                exchange.notifications,
+                out,
+                response_msg=exchange.response,
+                prev=exchange.request,
             )
-            await self._emit_server_requests(exchange.request.seq, "after", out)
+            await self._emit_server_requests(
+                exchange.request.seq, "after", out, exchange.response
+            )
         except _Disconnect:
             self._disconnect_requested = True
             assert self._deferred is not None
@@ -232,12 +255,18 @@ class ReplayServer:
         apply_protocol_version(self.config, obj, response)
         fault = self._injector.consult("initialize")
         await self._apply_fault_and_respond(
-            fault, response, msg_id, init.notifications, out
+            fault,
+            response,
+            msg_id,
+            init.notifications,
+            out,
+            response_msg=init.response,
+            prev=init.request,
         )
-        await self._emit_leading_notifications(out)
-        await self._emit_server_requests(None, "initialize", out)
-        await self._emit_server_requests(init.request.seq, "during", out)
-        await self._emit_server_requests(init.request.seq, "after", out)
+        await self._emit_leading_notifications(out, init.response)
+        await self._emit_server_requests(None, "initialize", out, init.response)
+        await self._emit_server_requests(init.request.seq, "during", out, init.response)
+        await self._emit_server_requests(init.request.seq, "after", out, init.response)
 
     async def _apply_fault_and_respond(
         self,
@@ -246,19 +275,25 @@ class ReplayServer:
         msg_id: str | int | None,
         notifications: list[Message],
         out: ByteSendStream,
+        response_msg: Message,
+        prev: Message | None,
     ) -> None:
+        # Order is pace, then fault: a delay fault is additive on top of recorded
+        # latency ("the server was already slow, then got slower"). A timeout never
+        # responds, so its pacing sleep is skipped rather than spent before silence.
+        if fault is not None and fault.type == "timeout":
+            return  # never respond; queue position is spent
+        await self._pacer.wait(prev, response_msg)
         if fault is None:
             await self._send(out, response_obj)
-            await self._emit_notifications(notifications, out)
+            await self._emit_notifications(notifications, out, response_msg)
             return
 
         ftype = fault.type
         if ftype == "delay":
             await anyio.sleep(fault.params.get("ms", 0) / 1000)
             await self._send(out, response_obj)
-            await self._emit_notifications(notifications, out)
-        elif ftype == "timeout":
-            return  # never respond; queue position is spent
+            await self._emit_notifications(notifications, out, response_msg)
         elif ftype == "error":
             err = make_error_response(
                 msg_id,
@@ -266,39 +301,54 @@ class ReplayServer:
                 fault.params.get("message", "mcp-cassette injected error"),
             )
             await self._send(out, err)
-            await self._emit_notifications(notifications, out)
+            await self._emit_notifications(notifications, out, response_msg)
         elif ftype == "malformed":
             strategy = fault.params.get("strategy", "truncate")
             async with self._out_lock:
                 await out.send(make_malformed_line(response_obj, strategy))
-            await self._emit_notifications(notifications, out)
+            await self._emit_notifications(notifications, out, response_msg)
         elif ftype == "disconnect":  # pragma: no branch — FaultType is exhaustive
             if fault.params.get("after_response", False):
                 await self._send(out, response_obj)
             raise _Disconnect
 
     async def _emit_notifications(
-        self, notifications: list[Message], out: ByteSendStream
+        self,
+        notifications: list[Message],
+        out: ByteSendStream,
+        prev: Message | None = None,
     ) -> None:
+        # `prev` walks forward so a burst of progress notifications keeps its
+        # recorded rhythm instead of all arriving at the response's offset.
         for note in notifications:
             if isinstance(note.payload, dict):
+                await self._pacer.wait(prev, note)
                 await self._send(out, note.payload)
+            prev = note
 
-    async def _emit_leading_notifications(self, out: ByteSendStream) -> None:
+    async def _emit_leading_notifications(
+        self, out: ByteSendStream, prev: Message | None = None
+    ) -> None:
         if self._emitted_leading:
             return
         self._emitted_leading = True
-        await self._emit_notifications(self._matcher.leading_notifications, out)
+        await self._emit_notifications(self._matcher.leading_notifications, out, prev)
 
     async def _emit_server_requests(
-        self, anchor_seq: int | None, trigger: str, out: ByteSendStream
+        self,
+        anchor_seq: int | None,
+        trigger: str,
+        out: ByteSendStream,
+        prev: Message | None = None,
     ) -> None:
         # Emitted with the *recorded* msg_id (the payload carries it verbatim), so
         # the agent's response can be matched back to the recording by JSON-RPC id.
         for state in self._tracker.triggered_by(anchor_seq, trigger):  # type: ignore[arg-type]  # Trigger literal
             if isinstance(state.message.payload, dict):
+                await self._pacer.wait(prev, state.message)
                 await self._send(out, state.message.payload)
                 self._tracker.mark_emitted(state)
+            prev = state.message
 
     async def _send(self, out: ByteSendStream, obj: dict[str, Any]) -> None:
         # Deferred gated responses write concurrently with the read loop; the lock
