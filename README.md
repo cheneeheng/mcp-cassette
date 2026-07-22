@@ -46,6 +46,8 @@ Full chapters: [2. Record and replay a stdio server](docs/guide/how-to/02-record
 
 ### 2.1 Record modes
 
+The mode decides, once per test run, whether that run records or replays; the recording unit is always the entire session — every message from server launch to session end — never an individual tool call.
+
 Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp_cassette_mode` (ini) → default `once`.
 
 | Mode | Cassette absent | Cassette present |

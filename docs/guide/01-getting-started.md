@@ -66,7 +66,8 @@ uv run pytest tests/test_agent.py::test_agent_summarizes_repo
 
 The default mode is `once`: no cassette exists yet, so this run launches the recording
 proxy in front of the real server and captures every JSON-RPC message in both
-directions.
+directions — the whole session, from server launch to shutdown, not just the first tool
+call.
 
 **Verify:** the test passes and a cassette file now exists at
 `tests/cassettes/<test-module>/<test-name>.mcp.json`:

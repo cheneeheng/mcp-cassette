@@ -51,6 +51,11 @@ def test_agent_summarizes_repo(mcp_cassette):
 
 ## 2.3 Pick a record mode
 
+The modes answer one question, decided once per test run: does this run record or
+replay? The unit is always the **entire session** — every message from server launch to
+session end, all tool calls included — never an individual tool call. `all` therefore
+re-records and overwrites the whole cassette file each run, not single entries in it.
+
 Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` →
 `mcp_cassette_mode` (ini) → default `once`.
 

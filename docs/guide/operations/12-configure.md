@@ -8,6 +8,9 @@ and its effect.
 Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` →
 `mcp_cassette_mode` (ini) → default `once`. Resolved at fixture setup.
 
+The mode decides, once per test run, whether that run records or replays; the recording
+unit is always the entire session, never an individual tool call (see §2.3).
+
 Valid values are `once`, `none`, `all`, `new_episodes`. Anything else raises
 `ValueError: invalid mcp_cassette mode <value>; expected one of ('once', 'none', 'all',
 'new_episodes')`.

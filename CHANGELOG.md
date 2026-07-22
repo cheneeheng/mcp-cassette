@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-22
+
+Documentation-only release. No code, flag, or behavior changes.
+
+### Changed
+
+- State explicitly that the unit of recording is the entire session — every
+  message from server launch to session end — never an individual tool call,
+  and that the record modes decide record-vs-replay once per test run (`all`
+  overwrites the whole cassette file, not single entries). Added to the guide's
+  record-mode chapter (§2.3), the operator configuration reference (§12.1), the
+  getting-started first-run walkthrough (§1.4), and the README's canonical
+  record-mode table (§2.1).
+
 ## [0.3.1] - 2026-07-22
 
 Documentation-only release: the guide and README are restructured and numbered.
@@ -203,7 +217,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.1...v0.2.2

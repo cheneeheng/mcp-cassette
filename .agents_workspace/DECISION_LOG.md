@@ -314,3 +314,39 @@ README; `.agents_workspace` planning files left as historical record). Heading r
 change GitHub anchors; the three in-repo anchor links were updated and verified.
 **Outcome:** Link/anchor checker passes across all 17 files; no stale references in
 src/, tests/, or pyproject.toml.
+
+### Entry 22
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-22T00:30:00+02:00
+**Task:** Release v0.3.1 via release-flow
+
+**Context:** The release flow prescribes a `chore/release-vX.Y.Z` branch off main, but
+the release content (the docs restructure) was uncommitted on
+`docs/restructure-numbered-guide`, itself freshly off up-to-date main.
+**Decision:** Reused that branch as the release branch: `docs:` commit for the
+restructure, then `chore: release v0.3.1`, one PR (#7) carrying both. All other gates
+ran unchanged.
+**Impact / Risk:** Branch name does not signal a release; mitigated by the PR title and
+release commit subject.
+**Outcome:** Merged as 151e84d after one red gate (missed `__version__` bump, fixed in
+fdacc39); tagged v0.3.1 and released.
+
+### Entry 23
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-22T00:00:00+02:00
+**Task:** Release v0.3.2 via release-flow
+
+**Context:** Same fork as Entry 22: the release content (the session-unit docs
+clarification) sat uncommitted on `docs/clarify-session-recording-unit`, freshly off
+up-to-date main, when the release flow was invoked.
+**Decision:** Followed the Entry 22 precedent — reused the docs branch as the release
+branch: a `docs:` commit for the clarification, then `chore: release v0.3.2`, one PR
+carrying both. Mirrored one clarifying sentence into README §2.1 per the 0.3.1
+uniform-phrasing convention rather than leaving guide and README divergent.
+**Impact / Risk:** Branch name does not signal a release; mitigated by PR title and
+release commit subject.
+**Outcome:** (pending merge)
