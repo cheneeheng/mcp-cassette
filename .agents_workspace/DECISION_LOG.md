@@ -350,3 +350,15 @@ uniform-phrasing convention rather than leaving guide and README divergent.
 **Impact / Risk:** Branch name does not signal a release; mitigated by PR title and
 release commit subject.
 **Outcome:** (pending merge)
+
+### Entry 24
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-22T21:30:00+02:00
+**Task:** PyPI release-readiness evaluation and deployment plan
+
+**Context:** The user asked yes/no on PyPI readiness. The evaluation found the code, CI, and metadata sound but three packaging defects (no py.typed in the wheel, .agents_workspace/CLAUDE.md leaking into the sdist, deprecated license table without PEP 639/SPDX form). A binary answer was underdetermined: "no" overstates the gaps, "yes" ships a strictly-typed library that consumers' mypy sees as untyped.
+**Decision:** Verdict "ready after a packaging-only v0.3.3" — the fixes are blocking but small, so the plan (.agents_workspace/PYPI_DEPLOYMENT_PLAN.md) folds them into the release sequence rather than declaring the repo not ready. Publish mechanism chosen: PyPI Trusted Publishing via a release-triggered GitHub Actions workflow, over manual `uv publish`, to match the existing tag-based release flow and avoid long-lived tokens. Deferred v3 topics assessed item-by-item: none block a Beta release.
+**Impact / Risk:** If the user reads "ready" without §2, they could publish 0.3.2 as-is and ship an untyped-to-consumers wheel with workspace docs in the sdist; the plan marks §2 as blocking to prevent this.
+**Outcome:** Plan written on branch chore/pypi-deployment-plan; no packaging fixes implemented (evaluation-and-plan scope only).

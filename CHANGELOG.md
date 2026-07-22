@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-22
+
+Packaging-only release preparing the first PyPI publish. No code, flag, or
+behavior changes.
+
+### Added
+
+- Ship the PEP 561 `py.typed` marker in the wheel so consumers' type checkers
+  see the library's type hints.
+- `.github/workflows/publish.yml`: build once, publish to TestPyPI via manual
+  `workflow_dispatch` and to PyPI on GitHub release, both through Trusted
+  Publishing (OIDC) — no long-lived tokens.
+
+### Changed
+
+- License metadata now uses the PEP 639 SPDX form (`license = "Apache-2.0"`,
+  `license-files = ["LICENSE"]`) instead of the deprecated table form;
+  hatchling pinned `>=1.27` accordingly.
+- The sdist no longer includes internal agent-workspace docs and repo tooling
+  (`.agents_workspace/`, `.claude/`, `CLAUDE.md`, `.pre-commit-config.yaml`).
+
 ## [0.3.2] - 2026-07-22
 
 Documentation-only release. No code, flag, or behavior changes.

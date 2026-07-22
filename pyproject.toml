@@ -1,14 +1,15 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]  # >=1.27 for PEP 639 SPDX license metadata
 build-backend = "hatchling.build"
 
 [project]
 name = "mcp-cassette"
-version = "0.3.2"
+version = "0.3.3"
 description = "Record/replay and mocking for MCP (Model Context Protocol) agent test suites — vcrpy for MCP."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "EeHeng Chen", email = "eeheng.chen@gmail.com" }]
 keywords = ["mcp", "testing", "record-replay", "vcr", "pytest", "mock"]
 classifiers = [
@@ -52,6 +53,10 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_cassette"]
+
+[tool.hatch.build.targets.sdist]
+# Internal agent-workspace docs and repo tooling do not belong in the distribution.
+exclude = [".agents_workspace", ".claude", "CLAUDE.md", ".pre-commit-config.yaml"]
 
 [tool.ruff]
 line-length = 88
