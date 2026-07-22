@@ -288,3 +288,29 @@ POSIX CI legs. ruff and mypy --strict clean.
 **Decision:** `_respond_matched` pays that gap once before dispatching a non-`timeout` fault and then passes `prev=None` into `_serve_exchange`, so the gap is not paid again. Consequence: for an SSE exchange with a fault, the first event is spaced by the recorded request-to-*response* gap rather than the request-to-first-*event* gap. Total elapsed is correct; only the internal attribution differs, and only in the fault+SSE+pacing combination.
 **Impact / Risk:** A test asserting exact first-event timing under a `delay` fault on an SSE exchange would see the response gap, not the notification gap. Nothing asserts that today.
 **Outcome:** `tests/integration/test_replay_pacing.py` verifies additivity for `delay` and no sleep for `timeout`; `tests/integration/test_http_pacing.py` verifies unfaulted SSE spacing.
+
+### Entry 21
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-22T00:00:00+02:00
+**Task:** Restructure and number README + docs/guide
+
+**Context:** The request said "number the docs wherever possible" without specifying the
+scheme. Open forks: global vs per-directory file numbering, whether index.md gets a
+number, whether README sections are numbered, and which of the four divergent
+record-mode table wordings becomes canonical.
+**Decision:** (1) Global sequential chapter numbers 01–15 across subdirectories,
+following the index's reading order (test authors 1–10, operators 11–15), because the
+user asked for numbering that conveys reading order and eases referencing — per-directory
+numbering would produce two "01" files. (2) `index.md` stays unnumbered as the entry
+point/TOC. (3) README sections numbered 1–9 independently of the guide (it is a summary
+layer, not chapter 0); each section ends with a uniform "Full chapter:" pointer. (4)
+Canonical mode table row for `none` is "fail — recording is forbidden" with per-context
+notes (pytest: test fails; library: `finalize()` raises `CassetteError`). (5) Added a
+short Redaction section to README — the safety surface was absent from the front page.
+**Impact / Risk:** Renamed files break external deep links (none found in-repo outside
+README; `.agents_workspace` planning files left as historical record). Heading renames
+change GitHub anchors; the three in-repo anchor links were updated and verified.
+**Outcome:** Link/anchor checker passes across all 17 files; no stale references in
+src/, tests/, or pyproject.toml.

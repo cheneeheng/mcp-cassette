@@ -1,11 +1,11 @@
-# Record and replay a stdio server
+# 2. Record and replay a stdio server
 
 **When:** your MCP server runs as a local command and your test drives an agent against
 it.
-**Prerequisites:** [Getting started](../getting-started.md) completed; a working test
-using the `mcp_cassette` fixture.
+**Prerequisites:** [1. Getting started](../01-getting-started.md) completed; a working
+test using the `mcp_cassette` fixture.
 
-## The core loop
+## 2.1 The core loop
 
 ```python
 def test_agent_summarizes_repo(mcp_cassette):
@@ -25,7 +25,7 @@ cassette file exists:
 
 The agent is never patched. It launches whatever command you give it.
 
-## Choose where the cassette lives
+## 2.2 Choose where the cassette lives
 
 By default the cassette path is
 `tests/cassettes/<test-module-name>/<test-node-name>.mcp.json`, with any character
@@ -49,15 +49,15 @@ def test_agent_summarizes_repo(mcp_cassette):
 
 **Verify:** run the test and confirm the file appears where you expect.
 
-## Pick a record mode
+## 2.3 Pick a record mode
 
-Precedence, highest first: `MCP_CASSETTE_MODE` environment variable, then the marker's
-`mode=`, then the `mcp_cassette_mode` ini option, then the default `once`.
+Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` →
+`mcp_cassette_mode` (ini) → default `once`.
 
 | Mode | Cassette absent | Cassette present |
 |---|---|---|
 | `once` (default) | record | replay |
-| `none` | fail the test | replay |
+| `none` | fail — recording is forbidden | replay |
 | `all` | record | re-record |
 | `new_episodes` | record | replay; misses fall through to the real server and are appended |
 
@@ -69,7 +69,7 @@ def test_never_records(mcp_cassette):
     ...
 ```
 
-## Re-record after the server changes
+## 2.4 Re-record after the server changes
 
 > **Warning:** re-recording overwrites the cassette in place. The old recording is gone
 > unless it is committed to git. Commit first, or work on a branch.
@@ -111,7 +111,7 @@ plain `uv run pytest` (replay) passes.
 > are replay-only and raise `CassetteError` under a recording action). Re-record those
 > per file with the delete-and-rerun approach.
 
-## Control how requests are matched
+## 2.5 Control how requests are matched
 
 The JSON-RPC `id` is never matched on; the replay server re-stamps the client's `id`
 onto the recorded response. Matching is structural over the parsed JSON, and by default
@@ -121,7 +121,7 @@ Three ordering disciplines, set per test on the marker:
 
 | `ordering` | Behaviour |
 |---|---|
-| `per_method` (default) | Answer with the earliest unconsumed exchange whose match key is equal. Repeat calls to the same method replay in recorded order. |
+| `per_method` (default) | Answer with the earliest unconsumed exchange whose match key is equal; mark it consumed. Repeat calls to the same method replay in recorded order. |
 | `strict` | The next unconsumed exchange must match, or the request is a miss. |
 | `none` | Any matching exchange answers, unlimited times, in any order. |
 
@@ -150,7 +150,7 @@ def test_agent(mcp_cassette):
 
 **Verify:** the test passes on replay with no `unmatched request(s)` failure.
 
-## What happens on failure
+## 2.6 What happens on failure
 
 On teardown, the fixture calls `finalize()` and fails the test when:
 
@@ -160,7 +160,7 @@ On teardown, the fixture calls `finalize()` and fails the test when:
 
 The replay subprocess itself exits with code `3` on an unmatched request.
 
-## Server-initiated requests
+## 2.7 Server-initiated requests
 
 Sampling and elicitation (the server asking the *client* mid-call) are recorded
 generically and replay on both transports. On replay the recorded server request is

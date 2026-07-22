@@ -1,11 +1,11 @@
-# Record and replay a remote HTTP server
+# 3. Record and replay a remote HTTP server
 
 **When:** the MCP server your agent talks to is a remote Streamable HTTP endpoint, not a
 local command.
 **Prerequisites:** the `[http]` extra installed; network access to the real endpoint on
 the recording run only.
 
-## 1. Install the extra
+## 3.1 Install the extra
 
 ```
 uv add "mcp-cassette[http]"
@@ -14,7 +14,7 @@ uv add "mcp-cassette[http]"
 The extra adds `httpx` and `h11`. Without it, `server_url()` raises `CassetteError` with
 the import error text.
 
-## 2. Use `server_url` instead of `server_command`
+## 3.2 Use `server_url` instead of `server_command`
 
 ```python
 def test_agent_reads_remote_tracker(mcp_cassette):
@@ -38,7 +38,7 @@ cassette and report finalized, when the fixture tears down.
 **Verify:** after the first run, `mcp-cassette inspect <cassette>` reports
 `transport: http` and prints the recorded server host and exchange count.
 
-## 3. Prove the remote is never contacted
+## 3.3 Prove the remote is never contacted
 
 Once the cassette exists, pass a URL that cannot resolve and re-run:
 
@@ -48,16 +48,16 @@ url = mcp_cassette.server_url("https://dead.invalid/mcp")
 
 The test still passes. That is the whole guarantee.
 
-## Headers and credentials
+## 3.4 Headers and credentials
 
 Every request header, `Authorization` included, is forwarded upstream during recording
 but is **never written to the cassette**. Payload-level secrets are a separate concern —
-see [Redact secrets](redact-secrets.md).
+see [8. Redact secrets](08-redact-secrets.md).
 
 The server's `Mcp-Session-Id` is recorded as provenance only. Replay issues a fresh
 session id and never reuses the recorded one.
 
-## Do not mix transports
+## 3.5 Do not mix transports
 
 A cassette carries its transport. Calling the wrong accessor raises `CassetteError`:
 
@@ -67,7 +67,7 @@ A cassette carries its transport. Calling the wrong accessor raises `CassetteErr
 The check only applies once a cassette exists; on a fresh recording either accessor
 decides the transport.
 
-## By hand, from the CLI
+## 3.6 By hand, from the CLI
 
 ```
 mcp-cassette record --cassette demo-http.json \
@@ -87,7 +87,7 @@ mcp-cassette serve demo-http.json --port 8902
 A worked, runnable version of this using the bundled sample servers is in
 [`examples/README.md`](../../../examples/README.md).
 
-## Client requirements
+## 3.7 Client requirements
 
 Anything driving the replay server must behave like a Streamable HTTP MCP client:
 

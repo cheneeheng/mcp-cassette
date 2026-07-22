@@ -1,10 +1,8 @@
-# Runbook: replay misses and failed recordings
+# 15. Runbook: replay misses and failed recordings
 
 **Audience:** operators. The two incidents that actually happen.
 
----
-
-## Incident 1 — replay had unmatched requests
+## 15.1 Incident 1 — replay had unmatched requests
 
 **Detection.** A test fails at teardown with:
 
@@ -19,7 +17,7 @@ Out of pytest, the same condition is the replay process exiting `3`.
 
 **Impact.** Test-only. Nothing was written; the cassette is untouched.
 
-### Diagnosis
+### 15.1.1 Diagnosis
 
 1. Confirm what the cassette actually contains.
 
@@ -39,7 +37,7 @@ Out of pytest, the same condition is the replay process exiting `3`.
    repeat calls to a method are consumed in recorded order, so a reordered pair of calls
    with different params misses. Go to remediation C.
 
-### Remediation
+### 15.1.2 Remediation
 
 **A — the interaction was never recorded.** Extend the cassette instead of rebuilding it:
 
@@ -81,7 +79,7 @@ rm tests/cassettes/test_agent/test_agent.mcp.json
 uv run pytest tests/test_agent.py::test_agent
 ```
 
-### Verification
+### 15.1.3 Verification
 
 ```
 MCP_CASSETTE_MODE=none uv run pytest tests/test_agent.py::test_agent
@@ -89,9 +87,7 @@ MCP_CASSETTE_MODE=none uv run pytest tests/test_agent.py::test_agent
 
 Passes offline, with no upstream credentials in the environment.
 
----
-
-## Incident 2 — a recording produced nothing or died mid-run
+## 15.2 Incident 2 — a recording produced nothing or died mid-run
 
 **Detection.** One of:
 
@@ -109,7 +105,7 @@ or the recording process was killed and no cassette file exists.
 **Impact.** No cassette written. On a killed run, a `<cassette>.partial` sidecar may hold
 everything up to the last checkpoint.
 
-### Diagnosis and remediation
+### 15.2.1 Diagnosis and remediation
 
 1. **Zero messages.** The agent never launched the command the fixture handed it. Print
    the command in the test and confirm it reaches the agent's MCP server configuration
@@ -148,7 +144,7 @@ everything up to the last checkpoint.
 4. **Unattended runs that never end.** `record` finishes on client EOF or on a signal. If
    nobody is there to interrupt it, add `--max-idle SECONDS`.
 
-### Verification
+### 15.2.2 Verification
 
 ```
 uv run mcp-cassette inspect <cassette>
@@ -157,9 +153,7 @@ uv run mcp-cassette inspect <cassette>
 Message count is non-zero and the per-method breakdown matches what the test should have
 done. Then re-run the test in `none` mode; it must pass offline.
 
----
-
-## Escalation
+## 15.3 Escalation
 
 If replay misses persist with no cassette diff and no code diff, or `serve` exits `2` on
 a cassette that previously loaded, or you hit

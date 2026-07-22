@@ -1,8 +1,8 @@
-# Install
+# 11. Installation
 
 **Audience:** operators standing up mcp-cassette in a project or pipeline.
 
-## Requirements
+## 11.1 Requirements
 
 | Item | Requirement |
 |---|---|
@@ -15,7 +15,7 @@
 mcp-cassette does **not** depend on the official `mcp` SDK at runtime, and must not be
 made to. It works at the transport level with any MCP client.
 
-## Install
+## 11.2 Install the package
 
 ```
 uv add --dev mcp-cassette              # core: stdio record/replay
@@ -32,7 +32,7 @@ pip install "mcp-cassette[http]"
 Install it into the **same environment pytest runs in**. The plugin is discovered via
 the `pytest11` entry point; a package installed elsewhere is invisible to pytest.
 
-## Post-install health check
+## 11.3 Post-install health check
 
 1. The CLI is on PATH and the version matches:
 
@@ -63,7 +63,7 @@ the `pytest11` entry point; a package installed elsewhere is invisible to pytest
 `uv run python -c "import mcp_cassette, sys; print(sys.executable)"` and compare against
 the interpreter pytest reports in its header.
 
-## What gets installed
+## 11.4 What gets installed
 
 - Console script `mcp-cassette` → `mcp_cassette.cli:main`.
 - Module entry point: `python -m mcp_cassette` runs the same CLI. This is the form the
@@ -71,7 +71,7 @@ the interpreter pytest reports in its header.
   test environment.
 - pytest plugin `mcp_cassette` (fixture, marker, and two ini options).
 
-## Next
+## 11.5 Next
 
-- [Configuration](configure.md) — modes, ini options, matching.
-- [CI pipeline](ci.md) — the settings a pipeline must have.
+- [12. Configuration](12-configure.md) — modes, ini options, matching.
+- [13. CI pipeline](13-ci.md) — the settings a pipeline must have.

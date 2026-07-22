@@ -1,4 +1,4 @@
-# CLI reference
+# 14. CLI reference
 
 **Audience:** operators. The authoritative surface is `mcp-cassette <command> --help`;
 this page mirrors it.
@@ -13,7 +13,7 @@ mcp-cassette lint    CASSETTE [--baseline PATH] [--format text|json] [--select R
 
 `python -m mcp_cassette ...` is equivalent to the `mcp-cassette` console script.
 
-## Exit codes
+## 14.1 Exit codes
 
 | Code | Meaning |
 |---|---|
@@ -25,7 +25,7 @@ mcp-cassette lint    CASSETTE [--baseline PATH] [--format text|json] [--select R
 | `130` | Recording interrupted by a signal; the cassette was finalized first. |
 | other | `record`: the wrapped server's own exit code. |
 
-## `record`
+## 14.2 `record`
 
 Records a real server: wrap a stdio command after `--`, or proxy a remote URL. The two
 are mutually exclusive, and one is required.
@@ -50,7 +50,7 @@ mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp --por
 wrapped server. Nothing is captured unless a client drives it. The real server's stderr
 is forwarded to yours, never swallowed.
 
-## `serve`
+## 14.3 `serve`
 
 Stands up a replay server. The transport is inferred from the cassette.
 
@@ -77,7 +77,7 @@ mcp-cassette serve demo.json --new-episodes -- python tools/server.py
 Replay answers requests but emits nothing on its own — it needs a client. `--url` against
 a stdio cassette is a usage error (exit `2`).
 
-## `inspect`
+## 14.4 `inspect`
 
 Human-readable cassette summary: format version, transport, timestamp, protocol version,
 server identity, per-method message counts, and the timing span. For http cassettes it
@@ -99,7 +99,7 @@ mcp-cassette inspect demo.json --format json > summary.json
 mcp-cassette inspect demo.json --faults demo.faults.json
 ```
 
-## `diff`
+## 14.5 `diff`
 
 Structurally compares two cassettes: metadata, per-method counts, tool surfaces, and the
 exchange sequence. JSON-RPC ids, `t_offset_ms`, and `seq` are never compared — they are
@@ -116,9 +116,10 @@ mcp-cassette diff old.json new.json --tools-only
 ```
 
 Exit `0` identical, `5` they differ, `2` a file would not load. `diff` is descriptive;
-lint's `R002` is the gate. See [Inspect and diff](../how-to/inspect-and-diff.md).
+lint's `R002` is the gate. See
+[7. Inspect and diff cassettes](../how-to/07-inspect-and-diff.md).
 
-## `lint`
+## 14.6 `lint`
 
 Heuristic security scan of recorded tool descriptions and results.
 
@@ -140,10 +141,10 @@ Heuristic security scan of recorded tool descriptions and results.
 | `--no-config` | off | Ignore `[tool.mcp_cassette.lint]` in the nearest `pyproject.toml`. |
 
 Packs extend the bundled rules; they never replace them. See
-[Lint with your own pattern packs](../how-to/lint-pattern-packs.md).
+[9. Lint with your own pattern packs](../how-to/09-lint-pattern-packs.md).
 
 Exit `0` when nothing meets the `--fail-on` threshold (warnings alone do not fail by
 default), `4` otherwise. Every finding carries a JSON-pointer locator into the cassette.
 
-> These are heuristic pattern rules, not a guarantee. A clean lint is the absence of
-> *known* smells, nothing more.
+> Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known*
+> smells, nothing more.

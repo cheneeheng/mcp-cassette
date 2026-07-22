@@ -4,10 +4,12 @@ vcrpy for MCP. Record real MCP sessions between an agent and an MCP server — l
 
 mcp-cassette operates at the **transport level** (newline-delimited JSON-RPC over stdio; h11 + hand-rolled SSE framing over Streamable HTTP), treats messages semi-opaquely, and does **not** depend on the official `mcp` SDK at runtime — so it works with any MCP client (Claude Code included) unmodified. Sessions containing server-initiated requests (sampling, elicitation) record and replay too.
 
-Full documentation: **[docs/guide/](docs/guide/index.md)** — getting started, how-to
-guides, and the operator runbook.
+Full documentation: **[docs/guide/](docs/guide/index.md)** — 15 numbered chapters in
+reading order: getting started and how-to guides for test authors (1–10), then
+installation, configuration, CI, CLI reference, and the runbook for operators (11–15).
+The sections below summarize; each ends with a pointer to its full chapter.
 
-## Install
+## 1. Install
 
 ```
 uv add mcp-cassette              # or: pip install mcp-cassette
@@ -16,7 +18,9 @@ uv add "mcp-cassette[http]"      # remote (Streamable HTTP) record/replay
 
 Python ≥ 3.12. Linux, macOS, and Windows supported. The core install depends only on `anyio` and `pydantic`; the `[http]` extra adds `httpx` and `h11`.
 
-## The pytest fixture (the main surface)
+Full chapter: [11. Installation](docs/guide/operations/11-install.md).
+
+## 2. The pytest fixture (the main surface)
 
 ```python
 def test_agent_summarizes_repo(mcp_cassette):
@@ -38,20 +42,24 @@ def test_agent_reads_remote_tracker(mcp_cassette):
 
 First run stands up a local recording proxy in front of the real URL; every run after replays from the cassette on a local mock Streamable HTTP server. Same record modes, same fault matrix. `Authorization` (and every other header) is forwarded upstream but never written to the cassette.
 
-### Record modes
+Full chapters: [2. Record and replay a stdio server](docs/guide/how-to/02-record-and-replay.md), [3. Record and replay a remote HTTP server](docs/guide/how-to/03-remote-http.md).
 
-Set via `MCP_CASSETTE_MODE` (env) > `@pytest.mark.mcp_cassette(mode=...)` > `mcp_cassette_mode` ini > default `once`.
+### 2.1 Record modes
+
+Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp_cassette_mode` (ini) → default `once`.
 
 | Mode | Cassette absent | Cassette present |
 |---|---|---|
 | `once` (default) | record | replay |
-| `none` | fail the test | replay |
+| `none` | fail — recording is forbidden | replay |
 | `all` | record | re-record |
 | `new_episodes` | record | replay; misses fall through to the real server and are appended |
 
 CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server.
 
-## Use it as a library
+Full chapters: [12. Configuration](docs/guide/operations/12-configure.md), [13. CI pipeline](docs/guide/operations/13-ci.md).
+
+## 3. Use it as a library
 
 Not a pytest suite? `use_cassette` is the same machinery behind a context manager — same modes, same fault matrix, same failure semantics:
 
@@ -65,9 +73,11 @@ with use_cassette("cassettes/search.mcp.json", mode="once") as session:
 #               CassetteError raised on an empty recording or any replay miss
 ```
 
-Mode precedence is `MCP_CASSETTE_MODE` > the `mode=` argument > `once`, so the CI invariant holds through this door too. The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable. Full page: [Use it as a library](docs/guide/how-to/use-as-a-library.md).
+Precedence, highest first: `MCP_CASSETTE_MODE` (env) → `mode=` argument → default `once` — so the CI invariant holds through this door too. The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable.
 
-## Fault injection
+Full chapter: [4. Use it as a library](docs/guide/how-to/04-use-as-a-library.md).
+
+## 4. Fault injection
 
 One recorded cassette drives a whole resilience matrix:
 
@@ -88,7 +98,9 @@ def test_agent_survives_tool_trouble(mcp_cassette, fault):
 
 Fault types: `delay`, `timeout`, `error`, `malformed`, `disconnect`. Faults live in a `FaultOverlay`; the recorded cassette is never mutated.
 
-## Replay timing
+Full chapter: [5. Inject faults](docs/guide/how-to/05-inject-faults.md).
+
+## 5. Replay timing
 
 Replay is instant by default. When your agent's timeout, progress-stream, or retry logic depends on *how long* the server took, replay the recorded gaps instead:
 
@@ -97,9 +109,11 @@ mcp-cassette serve demo.json --pace recorded                     # recorded late
 mcp-cassette serve demo.json --pace recorded --pace-scale 0.2    # 5x faster
 ```
 
-Also `@pytest.mark.mcp_cassette(pace="recorded", pace_scale=0.2)` and `use_cassette(..., pace=PaceConfig(mode="recorded"))`. Per-gap cap defaults to 5000 ms so one pathological recorded pause cannot look like a hung job; `--pace-cap-ms 0` opts into uncapped. A `delay` fault stacks on top of recorded latency. Full page: [Replay timing](docs/guide/how-to/replay-timing.md).
+Also `@pytest.mark.mcp_cassette(pace="recorded", pace_scale=0.2)` and `use_cassette(..., pace=PaceConfig(mode="recorded"))`. Per-gap cap defaults to 5000 ms so one pathological recorded pause cannot look like a hung job; `--pace-cap-ms 0` opts into uncapped. A `delay` fault stacks on top of recorded latency.
 
-## CLI
+Full chapter: [6. Replay timing](docs/guide/how-to/06-replay-timing.md).
+
+## 6. The CLI
 
 ```
 mcp-cassette record --cassette demo.json -- python tools/server.py   # wrap a real server
@@ -113,9 +127,17 @@ mcp-cassette inspect demo.json --faults demo.faults.json             # dry-run: 
 mcp-cassette diff old.json new.json --tools-only                     # exit 5 when the server surface moved
 ```
 
-A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — inspect it, rename it over the real path to keep it — and is removed once the recording finalizes normally. It is deliberately never written to the cassette path itself: `once` mode decides record-vs-replay by that file's existence, and a truncated cassette there would silently replay as a finished one.
+A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — see [§12.6 Checkpointing](docs/guide/operations/12-configure.md#126-checkpointing) for recovery and why it is never written to the cassette path itself.
 
-## Linting your cassettes
+Full chapter: [14. CLI reference](docs/guide/operations/14-cli-reference.md).
+
+## 7. Redaction
+
+Cassettes are verbatim transcripts, and you commit them — so redaction runs at capture time, on a deep copy, with defaults always on: values under keys matching `*token*`, `*secret*`, `*password*`, `*apikey*`, `*api_key*`, or `authorization` are replaced with `REDACTED` before the cassette is written. Add your own rules with `--redact` (key-glob or JSON pointer). Read every new cassette before its first commit anyway.
+
+Full chapter: [8. Redact secrets](docs/guide/how-to/08-redact-secrets.md).
+
+## 8. Linting your cassettes
 
 Recorded tool descriptions and results are third-party content; lint them in CI before they reach a model:
 
@@ -133,10 +155,12 @@ mcp-cassette lint demo.json --pattern-pack examples/lint-pack.toml
 mcp-cassette lint demo.json --fail-on warning
 ```
 
-`[tool.mcp_cassette.lint]` in `pyproject.toml` makes your packs, selection, and failure threshold the default for every invocation, so the CI command stays generic. Packs extend the bundled rules; they never replace them. Full page: [Lint with your own pattern packs](docs/guide/how-to/lint-pattern-packs.md).
+`[tool.mcp_cassette.lint]` in `pyproject.toml` makes your packs, selection, and failure threshold the default for every invocation, so the CI command stays generic. Packs extend the bundled rules; they never replace them.
 
-These are heuristic pattern rules, not a guarantee — a clean lint is absence of *known* smells, nothing more.
+> Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known* smells, nothing more.
 
-## License
+Full chapter: [9. Lint with your own pattern packs](docs/guide/how-to/09-lint-pattern-packs.md).
+
+## 9. License
 
 See [LICENSE](LICENSE).
