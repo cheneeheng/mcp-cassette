@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-22
+
+Documentation-only release: the guide and README are restructured and numbered.
+No code, flag, or behavior changes.
+
+### Changed
+
+- Number the guide as 15 chapters in reading order — test authors (1–10), then
+  operators (11–15) — with the chapter number in each filename
+  (`01-getting-started.md` … `operations/15-runbook-replay-misses.md`) and
+  numbered `X.Y`/`X.Y.Z` section headings throughout, so sections are citable
+  as e.g. §12.6.
+- Rewrite `docs/guide/index.md` as a two-part numbered table of contents that
+  states the numbering convention.
+- Number the README sections 1–9 and end each with a uniform "Full chapter:"
+  pointer into the guide; add a Redaction section so the capture-time
+  scrubbing defaults are visible from the front page.
+- Present repeated content uniformly across README and guide: one canonical
+  record-mode table and precedence phrasing, word-identical ordering-discipline
+  tables, and one lint-disclaimer wording.
+
 ## [0.3.0] - 2026-07-21
 
 Four additions, all opt-in: a library front door, replay pacing, richer
@@ -182,7 +203,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.0...v0.2.1
