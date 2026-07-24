@@ -5,20 +5,32 @@ build-backend = "hatchling.build"
 [project]
 name = "mcp-cassette"
 version = "0.3.3"
-description = "Record/replay and mocking for MCP (Model Context Protocol) agent test suites — vcrpy for MCP."
+description = "Record/replay testing for MCP (Model Context Protocol) agents: capture real sessions as cassettes, replay them as deterministic mock servers — vcrpy for MCP."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "EeHeng Chen", email = "eeheng.chen@gmail.com" }]
-keywords = ["mcp", "testing", "record-replay", "vcr", "pytest", "mock"]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "testing",
+    "pytest",
+    "record-replay",
+    "vcr",
+    "mock",
+    "agent",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: Pytest",
     "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Testing :: Mocking",
+    "Typing :: Typed",
 ]
 dependencies = [
     "anyio>=4.0",

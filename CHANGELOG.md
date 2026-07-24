@@ -7,10 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.3] - 2026-07-22
+## [0.3.3] - 2026-07-24
 
-Packaging-only release preparing the first PyPI publish. No code, flag, or
-behavior changes.
+Packaging and discoverability release preparing the first PyPI publish. No
+code, flag, or behavior changes.
 
 ### Added
 
@@ -27,6 +27,15 @@ behavior changes.
   hatchling pinned `>=1.27` accordingly.
 - The sdist no longer includes internal agent-workspace docs and repo tooling
   (`.agents_workspace/`, `.claude/`, `CLAUDE.md`, `.pre-commit-config.yaml`).
+- Unify the public one-liner (PyPI description, README opener) into a single
+  canonical description: "Record/replay testing for MCP (Model Context
+  Protocol) agents: capture real sessions as cassettes, replay them as
+  deterministic mock servers — vcrpy for MCP." — replacing three drifted
+  variants.
+- Expand `pyproject.toml` keywords (`model-context-protocol`, `agent`) and
+  classifiers (`Operating System :: OS Independent`,
+  `Topic :: Software Development :: Testing :: Mocking`, `Typing :: Typed`)
+  for PyPI search and filtering.
 
 ## [0.3.2] - 2026-07-22
 

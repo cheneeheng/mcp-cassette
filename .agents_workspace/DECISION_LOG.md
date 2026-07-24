@@ -362,3 +362,27 @@ release commit subject.
 **Decision:** Verdict "ready after a packaging-only v0.3.3" — the fixes are blocking but small, so the plan (.agents_workspace/PYPI_DEPLOYMENT_PLAN.md) folds them into the release sequence rather than declaring the repo not ready. Publish mechanism chosen: PyPI Trusted Publishing via a release-triggered GitHub Actions workflow, over manual `uv publish`, to match the existing tag-based release flow and avoid long-lived tokens. Deferred v3 topics assessed item-by-item: none block a Beta release.
 **Impact / Risk:** If the user reads "ready" without §2, they could publish 0.3.2 as-is and ship an untyped-to-consumers wheel with workspace docs in the sdist; the plan marks §2 as blocking to prevent this.
 **Outcome:** Plan written on branch chore/pypi-deployment-plan; no packaging fixes implemented (evaluation-and-plan scope only).
+
+### Entry 25
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-22T00:00:00+02:00
+**Task:** Text-discoverability pass (ceh-seo:text-discoverability) across README, pyproject, GitHub repo metadata.
+
+**Context:** The skill mandates one canonical one-liner reused verbatim on every surface, but the wording itself was unspecified. Three drifted variants existed (pyproject description, 330-char GitHub description, README opener), and GitHub topics were empty.
+**Decision:** Canonical one-liner (157 chars): "Record/replay testing for MCP (Model Context Protocol) agents: capture real sessions as cassettes, replay them as deterministic mock servers — vcrpy for MCP." Leads with the category noun instead of the "vcrpy for MCP" tagline, which is unsearchable before the project is known; the tagline is kept as the closing differentiator. Topics chosen specific-over-broad (mcp, model-context-protocol, pytest-plugin, record-replay, mocking, vcr, agent-testing, mock-server). Classifiers added only where verifiably accurate (py.typed exists, hence Typing :: Typed).
+**Impact / Risk:** pyproject description/keywords only reach PyPI on the next release (no version bump made — packaging metadata change rides the next one). GitHub description/topics edit failed with HTTP 403 (PAT lacks repo-edit scope); left for the user to run.
+**Outcome:** README + pyproject edited on branch chore/text-discoverability-pass; GitHub metadata command handed to user.
+
+### Entry 26
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-24T00:00:00+02:00
+**Task:** Fold this branch's text-discoverability changes into the v0.3.3 release per user instruction ("add the changes in this PR into v0.3.3; do not tag/release yet").
+
+**Context:** Entry 25 noted the pyproject description/keyword changes would "ride the next release" — but v0.3.3 (already the current `pyproject.toml` version) has not been tagged yet, so "the next release" is v0.3.3 itself, not a new bump. The CHANGELOG's v0.3.3 entry, however, still read "Packaging-only" and predated this branch's changes.
+**Decision:** No version bump (stayed at 0.3.3, already correct on `main`). Updated the existing v0.3.3 CHANGELOG entry in place — retitled "Packaging and discoverability", bumped its date to 2026-07-24, and appended `Changed` bullets for the unified one-liner and expanded keywords/classifiers — rather than opening a new `[Unreleased]` or version section. Opened PR #11 and queued GitHub auto-merge (repo has `allow_auto_merge=true`, matching the open-pr skill's default for such repos) so it lands once CI is green; tag/release deliberately withheld per instruction.
+**Impact / Risk:** If the release is cut before this PR's CI finishes, the changelog entry would be tagged incomplete. Auto-merge mitigates this by landing automatically on green CI without requiring a manual merge step to be remembered.
+**Outcome:** Commit fdf46c4 on chore/text-discoverability-pass; PR #11 opened with auto-merge queued; no tag or GitHub release created.

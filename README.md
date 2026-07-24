@@ -1,6 +1,8 @@
 # mcp-cassette
 
-vcrpy for MCP. Record real MCP sessions between an agent and an MCP server — local stdio or remote Streamable HTTP — into **cassettes** — structured, diffable, committable files — then replay those cassettes as deterministic mock MCP servers so your agent test suite stops hitting live servers and stops being flaky, slow, and expensive.
+Record/replay testing for MCP (Model Context Protocol) agents: capture real sessions as cassettes, replay them as deterministic mock servers — vcrpy for MCP.
+
+A **cassette** records the entire session between your agent and a real MCP server — local stdio or remote Streamable HTTP — as a structured, diffable, committable file. Replayed, it stands in for the live server, so your agent test suite stops hitting live servers and stops being flaky, slow, and expensive.
 
 mcp-cassette operates at the **transport level** (newline-delimited JSON-RPC over stdio; h11 + hand-rolled SSE framing over Streamable HTTP), treats messages semi-opaquely, and does **not** depend on the official `mcp` SDK at runtime — so it works with any MCP client (Claude Code included) unmodified. Sessions containing server-initiated requests (sampling, elicitation) record and replay too.
 
