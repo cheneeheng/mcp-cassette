@@ -69,6 +69,25 @@ def test_format_version_gate_rejects_newer(tmp_path: Path) -> None:
         Cassette.load(path)
 
 
+@pytest.mark.parametrize("text", ["[1, 2, 3]", '"nope"', "42", "null"])
+def test_load_rejects_non_object_top_level(tmp_path: Path, text: str) -> None:
+    # ValueError, not AttributeError: the CLI's _LOAD_ERRORS must catch it (exit 2).
+    path = tmp_path / "c.json"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        Cassette.load(path)
+
+
+def test_load_rejects_non_integer_format_version(tmp_path: Path) -> None:
+    # Read before validation, so pydantic never sees it: TypeError on the > compare.
+    path = tmp_path / "c.json"
+    data = json.loads(_cassette().model_dump_json())
+    data["format_version"] = "2"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="format_version must be an integer"):
+        Cassette.load(path)
+
+
 def test_raw_message_stores_string_payload() -> None:
     msg = Message(
         seq=0,
