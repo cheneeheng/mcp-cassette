@@ -24,6 +24,10 @@ Documentation, examples, and CI. No code, flag, or behavior changes.
   the gate's exit codes (lint clean `0`, lint drifted `4`, `diff --tools-only`
   `5`). Nothing collected `examples/` before, so its cassettes could rot
   unnoticed, and the numbers quoted in the docs had nothing enforcing them.
+- A runnable lint + diff snippet in the README's linting section, pointing at the
+  committed example cassettes and at `HT-09`. The section previously offered only
+  pattern-pack configuration, which is what led issue #9 to ask for a demo that
+  largely already existed.
 - A troubleshooting row for a replay that hangs on `tools/call`: the cassette
   holds a server-initiated request and replay waits for the agent's answer by
   design. Sampling appeared nowhere in the guide, so the deliberate hang had no

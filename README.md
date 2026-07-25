@@ -163,7 +163,18 @@ mcp-cassette lint demo.json --fail-on warning
 
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known* smells, nothing more.
 
-Full chapter: [HT-08. Lint with your own pattern packs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-08-lint-pattern-packs.md).
+Pair it with `diff` to catch drift that carries no smell at all. Committed cassettes make this runnable from a clone, with no server and no network:
+
+```
+mcp-cassette lint examples/cassettes/tools.mcp.json                    # clean: exit 0
+mcp-cassette lint examples/cassettes/tools-v2.mcp.json                 # injected description: exit 4
+mcp-cassette diff examples/cassettes/tools.mcp.json \
+                  examples/cassettes/tools-v2.mcp.json --tools-only    # surface moved: exit 5
+```
+
+`tools-v2` is the same server one version later. Its new `callback_url` parameter reads as innocuous, so only `diff` catches it; the description reads as hostile, so `lint` catches that. Both steps run in this repo's CI.
+
+Full chapters: [HT-08. Lint with your own pattern packs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-08-lint-pattern-packs.md), [HT-09. Gate a drifting server surface](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-09-gate-a-drifting-server.md).
 
 ## 9. License
 
