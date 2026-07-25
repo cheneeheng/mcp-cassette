@@ -24,10 +24,18 @@ Documentation, examples, and CI. No code, flag, or behavior changes.
   the gate's exit codes (lint clean `0`, lint drifted `4`, `diff --tools-only`
   `5`). Nothing collected `examples/` before, so its cassettes could rot
   unnoticed, and the numbers quoted in the docs had nothing enforcing them.
-- A runnable lint + diff snippet in the README's linting section, pointing at the
+- A runnable lint + diff snippet in the README's gating section, pointing at the
   committed example cassettes and at `HT-09`. The section previously offered only
   pattern-pack configuration, which is what led issue #9 to ask for a demo that
   largely already existed.
+- README `§2.2` and an `examples/README.md` section naming
+  `examples/cassettes/echo_and_add.mcp.json` as the canonical golden cassette and
+  stating the contract it stands for — record once locally, commit the cassette,
+  CI only replays and lints — with the replay-only proof command for both a single
+  file and the whole directory.
+- A CI assertion that `examples/lint-pack.toml` actually fires (`P001` present in
+  the output, not merely exit `4`, which the bundled rules produce on their own).
+  A starter pack nobody can see match is a poor advertisement for the feature.
 - A troubleshooting row for a replay that hangs on `tools/call`: the cassette
   holds a server-initiated request and replay waits for the agent's answer by
   design. Sampling appeared nowhere in the guide, so the deliberate hang had no
@@ -44,6 +52,14 @@ Documentation, examples, and CI. No code, flag, or behavior changes.
   text, relative paths, GitHub URLs, and heading anchors move together.
   **Links to the old guide filenames break.** Entries below this one keep the
   old paths deliberately: they record what past releases shipped.
+- Retitle README section 8 from "Linting your cassettes" to "Gating your
+  cassettes" and split it into `8.1` lint and `8.2` diff. The drift gate was a
+  paragraph below the lint disclaimer, so it read as an appendix and was invisible
+  to anyone scanning headings — `diff` is a peer of `lint`, not a footnote to it.
+- Point `tools-v2.mcp.json`'s injected description at a `.env` file rather than an
+  SSH key, so it matches the starter pack's `P001` as well as the bundled `R001`
+  patterns. The pack's example command previously ran against the *clean* cassette
+  and printed `clean: no findings`, demonstrating nothing.
 - Record in `CLAUDE.md` why replay's release-on-response gate exists, not just
   what it does: it keeps a cassette from being easier to satisfy than the real
   server, so an agent that ignores a sampling request hangs on replay instead of

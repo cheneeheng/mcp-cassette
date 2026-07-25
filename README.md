@@ -61,6 +61,25 @@ Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp
 
 CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server.
 
+Cassette paths come from the marker's `cassette=`, else `mcp_cassette_dir` (ini), else `<rootpath>/tests/cassettes`. `pytest -o mcp_cassette_dir=...` overrides it for one invocation.
+
+### 2.2 The CI contract: record once, commit, replay forever
+
+Three steps, and the third is the one that has to be enforced:
+
+1. **Record once, locally**, against the real server. Default `once` mode does this when no cassette exists.
+2. **Commit the cassette.** Review it like code — a changed tool description is a supply-chain event, not a fixture edit.
+3. **CI only replays and lints.** `MCP_CASSETTE_MODE=none` makes a missing cassette a red build instead of a live call with production credentials.
+
+`examples/cassettes/echo_and_add.mcp.json` is this repo's golden cassette — the committed recording behind `test_echo_and_add`. Prove replay-only mode against it, one test or the whole directory:
+
+```bash
+MCP_CASSETTE_MODE=none uv run pytest examples/test_echo.py -q   # one file: 4 passed
+MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 5 passed
+```
+
+Both run with no server, no network, and no credentials. Under `none`, a deleted or unmerged cassette fails with `no cassette at <path> and recording is forbidden` — delete one on a scratch branch to see it.
+
 Full chapters: [OP-02. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md), [OP-03. CI pipeline](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-03-ci.md).
 
 ## 3. Use it as a library
@@ -141,7 +160,11 @@ Cassettes are verbatim transcripts, and you commit them — so redaction runs at
 
 Full chapter: [HT-07. Redact secrets](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-07-redact-secrets.md).
 
-## 8. Linting your cassettes
+## 8. Gating your cassettes
+
+Two gates, and they cover each other's blind spots: `lint` catches text that *looks* hostile, `diff` catches a surface that *moved*. A poisoned description that was there from the first recording never moves; an innocuous new parameter never looks hostile.
+
+### 8.1 Lint: injection smells
 
 Recorded tool descriptions and results are third-party content; lint them in CI before they reach a model:
 
@@ -163,7 +186,9 @@ mcp-cassette lint demo.json --fail-on warning
 
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known* smells, nothing more.
 
-Pair it with `diff` to catch drift that carries no smell at all. Committed cassettes make this runnable from a clone, with no server and no network:
+### 8.2 Diff: a drifting server surface
+
+`diff --tools-only` exits `5` when a tool's description or schema moved between two recordings — including changes that carry no smell at all. Committed cassettes make the whole gate runnable from a clone, with no server and no network:
 
 ```
 mcp-cassette lint examples/cassettes/tools.mcp.json                    # clean: exit 0
@@ -172,7 +197,9 @@ mcp-cassette diff examples/cassettes/tools.mcp.json \
                   examples/cassettes/tools-v2.mcp.json --tools-only    # surface moved: exit 5
 ```
 
-`tools-v2` is the same server one version later. Its new `callback_url` parameter reads as innocuous, so only `diff` catches it; the description reads as hostile, so `lint` catches that. Both steps run in this repo's CI.
+`tools-v2` is the same server one version later. Its description picked up an injection payload, *and* `echo` grew a `callback_url` parameter. The new parameter reads as perfectly innocuous, so `lint` never flags it — only `diff` does. Both steps run in this repo's CI, asserted by exit code.
+
+A red drift gate is not a failure to re-record away: read the diff, decide whether you accept the new surface, and only then commit the fresh cassette as the new baseline.
 
 Full chapters: [HT-08. Lint with your own pattern packs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-08-lint-pattern-packs.md), [HT-09. Gate a drifting server surface](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-09-gate-a-drifting-server.md).
 

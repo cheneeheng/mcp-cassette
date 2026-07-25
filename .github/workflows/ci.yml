@@ -54,6 +54,18 @@ jobs:
           expect 5 uv run mcp-cassette diff \
             examples/cassettes/tools.mcp.json \
             examples/cassettes/tools-v2.mcp.json --tools-only
+      # The starter pack is only worth shipping if it demonstrably fires. Exit 4
+      # alone would not prove that — the bundled R001s produce 4 by themselves —
+      # so assert the P001 finding.
+      - name: Starter pattern pack fires
+        run: |
+          uv run mcp-cassette lint examples/cassettes/tools-v2.mcp.json \
+            --pattern-pack examples/lint-pack.toml > pack.out 2>&1 || true
+          grep -q '^P001 ' pack.out || {
+            echo "::error::examples/lint-pack.toml matched nothing on tools-v2"
+            cat pack.out
+            exit 1
+          }
 
   test:
     strategy:
