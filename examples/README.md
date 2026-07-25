@@ -17,7 +17,7 @@ replays.
 | `lint-pack.toml` | A starter lint pattern pack: copy it, rename the ids, edit the regexes. |
 | `test_echo.py` | Four pytest examples built on the `mcp_cassette` fixture (stdio). |
 | `test_echo_http.py` | One pytest example built on `mcp_cassette.server_url` (Streamable HTTP; needs the `[http]` extra — the repo's dev group has it). |
-| `cassettes/` | The committed cassettes those tests replay, plus two for the lint demo: `tools.mcp.json` (a clean `tools/list` recording) and `injected.mcp.json` (the same recording with a deliberately poisoned tool description). |
+| `cassettes/` | The committed cassettes those tests replay, plus three for the lint and drift demos: `tools.mcp.json` (a clean `tools/list` recording), `injected.mcp.json` (the same recording with a deliberately poisoned tool description), and `tools-v2.mcp.json` (the server one version later — poisoned description *and* a changed `inputSchema`). |
 
 ## Run them
 
