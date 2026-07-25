@@ -20,7 +20,13 @@ from .cassette import (
     UnsupportedFormatVersion,
 )
 from .diffing import CassetteDiff, diff_cassettes
-from .lint import LintFinding, LintReport, PatternRule, ProjectLintConfig
+from .lint import (
+    LintFinding,
+    LintReport,
+    PatternRule,
+    PatternSet,
+    ProjectLintConfig,
+)
 from .lint import run as lint_cassette
 from .record.proxy import StdioRecordingProxy
 from .replay.server import ReplayServer
@@ -43,6 +49,7 @@ __all__ = [
     "Mode",
     "PaceConfig",
     "PatternRule",
+    "PatternSet",
     "ProjectLintConfig",
     "RedactionRule",
     "ReplayServer",
