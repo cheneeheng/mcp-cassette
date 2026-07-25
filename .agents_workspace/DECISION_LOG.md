@@ -563,3 +563,34 @@ temp `report_path`.
 gate holding. `uv build` clean. Manual verification of the overlay fix shows a hand-written
 `<cassette>.faults.json` untouched, the generated one outside the cassette directory, and no
 stray files after `close()`.
+
+### Entry 31
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T00:00:00Z
+**Task:** Run the release flow for v0.3.3.
+
+**Context:** The release flow prescribes branching `chore/release-v0.3.3` from `main`
+and committing the version bump there. Neither precondition held: the 0.3.3 bump
+already landed on `main` via PR #10 (`pyproject.toml`, `__init__.py`, and `uv.lock`
+all read 0.3.3 on both `main` and the feature branch), and the release content —
+the pre-release audit fixes plus the expanded 0.3.3 changelog — sits on
+`fix/pre-release-audit`, 12 commits ahead of `origin/main`. Branching from `main`
+would have orphaned that work; a fresh bump commit would have been a no-op.
+
+**Decision:** Reuse `fix/pre-release-audit` as the release branch and skip the
+flow's bump-and-commit step (steps 2, 3, 7 as written). Verified instead that every
+manifest already reads 0.3.3 and that the changelog section is complete and its
+compare links are intact. The only new commit is the CLAUDE.md sync, which carries a
+`docs(claude)` subject rather than `chore: release v0.3.3` — a CLAUDE.md-only diff
+under a release subject would misdescribe itself, and the release identity lives in
+the PR and the annotated tag.
+
+**Impact / Risk:** The v0.3.3 history has no single "release commit" to point at.
+Low risk: the tag is annotated and points at the merge commit, and `publish.yml`
+already fails the build when a release tag disagrees with the packaged version, so a
+version/tag mismatch cannot reach PyPI.
+
+**Outcome:** Docs synced and PR opened. Tag and GitHub release deliberately not
+created — the user asked to stop short of the release.
