@@ -49,6 +49,32 @@ Cassette path when the marker gives no explicit `cassette=`:
 Sanitizing replaces every run of characters outside `A-Za-z0-9_.-` with a single `_`, so
 parametrized tests get distinct files.
 
+`pytest -o mcp_cassette_dir=/mnt/cassettes` overrides the ini value for a single
+invocation — pytest's own mechanism, no mcp-cassette flag involved.
+
+**`mcp_cassette_dir` is fixture-only, and there is no `MCP_CASSETTE_DIR` env var.** The
+fixture is the one door that *derives* a cassette path, because a test node name is the
+only thing that can name a cassette automatically; the base directory exists solely to be
+joined onto that derivation. The other two doors take the full path from you:
+
+| Door | Cassette named by |
+|---|---|
+| pytest fixture | derived — `<mcp_cassette_dir>/<module>/<node name>.mcp.json` |
+| `mcp-cassette record` / `serve` | `--cassette PATH` / positional `PATH` |
+| `use_cassette(...)` | the `cassette` argument |
+
+So configure the directory where it belongs — in the path you pass:
+
+```python
+CASSETTES = Path(os.environ.get("MY_CASSETTE_DIR", "cassettes"))
+with use_cassette(CASSETTES / "search.mcp.json") as session:
+    ...
+```
+
+This is the opposite of `MCP_CASSETTE_MODE`, which is genuinely cross-door: `resolve_mode`
+reads it and all three doors delegate there, so the `none` invariant holds everywhere. A
+directory env var would reach exactly one door of three.
+
 ## OP-02.3 Marker options
 
 ```python

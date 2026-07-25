@@ -33,6 +33,13 @@ Documentation, examples, and CI. No code, flag, or behavior changes.
   stating the contract it stands for — record once locally, commit the cassette,
   CI only replays and lints — with the replay-only proof command for both a single
   file and the whole directory.
+- Document that `mcp_cassette_dir` is fixture-only and that `pytest -o
+  mcp_cassette_dir=...` overrides it per invocation (`OP-02.2`, README `§2.1`).
+  The option read as a gap in the CLI and library doors; it is not one. The
+  fixture is the only door that derives a cassette path — from the test node name
+  — so a base directory has nothing to join onto elsewhere, and a
+  `MCP_CASSETTE_DIR` env var would reach one door of three. `MCP_CASSETTE_MODE` is
+  cross-door precisely because all three delegate to `resolve_mode`.
 - A CI assertion that `examples/lint-pack.toml` actually fires (`P001` present in
   the output, not merely exit `4`, which the bundled rules produce on their own).
   A starter pack nobody can see match is a poor advertisement for the feature.

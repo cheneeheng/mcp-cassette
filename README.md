@@ -61,7 +61,7 @@ Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp
 
 CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server.
 
-Cassette paths come from the marker's `cassette=`, else `mcp_cassette_dir` (ini), else `<rootpath>/tests/cassettes`. `pytest -o mcp_cassette_dir=...` overrides it for one invocation.
+Cassette paths come from the marker's `cassette=`, else `mcp_cassette_dir` (ini), else `<rootpath>/tests/cassettes`; `pytest -o mcp_cassette_dir=...` overrides it for one invocation. That setting is fixture-only, and deliberately has no env var — the fixture is the one door that *derives* a path from the test name. The CLI and `use_cassette` take the full path from you, so you compose the directory into it yourself.
 
 ### 2.2 The CI contract: record once, commit, replay forever
 
