@@ -1,11 +1,11 @@
-# 2. Record and replay a stdio server
+# HT-01. Record and replay a stdio server
 
 **When:** your MCP server runs as a local command and your test drives an agent against
 it.
-**Prerequisites:** [1. Getting started](../01-getting-started.md) completed; a working
+**Prerequisites:** [GS-01. Getting started](../GS-01-getting-started.md) completed; a working
 test using the `mcp_cassette` fixture.
 
-## 2.1 The core loop
+## HT-01.1 The core loop
 
 ```python
 def test_agent_summarizes_repo(mcp_cassette):
@@ -25,7 +25,7 @@ cassette file exists:
 
 The agent is never patched. It launches whatever command you give it.
 
-## 2.2 Choose where the cassette lives
+## HT-01.2 Choose where the cassette lives
 
 By default the cassette path is
 `tests/cassettes/<test-module-name>/<test-node-name>.mcp.json`, with any character
@@ -49,7 +49,7 @@ def test_agent_summarizes_repo(mcp_cassette):
 
 **Verify:** run the test and confirm the file appears where you expect.
 
-## 2.3 Pick a record mode
+## HT-01.3 Pick a record mode
 
 The modes answer one question, decided once per test run: does this run record or
 replay? The unit is always the **entire session** — every message from server launch to
@@ -74,7 +74,7 @@ def test_never_records(mcp_cassette):
     ...
 ```
 
-## 2.4 Re-record after the server changes
+## HT-01.4 Re-record after the server changes
 
 > **Warning:** re-recording overwrites the cassette in place. The old recording is gone
 > unless it is committed to git. Commit first, or work on a branch.
@@ -116,7 +116,7 @@ plain `uv run pytest` (replay) passes.
 > are replay-only and raise `CassetteError` under a recording action). Re-record those
 > per file with the delete-and-rerun approach.
 
-## 2.5 Control how requests are matched
+## HT-01.5 Control how requests are matched
 
 The JSON-RPC `id` is never matched on; the replay server re-stamps the client's `id`
 onto the recorded response. Matching is structural over the parsed JSON, and by default
@@ -155,7 +155,7 @@ def test_agent(mcp_cassette):
 
 **Verify:** the test passes on replay with no `unmatched request(s)` failure.
 
-## 2.6 What happens on failure
+## HT-01.6 What happens on failure
 
 On teardown, the fixture calls `finalize()` and fails the test when:
 
@@ -165,7 +165,7 @@ On teardown, the fixture calls `finalize()` and fails the test when:
 
 The replay subprocess itself exits with code `3` on an unmatched request.
 
-## 2.7 Server-initiated requests
+## HT-01.7 Server-initiated requests
 
 Sampling and elicitation (the server asking the *client* mid-call) are recorded
 generically and replay on both transports. On replay the recorded server request is

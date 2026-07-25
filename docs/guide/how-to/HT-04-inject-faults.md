@@ -1,4 +1,4 @@
-# 5. Inject faults
+# HT-04. Inject faults
 
 **When:** you want to test how your agent behaves when the MCP server is slow, errors,
 returns garbage, or dies — without breaking a real server.
@@ -8,7 +8,7 @@ One recorded cassette drives a whole resilience matrix. The cassette is never mu
 faults live in a separate `FaultOverlay`, either built in test code or loaded from a
 `<cassette>.faults.json` sidecar.
 
-## 5.1 Parametrize over faults
+## HT-04.1 Parametrize over faults
 
 ```python
 import mcp_cassette as mcc
@@ -33,7 +33,7 @@ fault test's replay misses fail the test exactly as an ordinary one's do.
 
 **Verify:** the agent takes its degraded path and the test still passes offline.
 
-## 5.2 Fault types
+## HT-04.2 Fault types
 
 | Constructor | Effect |
 |---|---|
@@ -46,7 +46,7 @@ fault test's replay misses fail the test exactly as an ordinary one's do.
 `method` is the JSON-RPC method the fault targets, e.g. `tools/call`. `nth` restricts the
 fault to the nth matching request; omit it to apply to every match.
 
-## 5.3 The one rule that trips people up
+## HT-04.3 The one rule that trips people up
 
 **Faults fire after a request matches.** A fault on `tools/call` does nothing unless the
 cassette contains a matching `tools/call` exchange for that request. A fault targeting a
@@ -66,7 +66,7 @@ fault overlay dry-run:
 
 The `WARNING` lines are exactly the inert faults.
 
-## 5.4 Faults under a recording mode
+## HT-04.4 Faults under a recording mode
 
 `with_faults()` combined with a mode that resolves to recording raises:
 
@@ -78,7 +78,7 @@ mode (resolved action: record)
 Record the cassette first (or stop forcing `MCP_CASSETTE_MODE=all` for that run), then
 add the fault.
 
-## 5.5 From the CLI
+## HT-04.5 From the CLI
 
 Write the overlay to a JSON sidecar and pass it to `serve`:
 
