@@ -18,7 +18,7 @@ mcp-cassette lint    CASSETTE [--baseline PATH] [--format text|json] [--select R
 | Code | Meaning |
 |---|---|
 | `0` | Success. For `lint`: no error-severity findings. |
-| `2` | Usage error, or a cassette that is missing or has an unsupported `format_version`. |
+| `2` | Usage error, or a cassette or fault overlay that is missing, unreadable, malformed, or has an unsupported `format_version`. |
 | `3` | `serve`: an unmatched request was received. |
 | `4` | `lint`: at least one finding at or above `--fail-on` (default: error severity). |
 | `5` | `diff`: the two cassettes differ. |
