@@ -20,7 +20,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from .cassette import Cassette, Fault, FaultOverlay, MatchConfig, PaceConfig
+from .cassette import (
+    Cassette,
+    Fault,
+    FaultOverlay,
+    MatchConfig,
+    PaceConfig,
+    UnsupportedFormatVersion,
+)
 from .report import read_report
 
 Mode = Literal["once", "none", "all", "new_episodes"]
@@ -411,7 +418,10 @@ class CassetteSession:
         """The existing cassette's transport (``stdio`` when absent/unreadable)."""
         try:
             return Cassette.load(self.cassette_path).transport
-        except (FileNotFoundError, ValueError):
+        except (OSError, ValueError, UnsupportedFormatVersion):
+            # Best-effort peek: any unreadable cassette falls back to the stdio
+            # branch, where the real load reports the problem with its own message
+            # rather than tracebacking out of server_command().
             return "stdio"
 
     def _resolve_action(self) -> _Action:
