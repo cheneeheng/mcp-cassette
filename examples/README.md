@@ -223,6 +223,20 @@ mcp-cassette lint examples/cassettes/injected.mcp.json --format json   # for CI
 mcp-cassette lint examples/cassettes/tools.mcp.json   --pattern-pack examples/lint-pack.toml
 ```
 
+`tools-v2.mcp.json` is the same server one version later — poisoned description *and* a
+new `callback_url` parameter — so it exercises the two-step gate end to end:
+
+```bash
+mcp-cassette lint examples/cassettes/tools.mcp.json         # exit 0
+mcp-cassette lint examples/cassettes/tools-v2.mcp.json      # 2 x R001: exit 4
+mcp-cassette diff examples/cassettes/tools.mcp.json \
+                  examples/cassettes/tools-v2.mcp.json --tools-only   # exit 5
+```
+
+The schema change carries no suspicious wording, so only `diff` catches it — which is why
+both steps exist. Walked through in
+[HT-09. Gate a drifting server surface](../docs/guide/how-to/HT-09-gate-a-drifting-server.md).
+
 Each finding carries a JSON-pointer locator into the cassette (open it and jump
 there). Exit `0` means no error-severity findings — warnings (R003 duplicate tool
 names, R004 instruction-shaped result text) alone don't fail the run. These are

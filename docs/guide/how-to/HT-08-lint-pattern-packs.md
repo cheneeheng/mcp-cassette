@@ -117,4 +117,5 @@ All exit 2, all naming the file and the offending key:
 ## HT-08.8 Related
 
 - [HT-07. Redact secrets](HT-07-redact-secrets.md)
+- [HT-09. Gate a drifting server surface](HT-09-gate-a-drifting-server.md)
 - [OP-03. CI pipeline](../operations/OP-03-ci.md)

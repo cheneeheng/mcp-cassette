@@ -104,5 +104,6 @@ dependencies would be the wrong trade.
 
 ## HT-06.8 Related
 
+- [HT-09. Gate a drifting server surface](HT-09-gate-a-drifting-server.md)
 - [OP-05. Runbook: replay misses and failed recordings](../operations/OP-05-runbook-replay-misses.md)
 - [OP-04. CLI reference](../operations/OP-04-cli-reference.md)

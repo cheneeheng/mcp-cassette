@@ -39,6 +39,8 @@ The two audiences do not mix:
   and how to add rules.
 - **HT-08** [Lint with your own pattern packs](how-to/HT-08-lint-pattern-packs.md) — extend
   the bundled rules with project-specific regexes.
+- **HT-09** [Gate a drifting server surface](how-to/HT-09-gate-a-drifting-server.md) — fail
+  the build when a third-party tool description or schema moves under you.
 - **TS-01** [Troubleshooting](TS-01-troubleshooting.md) — symptom to fix.
 
 ## Part II — Operators

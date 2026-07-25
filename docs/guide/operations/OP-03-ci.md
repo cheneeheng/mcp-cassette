@@ -80,7 +80,9 @@ command stays generic while meaning something project-specific — see
 [HT-08. Lint with your own pattern packs](../how-to/HT-08-lint-pattern-packs.md). The second
 exits `5` when tool descriptions or schemas moved; see
 [HT-06. Inspect and diff cassettes](../how-to/HT-06-inspect-and-diff.md) for how it differs
-from `R002`.
+from `R002`. For a worked end-to-end example — a clean recording, the same server one
+version later, and both steps firing — see
+[HT-09. Gate a drifting server surface](../how-to/HT-09-gate-a-drifting-server.md).
 
 ## OP-03.4 Reviewing cassette changes
 
