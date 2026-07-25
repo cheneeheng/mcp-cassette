@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Documentation, examples, and CI. No code, flag, or behavior changes.
+
+### Added
+
+- `examples/cassettes/tools-v2.mcp.json`: the example echo server one version
+  later, carrying an injected tool description *and* a changed `inputSchema`.
+  The existing `injected.mcp.json` stays the R001 rule fixture; this one is the
+  drift artifact, and its schema change is the case `lint` cannot see —
+  demonstrating why the gate needs both steps.
+- `docs/guide/how-to/HT-09-gate-a-drifting-server.md`: the two-step lint + diff
+  gate walked end to end against the committed example cassettes, with real
+  output and exit codes, plus what each step catches and misses. Closes the gap
+  where the gate existed only as prose with placeholder paths in `OP-03`.
+- An `examples` CI job that replays the example cassettes offline and asserts
+  the gate's exit codes (lint clean `0`, lint drifted `4`, `diff --tools-only`
+  `5`). Nothing collected `examples/` before, so its cassettes could rot
+  unnoticed, and the numbers quoted in the docs had nothing enforcing them.
+- A troubleshooting row for a replay that hangs on `tools/call`: the cassette
+  holds a server-initiated request and replay waits for the agent's answer by
+  design. Sampling appeared nowhere in the guide, so the deliberate hang had no
+  symptom entry to find it by.
+
+### Changed
+
+- Renumber the guide from one global 1–15 sequence to per-section codes — `GS`
+  getting started, `HT` how-to, `TS` troubleshooting, `OP` operations — each
+  numbered within its own series (`operations/OP-03-ci.md`, section `§OP-03.3.1`).
+  Adding a chapter previously renamed every later file and rewrote every inbound
+  link; chapters now append to their series and renumber nothing, so a cited code
+  keeps pointing at the same chapter. Filenames, headings, section numbers, link
+  text, relative paths, GitHub URLs, and heading anchors move together.
+  **Links to the old guide filenames break.** Entries below this one keep the
+  old paths deliberately: they record what past releases shipped.
+- Record in `CLAUDE.md` why replay's release-on-response gate exists, not just
+  what it does: it keeps a cassette from being easier to satisfy than the real
+  server, so an agent that ignores a sampling request hangs on replay instead of
+  collecting the recorded result and passing green.
+
 ## [0.3.3] - 2026-07-25
 
 First PyPI release, gated on a full pre-release audit. Packaging and
