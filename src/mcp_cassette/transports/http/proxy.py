@@ -193,12 +193,17 @@ class RecordingProxy:
         if self._fatal is not None:
             checkpoint.discard(self.cassette_path)
             return
-        cassette = self._recorder.build(
-            transport="http",
-            server_url=self.server_url,
-            session_id=self._session_id,
-        )
-        cassette.save(self.cassette_path)
+        # No file for a session that captured nothing — the same policy _snapshot
+        # applies to checkpoints. An empty cassette cannot replay anything, and in
+        # `once` mode its mere existence would send every later run down the replay
+        # branch, so a mis-wired first run could never re-record itself. The report
+        # is still written, so the fixture reports the empty recording.
+        if self._recorder.message_count:
+            self._recorder.build(
+                transport="http",
+                server_url=self.server_url,
+                session_id=self._session_id,
+            ).save(self.cassette_path)
         checkpoint.discard(self.cassette_path)
         if self.report_path is not None:
             write_report(self.report_path, {"messages": self._recorder.message_count})

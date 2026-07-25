@@ -34,7 +34,11 @@ from ...matching import Exchange, Matcher
 from ...record.recorder import SessionRecorder
 from ...replay.faults import Injector, make_error_response
 from ...replay.pacing import Pacer
-from ...replay.server import UNMATCHED_CODE, apply_protocol_version
+from ...replay.server import (
+    UNMATCHED_CODE,
+    apply_protocol_version,
+    no_response_miss,
+)
 from ...replay.server_requests import ServerRequestTracker
 from ...report import write_report
 from . import wire
@@ -296,6 +300,10 @@ class HttpReplayServer:
             if self._fallthrough_url is not None:
                 await self._fallthrough(request, responder)
                 return
+            if exchange is not None:
+                # Matched a recorded request whose response was never captured; the
+                # client gets a miss error, so the session must fail like a miss.
+                self._matcher.record_miss(no_response_miss(obj))
             await self._send_unmatched(obj, responder)
             return
         await self._respond_matched(exchange, fault, obj, responder)
@@ -305,6 +313,9 @@ class HttpReplayServer:
     ) -> None:
         init = self._initialize_exchange
         if init is None or init.response is None:
+            # initialize bypasses the matcher; record the miss by hand so a cassette
+            # with no recorded handshake fails the session instead of exiting 0.
+            self._matcher.record_miss(no_response_miss(obj))
             err = make_error_response(
                 obj.get("id"),
                 UNMATCHED_CODE,

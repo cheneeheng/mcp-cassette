@@ -171,8 +171,9 @@ class PatternSet:
         """Pack rule ids in load order (bundled ids belong to the bundled rules)."""
         return [c.rule_id for c in self._compiled if c.rule_id is not None]
 
-    def for_surface(self, surface: Surface) -> list[_Compiled]:
-        """Every compiled pattern applying to this surface, in iteration order."""
+    def _for_surface(self, surface: Surface) -> list[_Compiled]:
+        # Private: it hands out _Compiled, so a public signature would freeze an
+        # internal dataclass into the API that `mcp_cassette.PatternSet` exports.
         return [c for c in self._compiled if surface in c.surfaces]
 
     def match(self, text: str, surface: Surface) -> list[PatternMatch]:
@@ -194,7 +195,7 @@ class PatternSet:
                 severity=c.severity,
                 message=c.message,
             )
-            for c in self.for_surface(surface)
+            for c in self._for_surface(surface)
             if c.regex.search(text)
         ]
 

@@ -186,8 +186,10 @@ def test_plain_request_is_forwarded_verbatim(tmp_path: Path) -> None:
         assert response.text == "bye"
 
     proxy, cassette_path = _drive(tmp_path, upstream, client_fn)
-    # A session-management request carries no JSON-RPC message: nothing recorded.
-    assert Cassette.load(cassette_path).messages == []
+    # A session-management request carries no JSON-RPC message: nothing recorded,
+    # and a cassette of nothing is not written at all.
+    assert proxy.message_count == 0
+    assert not cassette_path.exists()
 
 
 def test_plain_forward_to_dead_upstream_is_502(tmp_path: Path) -> None:
@@ -272,7 +274,8 @@ def test_empty_post_body_records_nothing(tmp_path: Path) -> None:
         assert response.status_code == 202
 
     proxy, cassette_path = _drive(tmp_path, upstream, client_fn)
-    assert Cassette.load(cassette_path).messages == []
+    assert proxy.message_count == 0
+    assert not cassette_path.exists()
 
 
 def test_redaction_composition_without_defaults(tmp_path: Path) -> None:
@@ -356,4 +359,6 @@ def test_run_exits_130_on_interrupt(
     thread.join(timeout=10)
     assert not thread.is_alive()
     assert rc == [130]
-    assert cassette_path.exists()  # interrupt still finalizes the cassette
+    # The interrupt ran the finalize path; nothing was captured, so no empty cassette
+    # is left behind (test_cancel_mid_session_writes_valid_cassette covers the write).
+    assert not cassette_path.exists()

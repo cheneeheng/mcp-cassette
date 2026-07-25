@@ -454,3 +454,112 @@ further defects: `docs/guide/` (all 16 files — every flag, exit code, and quot
 verified against `cli.py`/`session.py`), `examples/` (library_mode, lint pack, and every README lint
 recipe executed), `tests/` layer conventions (no `__init__.py`, no duplicate basenames), and the two
 previously unread modules (`lint/patterns.py`, `replay/new_episodes.py`).
+
+### Entry 29
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T14:10:00+02:00
+**Task:** Second pre-release audit of the whole repo before the PyPI publish of 0.3.3.
+
+**Context:** Four defects needed a judgement call rather than a mechanical fix.
+
+1. The fixture read `request.node.fspath`, which exists only while pytest's deprecated
+   `legacypath` plugin is loaded. The whole suite passed because that plugin is on by default,
+   so CI could never have caught it — `-p no:legacypath` (and any future pytest that drops
+   legacypath) broke the fixture outright.
+2. A zero-message recording wrote an empty cassette. `docs/.../15-runbook` already documented
+   "No cassette written", so code and docs disagreed and one of them had to move. Three tests
+   pinned the write.
+3. Replay answered a request that matched a recorded one with no recorded response using the
+   miss error, but recorded no miss — exit `0`, test green, client told the interaction was
+   missing.
+4. `PatternSet.for_surface` was public on a class that 0.3.3 adds to the top-level `__all__`,
+   and it returns the private `_Compiled` dataclass.
+
+**Decision:**
+
+1. Use `node.path` (pytest ≥ 7, floor is 8.0). While in the same function, resolve a relative
+   `mcp_cassette_dir` against `rootpath` rather than the cwd — the documented default is
+   rootpath-relative, so the ini value silently disagreed with it from a subdirectory. One
+   pytester regression test added (running the inner suite with `-p no:legacypath`) against the
+   don't-write-tests-unprompted default, because nothing else in the suite can catch a
+   plugin-availability regression.
+2. Moved the code, not the docs: skip the save when nothing was captured, on both transports.
+   An empty cassette cannot replay anything, and in `once` mode its existence permanently
+   diverts later runs to the replay branch, so a mis-wired first run can never re-record
+   itself. The report is still written, so the fixture's "zero messages" failure is unchanged.
+   The three pinning tests were re-pointed: two now assert absence, and the two that were
+   really testing "interrupt/finalize writes the cassette" now feed the recorder a message
+   first, which is the stronger assertion they meant to make.
+3. Both replay servers now `record_miss` for a matched-but-unanswered exchange, including the
+   `initialize` handshake, which bypasses the matcher and needed the call by hand.
+4. Renamed to `_for_surface`. Last chance to do it without a breaking change.
+
+**Impact / Risk:** (2) is a user-visible behavior change — a caller that expected a cassette
+file to exist after a traffic-free `record` run will now find none; that file was unusable and
+`session.finalize()` already treated the run as a failure. (3) turns sessions that silently
+passed into exit `3` / failed tests; that is the point, but a suite replaying a truncated
+cassette will go red on upgrade with an accurate message. (1) and (4) are safe.
+
+**Outcome:** ruff, ruff format, mypy strict, and the full suite green (306 unit+system, 96+3
+integration, plus a full 386-test run before the last two fixes; final full run after).
+`uv build` produces a wheel carrying `py.typed`; `uv lock --check` clean; the examples suite,
+`library_mode.py`, and the documented `lint`/`inspect` CLI recipes all run as written. Two
+known limitations left unfixed and reported instead of changed: `NewEpisodesProxy` has no
+server-death cancel (the stdio read is an un-cancellable worker thread — same constraint
+documented for the recording proxy's interrupt path), and a `CassetteSession` built directly
+rather than through the fixture or `use_cassette` leaves a `<cassette>.faults.json` sidecar
+next to the cassette.
+
+### Entry 30
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T15:20:00+02:00
+**Task:** Close out the two limitations Entry 29 reported rather than fixed.
+
+**Context:** Both turned out to be bigger than the flags suggested.
+
+1. Entry 29 flagged "`NewEpisodesProxy` has no server-death cancel". Probing it showed
+   `StdioRecordingProxy` — the shipping main path — *has* the cancel and still hangs: with the
+   server dead and the client holding stdin, `mcp-cassette record` never exits. So the bug was
+   in the flagship recorder too, and the existing `cancel_scope.cancel()` was decorative.
+   Root cause: anyio's `FileReadStream.receive` runs `to_thread.run_sync` with
+   `abandon_on_cancel=False`, so a cancel waits on the read; and `WorkerThread` is **not**
+   daemon, so even `abandon_on_cancel=True` would only move the hang to interpreter exit,
+   where `threading._shutdown` joins it. Verified both facts in the installed anyio.
+2. Entry 29 flagged a leftover `<cassette>.faults.json`. The leftover is the lesser half: that
+   filename is the one `docs/guide/how-to/05-inject-faults.md` and CLAUDE.md tell users to
+   hand-write, so `with_faults()` on a session with the default `report_path` silently
+   *overwrote* a committed overlay before leaving its own behind.
+
+**Decision:**
+
+1. Rejected making stdin abandonable (the non-daemon worker defeats it) and converged on the
+   mechanism this codebase already chose and documented for the same constraint: finalize, then
+   `os._exit`. Added `exit_on_server_death(process, finalize)` in `record/proxy.py`, shared by
+   both proxies, exiting with the wrapped server's own code (which the CLI reference already
+   documents as `record`'s exit code). Guarded by a `_client_eof` flag so the normal path —
+   client EOF first, nothing blocked — still unwinds through the task group and keeps its
+   subprocess coverage; only the genuinely stuck case hard-exits.
+2. Write the generated overlay into a session-owned `TemporaryDirectory` cleaned up in
+   `close()`. Deliberately *not* "unlink the derived path in close()": that would delete a
+   user's hand-written overlay, turning a leftover-file bug into data loss.
+
+Four in-process tests added (both proxies' death paths, plus the normal-unwind counterpart) —
+the real paths `os._exit` and so discard subprocess coverage, which is exactly why the existing
+interrupt tests are structured this way.
+
+**Impact / Risk:** (1) touches the shutdown path CLAUDE.md calls out as the subtlest code in
+the repo. The normal record path is unchanged by construction (`_client_eof` gate) and was
+re-verified end to end: piped session records identically, a server exiting 7 propagates 7, and
+the previously hanging probe now exits. A crash-during-recording now ends the session instead
+of hanging, so a suite that silently hung will now fail fast — the point, but a visible change.
+(2) is strictly a fix; the fixture and `use_cassette` never hit the clobber because both pass a
+temp `report_path`.
+
+**Outcome:** ruff, ruff format, mypy strict green; 393 passed / 2 skipped; coverage 99% with the
+gate holding. `uv build` clean. Manual verification of the overlay fix shows a hand-written
+`<cassette>.faults.json` untouched, the generated one outside the cassette directory, and no
+stray files after `close()`.

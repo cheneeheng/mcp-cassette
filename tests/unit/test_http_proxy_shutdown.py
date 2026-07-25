@@ -50,6 +50,9 @@ def test_finalize_is_idempotent(tmp_path: Path) -> None:
     proxy = RecordingProxy(
         server_url="http://127.0.0.1:9/mcp", cassette_path=str(cassette_path)
     )
+    proxy._recorder.on_message(
+        "client", json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    )
     proxy.finalize()
     written = cassette_path.read_text(encoding="utf-8")
     proxy.finalize()

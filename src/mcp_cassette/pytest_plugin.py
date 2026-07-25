@@ -75,8 +75,13 @@ def _cassette_path(request: FixtureRequest, marker_kwargs: dict[str, Any]) -> Pa
         return Path(marker_kwargs["cassette"])
     base_ini = str(request.config.getini("mcp_cassette_dir"))
     root = Path(request.config.rootpath)
-    base = Path(base_ini) if base_ini else root / "tests" / "cassettes"
-    module = Path(str(request.node.fspath)).stem
+    # A relative ini value resolves against rootpath, never the cwd: cassettes are
+    # committed next to the tests, so the same run must find them whether pytest was
+    # invoked from the repo root or a subdirectory. An absolute value wins as written.
+    base = root / base_ini if base_ini else root / "tests" / "cassettes"
+    # node.path, not node.fspath: the legacy py.path attribute exists only while the
+    # deprecated `legacypath` plugin is loaded, so `-p no:legacypath` broke the fixture.
+    module: str = request.node.path.stem
     node_name = _SANITIZE.sub("_", request.node.name)
     return base / module / f"{node_name}.mcp.json"
 

@@ -202,6 +202,29 @@ def test_initialize_without_recorded_response_errors() -> None:
             body = response.json()
             assert body["error"]["code"] == -32001
             assert "no recorded initialize response" in body["error"]["message"]
+    # The handshake bypasses the matcher, so the miss is recorded by hand — without
+    # it the session would exit 0 having told the client the handshake failed.
+    assert server.misses == [
+        "initialize matched a recorded request that has no recorded response"
+    ]
+
+
+def test_request_recorded_without_a_response_counts_as_a_miss() -> None:
+    # A recording cut short mid-call: the request is in the cassette, its response
+    # never arrived. The client gets a miss error, so the session must fail like a
+    # miss (exit 3) instead of passing silently.
+    truncated = _cassette()
+    truncated = truncated.model_copy(update={"messages": truncated.messages[:-1]})
+    server = HttpReplayServer(truncated)
+    with in_process_server(server.serve) as url:
+        with httpx.Client(timeout=10) as client:
+            headers = _initialize(client, url)
+            response = client.post(url, json=ECHO_REQ, headers=headers)
+            assert response.status_code == 200
+            assert response.json()["error"]["code"] == -32001
+    assert server.misses == [
+        "tools/call matched a recorded request that has no recorded response"
+    ]
 
 
 def test_get_without_session_is_404() -> None:

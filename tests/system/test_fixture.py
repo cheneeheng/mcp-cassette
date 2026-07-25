@@ -116,6 +116,34 @@ def test_marker_overrides_ini(pytester: pytest.Pytester, monkeypatch) -> None:  
     pytester.runpytest_inprocess().assert_outcomes(passed=1)
 
 
+def test_default_cassette_path_without_legacypath(
+    pytester: pytest.Pytester,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    # Two things at once, both invisible to the rest of the suite: the fixture reads
+    # node.path (node.fspath exists only while the deprecated legacypath plugin is
+    # loaded), and a relative mcp_cassette_dir resolves against rootpath, not the cwd.
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+    pytester.makeini(
+        """
+        [pytest]
+        mcp_cassette_dir = fixtures/cassettes
+        """
+    )
+    pytester.makepyfile(
+        """
+        def test_path(mcp_cassette, request):
+            root = request.config.rootpath
+            module = request.node.path.stem
+            expected = (
+                root / "fixtures" / "cassettes" / module / "test_path.mcp.json"
+            )
+            assert mcp_cassette.cassette_path == expected
+        """
+    )
+    pytester.runpytest_inprocess("-p", "no:legacypath").assert_outcomes(passed=1)
+
+
 def test_fixture_and_library_agree_on_the_env_mode(
     pytester: pytest.Pytester,
     monkeypatch,  # type: ignore[no-untyped-def]

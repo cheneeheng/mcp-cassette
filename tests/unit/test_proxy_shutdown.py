@@ -23,14 +23,30 @@ from mcp_cassette.record.proxy import StdioRecordingProxy
 
 
 class _FakeProcess:
-    def __init__(self, fail_terminate: bool = False) -> None:
+    def __init__(self, fail_terminate: bool = False, returncode: int = 0) -> None:
         self.terminated = False
         self._fail = fail_terminate
+        self._returncode = returncode
 
     def terminate(self) -> None:
         if self._fail:
             raise ProcessLookupError
         self.terminated = True
+
+    async def wait(self) -> int:
+        return self._returncode
+
+
+class _EofStream:
+    """A receive stream that is already at EOF (the server closed its stdout)."""
+
+    async def receive(self, max_bytes: int = 65536) -> bytes:
+        raise anyio.EndOfStream
+
+
+class _NullSink:
+    async def send(self, item: bytes) -> None:
+        pass
 
 
 @pytest.fixture()
@@ -59,6 +75,7 @@ def test_windows_watcher_finalizes_on_sigint(
     restore_handlers: None,
 ) -> None:
     proxy = _proxy(tmp_path)
+    proxy._recorder.on_line("client", b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')  # noqa: SLF001
     exits: list[int] = []
     monkeypatch.setattr(os, "_exit", exits.append)
     process = _FakeProcess()
@@ -77,7 +94,7 @@ def test_windows_watcher_finalizes_on_sigint(
     assert exits == [130]
     assert process.terminated is True
     # cassette and report were finalized before exiting
-    assert Cassette.load(tmp_path / "c.json").messages == []
+    assert Cassette.load(tmp_path / "c.json").messages[0].method == "ping"
     assert (tmp_path / "r.json").exists()
 
 
@@ -105,7 +122,9 @@ def test_windows_watcher_tolerates_already_dead_child(
 
     anyio.run(run)
     assert exits == [130]
-    assert (tmp_path / "c.json").exists()
+    # nothing was captured, so finalize writes the report but no empty cassette
+    assert not (tmp_path / "c.json").exists()
+    assert (tmp_path / "r.json").exists()
 
 
 def test_windows_watcher_degrades_to_eof_when_handlers_unavailable(
@@ -155,3 +174,53 @@ def test_watch_signals_platform_dispatch(
     # cancel the un-cancellable stdin worker-thread read, so both terminate and exit.
     assert exits == [130]
     assert process.terminated is True
+
+
+def test_server_death_with_client_stdin_open_finalizes_and_exits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The server closes stdout while the client still holds our stdin. Cancelling the
+    # task group cannot help — the stdin read is parked in a non-daemon anyio worker
+    # thread — so the proxy finalizes and hard-exits with the server's own code.
+    proxy = _proxy(tmp_path)
+    proxy._recorder.on_line("client", b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')  # noqa: SLF001
+    exits: list[int] = []
+    monkeypatch.setattr(os, "_exit", exits.append)
+
+    async def run() -> None:
+        async with anyio.create_task_group() as tg:
+            await proxy._server_to_client(  # noqa: SLF001
+                _EofStream(),  # type: ignore[arg-type]
+                _NullSink(),  # type: ignore[arg-type]
+                tg.cancel_scope,
+                _FakeProcess(returncode=5),  # type: ignore[arg-type]
+            )
+
+    anyio.run(run)
+    assert exits == [5]
+    assert Cassette.load(tmp_path / "c.json").messages[0].method == "ping"
+
+
+def test_server_eof_after_client_eof_unwinds_without_exiting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The normal path: the client closed stdin first, so nothing is blocked and the
+    # session ends by cancelling the task group — no hard exit, no lost coverage.
+    proxy = _proxy(tmp_path)
+    proxy._client_eof = True  # noqa: SLF001
+    exits: list[int] = []
+    monkeypatch.setattr(os, "_exit", exits.append)
+
+    async def run() -> None:
+        async with anyio.create_task_group() as tg:
+            await proxy._server_to_client(  # noqa: SLF001
+                _EofStream(),  # type: ignore[arg-type]
+                _NullSink(),  # type: ignore[arg-type]
+                tg.cancel_scope,
+                _FakeProcess(),  # type: ignore[arg-type]
+            )
+
+    anyio.run(run)
+    assert exits == []

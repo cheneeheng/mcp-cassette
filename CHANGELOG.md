@@ -25,6 +25,45 @@ discoverability, plus the behavior fixes the audit turned up.
 
 ### Fixed
 
+- The `mcp_cassette` fixture crashed with `AttributeError: 'Function' object has
+  no attribute 'fspath'` under `-p no:legacypath`, and would have broken outright
+  when pytest drops the deprecated `legacypath` plugin. The default cassette path
+  now derives the module name from `node.path`.
+- A relative `mcp_cassette_dir` ini value resolved against the current working
+  directory, so running pytest from a subdirectory looked for cassettes in a
+  different place than the documented `<rootpath>/...` default. It now resolves
+  against pytest's `rootpath`; an absolute value still wins as written.
+- A recording that captured zero messages still wrote an empty cassette file
+  (both transports). The runbook already said no cassette is written, and the
+  empty file was actively harmful: in `once` mode its existence sent every later
+  run down the replay branch, so a mis-wired first run could never re-record
+  itself. Nothing is written now; the session report — and therefore the
+  fixture's `recording captured zero messages` failure — is unchanged.
+- Replay answered a request that matched a recorded one with *no recorded
+  response* (a recording cut short mid-call, or a hand-promoted `.partial`) with
+  the same JSON-RPC miss error it sends for an outright miss, but recorded no
+  miss: the process exited `0` and the fixture passed the test. Both transports
+  now count it as a miss, so it exits `3` and fails the test like any other. The
+  same hole in the `initialize` handshake, which bypasses the matcher entirely,
+  is closed too.
+- `record` (and `serve --new-episodes`) hung forever when the wrapped server exited
+  while the agent still held the proxy's stdin open — a server crash mid-session
+  turned into a hung test rather than a failed one. The task-group cancel that was
+  supposed to end the session could not: the client stdin read is parked in an
+  anyio worker thread that is both un-cancellable and non-daemon, so the
+  interpreter would join it at exit. Server death now converges on the same hard
+  exit the interrupt path already used — cassette finalized first, and the process
+  leaves with the wrapped server's own exit code.
+- `with_faults()` on a session built without an explicit `report_path` wrote its
+  generated overlay to `<cassette>.faults.json` — the exact filename the docs tell
+  you to hand-write for `--faults` — overwriting a committed overlay and then
+  leaving the generated file behind next to the cassette. The overlay now goes to a
+  private temporary directory removed by `close()`. The pytest fixture and
+  `use_cassette` were unaffected (both already pass a temp `report_path`).
+- The replay-pacing integration tests asserted wall-clock floors within ~300 ms of
+  the expected signal, while each measurement spans two subprocess startups. Two
+  different tests flaked on consecutive local runs; the floors now sit at roughly
+  half the signal, which is still unambiguous (instant replay contributes ~0).
 - Raise the `anyio` floor to `>=4.2`. The replay and HTTP servers construct
   `anyio.Lock()` / `anyio.Event()` outside a running event loop, and the
   adapters that make that legal only exist from 4.2 — on 4.0/4.1 a consumer got
@@ -65,6 +104,9 @@ discoverability, plus the behavior fixes the audit turned up.
 
 ### Changed
 
+- `PatternSet.for_surface` is now private (`_for_surface`). It handed out an
+  internal dataclass and has one caller inside the class; making it public would
+  have frozen that dataclass into the API `PatternSet` now exports.
 - README links are absolute GitHub URLs. The README is the PyPI long
   description, where relative links resolve against `pypi.org` and 404.
 - `[project.urls]` adds Documentation, Changelog, and Issues for the PyPI
