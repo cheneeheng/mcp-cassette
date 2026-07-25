@@ -20,7 +20,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from .cassette import Cassette, Fault, FaultOverlay, MatchConfig, PaceConfig
+from .cassette import (
+    Cassette,
+    Fault,
+    FaultOverlay,
+    MatchConfig,
+    PaceConfig,
+    UnsupportedFormatVersion,
+)
 from .report import read_report
 
 Mode = Literal["once", "none", "all", "new_episodes"]
@@ -166,10 +173,9 @@ class CassetteSession:
         self.report_path = report_path or cassette_path.with_name(
             cassette_path.name + ".report.json"
         )
-        self._faults_path = self.report_path.parent / (
-            cassette_path.name + ".faults.json"
-        )
+        self._faults_tmp: tempfile.TemporaryDirectory[str] | None = None
         self._last_action: _Action | None = None
+        self._derived: list[CassetteSession] = []
         self._portal_cm: Any = None
         self._portal: Any = None
         self._serve_future: Any = None
@@ -178,6 +184,11 @@ class CassetteSession:
     def with_faults(self, *faults: Fault) -> CassetteSession:
         """Return a copy of this session with the given faults applied.
 
+        The copy is registered on this session, because the pytest fixture finalizes
+        the session it handed the test, not the derivative the test actually ran.
+        Without the link a fault test's replay misses would go unreported and an
+        HTTP server started on the derivative would outlive the test.
+
         Args:
             *faults: Faults to inject at replay time.
 
@@ -185,7 +196,7 @@ class CassetteSession:
             A new :class:`CassetteSession` (so parametrized tests do not share state).
         """
         overlay = FaultOverlay(faults=list(faults))
-        return CassetteSession(
+        derived = CassetteSession(
             mode=self.mode,
             cassette_path=self.cassette_path,
             match=self.match,
@@ -193,6 +204,8 @@ class CassetteSession:
             pace=self.pace,
             report_path=self.report_path,
         )
+        self._derived.append(derived)
+        return derived
 
     def server_command(self, real_cmd: list[str]) -> list[str]:
         """Build the MCP server command the agent should launch for this test.
@@ -254,11 +267,28 @@ class CassetteSession:
             *self._pace_flags(),
         ]
         if self.faults is not None:
-            self._faults_path.write_text(
-                self.faults.model_dump_json(indent=2), encoding="utf-8"
-            )
-            cmd += ["--faults", str(self._faults_path)]
+            cmd += ["--faults", self._write_faults()]
         return cmd
+
+    def _write_faults(self) -> str:
+        """Serialize this session's overlay where only this session can see it.
+
+        The replay server reads the overlay from a file, so an in-memory
+        :meth:`with_faults` overlay has to be written somewhere. That somewhere is a
+        private temporary directory, removed in :meth:`close`: the obvious name,
+        ``<cassette>.faults.json``, is the one the docs tell users to hand-write for
+        the CLI, so deriving it from the cassette path would overwrite a committed
+        overlay and then leave the generated one behind next to it.
+
+        Returns:
+            Path to the written overlay, as a string for the command line.
+        """
+        assert self.faults is not None
+        if self._faults_tmp is None:
+            self._faults_tmp = tempfile.TemporaryDirectory(prefix="mcp-cassette-")
+        path = Path(self._faults_tmp.name) / (self.cassette_path.name + ".faults.json")
+        path.write_text(self.faults.model_dump_json(indent=2), encoding="utf-8")
+        return str(path)
 
     def server_url(self, real_url: str) -> str:
         """Build the MCP server URL the agent should use for this test.
@@ -355,12 +385,22 @@ class CassetteSession:
 
         Idempotent, and a no-op when :meth:`server_url` was never called (the
         background server is started only by an explicit ``server_url()``, never
-        lazily, so there is nothing to race against).
+        lazily, so there is nothing to race against). Sessions derived by
+        :meth:`with_faults` are closed too, and any generated fault overlay is
+        removed with the temporary directory holding it.
         """
+        for derived in self._derived:
+            derived.close()
         self._stop_background()
+        if self._faults_tmp is not None:
+            self._faults_tmp.cleanup()
+            self._faults_tmp = None
 
     def finalize(self) -> None:
         """Close the session, check the report, and raise on violations.
+
+        When :meth:`with_faults` derived sessions from this one, they are the
+        sessions that ran, so their reports are the ones checked.
 
         Raises:
             CassetteError: If a recording captured zero messages (or could not
@@ -368,6 +408,10 @@ class CassetteSession:
                 request.
         """
         self.close()
+        if self._derived:
+            for derived in self._derived:
+                derived.finalize()
+            return
         fatal = getattr(self._http_engine, "fatal_error", None)
         if fatal is not None:
             raise CassetteError(f"recording failed: {fatal}")
@@ -393,7 +437,10 @@ class CassetteSession:
         """The existing cassette's transport (``stdio`` when absent/unreadable)."""
         try:
             return Cassette.load(self.cassette_path).transport
-        except (FileNotFoundError, ValueError):
+        except (OSError, ValueError, UnsupportedFormatVersion):
+            # Best-effort peek: any unreadable cassette falls back to the stdio
+            # branch, where the real load reports the problem with its own message
+            # rather than tracebacking out of server_command().
             return "stdio"
 
     def _resolve_action(self) -> _Action:

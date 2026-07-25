@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -12,6 +13,21 @@ from mcp_cassette.cassette import Cassette, MatchConfig, Message
 from mcp_cassette.matching import Exchange
 from mcp_cassette.replay.new_episodes import NewEpisodesProxy, _decode
 from mcp_cassette.replay.server import ReplayServer
+
+
+class _EofStream:
+    """A receive stream that is already at EOF (the server closed its stdout)."""
+
+    async def receive(self, max_bytes: int = 65536) -> bytes:
+        raise anyio.EndOfStream
+
+
+class _FakeProcess:
+    def __init__(self, returncode: int) -> None:
+        self._returncode = returncode
+
+    async def wait(self) -> int:
+        return self._returncode
 
 
 class _SinkStream:
@@ -126,6 +142,39 @@ def test_initialize_without_recorded_exchange_answers_error() -> None:
     assert isinstance(resp, dict)
     assert resp["id"] == 10
     assert "no recorded initialize response" in resp["error"]["message"]
+    # The handshake bypasses the matcher, so the miss is recorded by hand — without
+    # it the session would exit 0 having told the client the handshake failed.
+    assert server._matcher.misses == [  # noqa: SLF001 — same package
+        "initialize matched a recorded request that has no recorded response"
+    ]
+
+
+def test_request_recorded_without_a_response_counts_as_a_miss() -> None:
+    # A recording cut short mid-call: the request is in the cassette, its response
+    # never arrived. The client gets a miss error, so the session must fail like a
+    # miss (exit 3) instead of passing silently.
+    messages = [
+        *_init_exchange_messages({}),
+        _msg(
+            2,
+            "client",
+            "request",
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {}},
+            method="tools/call",
+            msg_id=2,
+        ),
+    ]
+    server = ReplayServer(_cassette(messages))
+    call = json.dumps(
+        {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {}}
+    ).encode()
+    sink = _drive(server, [INIT_LINE, call + b"\n"])
+    _, resp = sink.lines
+    assert isinstance(resp, dict)
+    assert resp["error"]["code"] == -32001
+    assert server._matcher.misses == [  # noqa: SLF001 — same package
+        "tools/call matched a recorded request that has no recorded response"
+    ]
 
 
 def test_leading_notifications_emitted_only_once() -> None:
@@ -277,6 +326,29 @@ def test_new_episodes_finalize_without_report(tmp_path: Any) -> None:
     saved = Cassette.load(target)
     assert [m.seq for m in saved.messages] == [0]
     assert not (tmp_path / "merged.json.report.json").exists()
+
+
+def test_new_episodes_server_death_saves_and_exits(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    # The fall-through server dies while the agent still holds our stdin: the read
+    # cannot be unwound, so the merged cassette is saved and the process leaves with
+    # the server's own code. Exercised in-process because the real path os._exit()s.
+    target = tmp_path / "merged.json"
+    proxy = _new_episodes_proxy(str(target))
+    proxy._out_lock = anyio.Lock()
+    proxy._recorder.on_line(
+        "client", b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n'
+    )
+    exits: list[int] = []
+    monkeypatch.setattr(os, "_exit", exits.append)
+
+    async def run() -> None:
+        await proxy._server_loop(_EofStream(), _SinkStream(), _FakeProcess(4))  # type: ignore[arg-type]
+
+    anyio.run(run)
+    assert exits == [4]
+    assert [m.seq for m in Cassette.load(target).messages] == [0]
 
 
 def test_server_request_with_raw_payload_is_never_emitted() -> None:

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import signal
+from collections.abc import Callable
+from typing import NoReturn
 
 import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream, Process
@@ -20,6 +22,30 @@ from . import checkpoint
 from .checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from .pump import pump_lines
 from .recorder import SessionRecorder
+
+
+async def exit_on_server_death(
+    process: Process, finalize: Callable[[], None]
+) -> NoReturn:
+    """Finalize the session and hard-exit with the server's own exit code.
+
+    Called when the wrapped server closes stdout while the client still holds our
+    stdin open — the agent is alive and waiting, but there is nothing left to proxy.
+    The exit has to be hard for the same reason the interrupt path's does: the client
+    stdin read is parked in an anyio ``FileReadStream`` worker thread, which is
+    un-cancellable *and* non-daemon, so neither cancelling the task group nor
+    returning from ``anyio.run`` can get past it — the interpreter would join that
+    blocked thread at exit and hang forever. Persist what was captured, then leave
+    without unwinding; the thread dies with the process.
+
+    Args:
+        process: The dead (or dying) server process, awaited for its exit code.
+        finalize: The caller's finalize step, run before exiting.
+    """
+    with anyio.CancelScope(shield=True):
+        code = await process.wait()
+    finalize()
+    os._exit(code or 0)
 
 
 class StdioRecordingProxy:
@@ -63,6 +89,7 @@ class StdioRecordingProxy:
             rules.extend(redaction)
         self._recorder = SessionRecorder(rules)
         self._signal_received = False
+        self._client_eof = False
 
     def run(self) -> int:
         """Run the proxy to completion, returning a process exit code."""
@@ -86,6 +113,7 @@ class StdioRecordingProxy:
                         process.stdout,
                         client_out,
                         tg.cancel_scope,
+                        process,
                     )
                     tg.start_soon(self._forward_stderr, process.stderr, our_err)
                     tg.start_soon(
@@ -108,6 +136,7 @@ class StdioRecordingProxy:
         await pump_lines(
             source, dest, tap=lambda line: self._recorder.on_line("client", line)
         )
+        self._client_eof = True
         await dest.aclose()  # forward EOF so the server can shut down
 
     async def _server_to_client(
@@ -115,11 +144,18 @@ class StdioRecordingProxy:
         source: ByteReceiveStream,
         dest: ByteSendStream,
         cancel_scope: anyio.CancelScope,
+        process: Process,
     ) -> None:
         await pump_lines(
             source, dest, tap=lambda line: self._recorder.on_line("server", line)
         )
-        cancel_scope.cancel()  # server closed stdout -> session over
+        # Server closed stdout -> session over. How we end it depends on whether the
+        # client is still holding stdin: cancelling is only safe once that read has
+        # already finished (see exit_on_server_death).
+        if self._client_eof:
+            cancel_scope.cancel()
+            return
+        await exit_on_server_death(process, self._finalize)
 
     async def _forward_stderr(
         self, source: ByteReceiveStream, dest: ByteSendStream
@@ -185,13 +221,19 @@ class StdioRecordingProxy:
         os._exit(130)
 
     def _snapshot(self) -> Cassette | None:
+        # None for a session that captured nothing, so no file exists for it — a
+        # checkpoint is skipped and _finalize writes nothing. An empty cassette cannot
+        # replay anything, and in `once` mode its mere existence would send every later
+        # run down the replay branch, so a mis-wired first run could never re-record
+        # itself.
         if self._recorder.message_count == 0:
             return None
         return self._recorder.build()
 
     def _finalize(self) -> None:
-        cassette = self._recorder.build()
-        cassette.save(self.cassette_path)
+        cassette = self._snapshot()
+        if cassette is not None:
+            cassette.save(self.cassette_path)
         checkpoint.discard(self.cassette_path)
         if self.report_path is not None:
             _write_report(self.report_path, {"messages": self._recorder.message_count})

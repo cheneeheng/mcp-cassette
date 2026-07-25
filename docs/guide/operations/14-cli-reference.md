@@ -18,7 +18,7 @@ mcp-cassette lint    CASSETTE [--baseline PATH] [--format text|json] [--select R
 | Code | Meaning |
 |---|---|
 | `0` | Success. For `lint`: no error-severity findings. |
-| `2` | Usage error, or a cassette that is missing or has an unsupported `format_version`. |
+| `2` | Usage error, or a cassette or fault overlay that is missing, unreadable, malformed, or has an unsupported `format_version`. |
 | `3` | `serve`: an unmatched request was received. |
 | `4` | `lint`: at least one finding at or above `--fail-on` (default: error severity). |
 | `5` | `diff`: the two cassettes differ. |
@@ -34,8 +34,8 @@ are mutually exclusive, and one is required.
 |---|---|---|
 | `--cassette PATH` | required | Where to write the cassette. |
 | `--url URL` | — | Remote Streamable HTTP endpoint to record. Needs the `[http]` extra. |
-| `--port N` | `0` (ephemeral) | Local port for the HTTP recording proxy. |
-| `--max-idle SECONDS` | off | End the recording after this much client inactivity. |
+| `--port N` | `0` (ephemeral) | Local port for the HTTP recording proxy. `--url` only. |
+| `--max-idle SECONDS` | off | End the recording after this much client inactivity. `--url` only. |
 | `--checkpoint-interval SECONDS` | `5` | Interval for `<cassette>.partial` checkpoints; `0` disables. |
 | `--redact LOCATOR[=REPLACEMENT]` | — | Extra redaction rule. Repeatable. Key-glob, or JSON pointer if it starts with `/`. |
 | `--no-default-redactions` | off | Disable the always-on default rule set. |
@@ -45,6 +45,9 @@ are mutually exclusive, and one is required.
 mcp-cassette record --cassette demo.json -- python tools/server.py
 mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp --port 8902 --max-idle 30
 ```
+
+`--port` and `--max-idle` belong to the `--url` proxy; passing either with a stdio
+`-- CMD` is a usage error (exit `2`) rather than a silently ignored flag.
 
 `record` is a transparent proxy: it forwards whatever arrives on its own stdin to the
 wrapped server. Nothing is captured unless a client drives it. The real server's stderr

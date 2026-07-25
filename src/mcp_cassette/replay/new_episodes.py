@@ -17,7 +17,7 @@ import json
 from typing import Any
 
 import anyio
-from anyio.abc import ByteSendStream
+from anyio.abc import ByteSendStream, Process
 
 from .._stdio import stderr_stream, stdin_stream, stdout_stream
 from ..cassette import (
@@ -29,6 +29,7 @@ from ..cassette import (
     default_redaction_rules,
 )
 from ..matching import Matcher
+from ..record.proxy import exit_on_server_death
 from ..record.pump import buffered_lines, pump_lines
 from ..record.recorder import SessionRecorder
 from ..report import write_report
@@ -76,6 +77,7 @@ class NewEpisodesProxy:
         if redaction:
             rules.extend(redaction)
         self._recorder = SessionRecorder(rules)
+        self._client_eof = False
 
     def run(self) -> int:
         """Run to completion, returning the real server's exit code (or 0)."""
@@ -93,7 +95,7 @@ class NewEpisodesProxy:
             our_err = stderr_stream()
             async with anyio.create_task_group() as tg:
                 tg.start_soon(self._client_loop, client_in, client_out, process.stdin)
-                tg.start_soon(self._server_loop, process.stdout, client_out)
+                tg.start_soon(self._server_loop, process.stdout, client_out, process)
                 tg.start_soon(self._forward_stderr, process.stderr, our_err)
             await process.wait()
             exit_code = process.returncode or 0
@@ -122,12 +124,20 @@ class NewEpisodesProxy:
             # forward (initialize, notifications, or a miss) and record it live
             self._recorder.on_line("client", line)
             await server_in.send(line)
+        self._client_eof = True
         await server_in.aclose()
 
-    async def _server_loop(self, server_out: Any, client_out: ByteSendStream) -> None:
+    async def _server_loop(
+        self, server_out: Any, client_out: ByteSendStream, process: Process
+    ) -> None:
         async for line in buffered_lines(server_out):
             self._recorder.on_line("server", line)
             await self._emit(client_out, line)
+        if not self._client_eof:
+            # The fall-through server died while the agent still holds our stdin.
+            # Nothing further can be recorded and the stdin read cannot be unwound,
+            # so persist the merged cassette and leave (see exit_on_server_death).
+            await exit_on_server_death(process, self._finalize)
 
     async def _forward_stderr(self, server_err: Any, our_err: ByteSendStream) -> None:
         await pump_lines(server_err, our_err, tap=None)

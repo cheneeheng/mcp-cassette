@@ -15,8 +15,6 @@ from collections import Counter
 from typing import Any
 from urllib.parse import urlsplit
 
-from pydantic import ValidationError
-
 from .cassette import (
     Cassette,
     FaultOverlay,
@@ -35,6 +33,15 @@ from .record.proxy import StdioRecordingProxy
 from .replay.faults import Injector
 from .replay.new_episodes import NewEpisodesProxy
 from .replay.server import ReplayServer
+
+_LOAD_ERRORS = (UnsupportedFormatVersion, OSError, ValueError)
+"""Everything loading a cassette or fault overlay can raise, as exit-2 usage errors.
+
+``OSError`` covers an unreadable path (missing, a directory, no permission);
+``ValueError`` covers bad content, since both :class:`json.JSONDecodeError` and
+pydantic's ``ValidationError`` derive from it. Every load site catches the same
+tuple so no subcommand can traceback where its sibling prints a diagnostic.
+"""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--port",
         type=int,
         default=0,
-        help="Local port for the recording proxy (default: ephemeral).",
+        help="Local port for the --url recording proxy (default: ephemeral).",
     )
     rec.add_argument(
         "--max-idle",
@@ -69,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="SECONDS",
         help=(
-            "End the recording after this much client inactivity — the "
+            "End a --url recording after this much client inactivity — the "
             "unattended-CI escape hatch (default: off; recording ends on signal)."
         ),
     )
@@ -356,6 +363,12 @@ def _cmd_record(args: argparse.Namespace) -> int:
             max_idle=args.max_idle,
             checkpoint_interval=args.checkpoint_interval,
         ).run()
+    if args.port or args.max_idle is not None:
+        sys.stderr.write(
+            "mcp-cassette record: --port/--max-idle apply to --url recording only, "
+            "not to a stdio -- CMD\n"
+        )
+        return 2
     proxy = StdioRecordingProxy(
         server_cmd=server_cmd,
         cassette_path=args.cassette,
@@ -390,7 +403,8 @@ def _build_pace(args: argparse.Namespace) -> tuple[PaceConfig | None, str | None
 def _cmd_serve(args: argparse.Namespace) -> int:
     try:
         cassette = Cassette.load(args.cassette)
-    except (UnsupportedFormatVersion, FileNotFoundError) as exc:
+        overlay = FaultOverlay.load(args.faults) if args.faults else None
+    except _LOAD_ERRORS as exc:
         sys.stderr.write(f"mcp-cassette serve: {exc}\n")
         return 2
     pace, pace_error = _build_pace(args)
@@ -404,7 +418,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         rewrite_protocol_version=args.rewrite_protocol_version,
     )
     if cassette.transport == "http":
-        return _cmd_serve_http(args, cassette, config)
+        return _cmd_serve_http(args, cassette, config, overlay)
     if args.url:
         sys.stderr.write(
             "mcp-cassette serve: --url applies to http cassettes; this cassette "
@@ -427,7 +441,6 @@ def _cmd_serve(args: argparse.Namespace) -> int:
             pace=pace,
         ).run()
 
-    overlay = FaultOverlay.load(args.faults) if args.faults else None
     server = ReplayServer(
         cassette, match=config, faults=overlay, report_path=args.report, pace=pace
     )
@@ -435,7 +448,10 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
 
 def _cmd_serve_http(
-    args: argparse.Namespace, cassette: Cassette, config: MatchConfig
+    args: argparse.Namespace,
+    cassette: Cassette,
+    config: MatchConfig,
+    overlay: FaultOverlay | None,
 ) -> int:
     try:
         from .transports.http import HttpReplayServer
@@ -451,7 +467,6 @@ def _cmd_serve_http(
                 "cassette records no server_url\n"
             )
             return 2
-    overlay = FaultOverlay.load(args.faults) if args.faults else None
     return HttpReplayServer(
         cassette,
         match=config,
@@ -473,7 +488,10 @@ _TIMELINE_HTTP = "  {exch:>5} {chan:<5}"
 def _cmd_inspect(args: argparse.Namespace) -> int:
     try:
         cassette = Cassette.load(args.cassette)
-    except (UnsupportedFormatVersion, FileNotFoundError) as exc:
+        # Loaded up front, not inside the dry-run: a bad overlay must fail before
+        # half a report has already been printed.
+        overlay = FaultOverlay.load(args.faults) if args.faults else None
+    except _LOAD_ERRORS as exc:
         sys.stderr.write(f"mcp-cassette inspect: {exc}\n")
         return 2
     try:
@@ -494,8 +512,8 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         _inspect_tools(cassette)
         return 0
     _inspect_summary(args, cassette, messages)
-    if args.faults:
-        _inspect_faults(cassette, args.faults)
+    if overlay is not None:
+        _inspect_faults(cassette, overlay)
     return 0
 
 
@@ -652,7 +670,7 @@ def _timing_span(messages: list[Message]) -> int:
 def _cmd_diff(args: argparse.Namespace) -> int:
     try:
         result = diff_cassettes(args.old, args.new)
-    except (UnsupportedFormatVersion, FileNotFoundError, ValidationError) as exc:
+    except _LOAD_ERRORS as exc:
         sys.stderr.write(f"mcp-cassette diff: {exc}\n")
         return 2
     if args.tools_only:
@@ -733,13 +751,7 @@ def _cmd_lint(args: argparse.Namespace) -> int:
             packs=list(args.pattern_pack),
             config=config,
         )
-    except (
-        UnsupportedFormatVersion,
-        FileNotFoundError,
-        json.JSONDecodeError,
-        ValidationError,
-        ValueError,
-    ) as exc:
+    except _LOAD_ERRORS as exc:
         sys.stderr.write(f"mcp-cassette lint: {exc}\n")
         return 2
     if args.format == "json":
@@ -760,8 +772,7 @@ def _cmd_lint(args: argparse.Namespace) -> int:
     return 4 if any(f.severity in threshold for f in report.findings) else 0
 
 
-def _inspect_faults(cassette: Cassette, faults_path: str) -> None:
-    overlay = FaultOverlay.load(faults_path)
+def _inspect_faults(cassette: Cassette, overlay: FaultOverlay) -> None:
     matcher = Matcher(cassette, MatchConfig())
     injector = Injector(overlay)
     print("\nfault overlay dry-run:")

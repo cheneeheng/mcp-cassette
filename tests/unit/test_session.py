@@ -72,6 +72,33 @@ def test_with_faults_under_replay_writes_sidecar(tmp_path: Path) -> None:
     assert "timeout" in sidecar.read_text(encoding="utf-8")
 
 
+def test_parent_finalize_checks_the_derived_fault_session(tmp_path: Path) -> None:
+    # The fixture finalizes the session it handed the test, but a fault test runs the
+    # derivative from with_faults(). Without the parent->derived link the derivative's
+    # report is never read and a fault test passes straight over a replay miss.
+    cassette = tmp_path / "c.mcp.json"
+    cassette.write_text("{}", encoding="utf-8")
+    session = _session("once", cassette, tmp_path)
+    faulted = session.with_faults(Fault.timeout("tools/call"))
+    faulted.server_command(["python", "server.py"])  # sets action=replay on the copy
+    write_report(str(faulted.report_path), {"misses": ["tools/call params={}"]})
+    with pytest.raises(CassetteError, match="unmatched"):
+        session.finalize()
+
+
+def test_parent_finalize_is_quiet_when_the_derived_session_is_clean(
+    tmp_path: Path,
+) -> None:
+    cassette = tmp_path / "c.mcp.json"
+    cassette.write_text("{}", encoding="utf-8")
+    session = _session("once", cassette, tmp_path)
+    faulted = session.with_faults(Fault.timeout("tools/call"))
+    faulted.server_command(["python", "server.py"])
+    write_report(str(faulted.report_path), {"misses": []})
+    session.close()  # idempotent, and reaches the derived session too
+    session.finalize()
+
+
 def test_match_flags_include_ignore_params_and_rewrite(tmp_path: Path) -> None:
     cassette = tmp_path / "c.mcp.json"
     cassette.write_text("{}", encoding="utf-8")

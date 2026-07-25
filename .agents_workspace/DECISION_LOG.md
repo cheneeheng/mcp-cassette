@@ -386,3 +386,211 @@ release commit subject.
 **Decision:** No version bump (stayed at 0.3.3, already correct on `main`). Updated the existing v0.3.3 CHANGELOG entry in place — retitled "Packaging and discoverability", bumped its date to 2026-07-24, and appended `Changed` bullets for the unified one-liner and expanded keywords/classifiers — rather than opening a new `[Unreleased]` or version section. Opened PR #11 and queued GitHub auto-merge (repo has `allow_auto_merge=true`, matching the open-pr skill's default for such repos) so it lands once CI is green; tag/release deliberately withheld per instruction.
 **Impact / Risk:** If the release is cut before this PR's CI finishes, the changelog entry would be tagged incomplete. Auto-merge mitigates this by landing automatically on green CI without requiring a manual merge step to be remembered.
 **Outcome:** Commit fdf46c4 on chore/text-discoverability-pass; PR #11 opened with auto-merge queued; no tag or GitHub release created.
+
+### Entry 27
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T00:00:00+02:00
+**Task:** Pre-PyPI-release audit of the whole repo; fix what it turned up (branch `fix/pre-release-audit`).
+
+**Context:** Three judgment calls the request left open. (1) `with_faults()` returns a derived `CassetteSession`, but the pytest fixture finalizes the session it *handed* the test, whose `_last_action` stays `None` — so a fault test's replay misses were never checked and an HTTP server started on the derivative outlived the test. The gap could equally have been documented as a known limitation rather than fixed. (2) `serve`/`inspect`/`diff` tracebacked with exit 1 on a malformed cassette or fault overlay while `lint` handled it; the four load sites had drifted apart. (3) The README is the PyPI long description, and its relative links (`docs/guide/...`, `LICENSE`) resolve against pypi.org there and 404.
+
+**Decision:** (1) Fixed rather than documented: the cross-process miss signal is a stated project invariant, and a fault test silently passing through a miss defeats it. `with_faults()` registers the copy on its parent; the parent's `close()`/`finalize()` cover the list. Chose a list over a single slot so a second `with_faults()` call in one test cannot leak the first. (2) Unified all four load sites on one `_LOAD_ERRORS` tuple (`UnsupportedFormatVersion, OSError, ValueError`) instead of patching only the two broken ones — `ValueError` covers both `json.JSONDecodeError` and pydantic's `ValidationError`, so no subcommand can drift again. `inspect` now loads the overlay up front so a bad one cannot fail halfway through a printed report. (3) Rewrote README links as absolute `blob/main` GitHub URLs rather than maintaining a separate PyPI description — one text, correct on both surfaces.
+
+**Impact / Risk:** (1) is a behavior change: fault tests that were silently passing over a replay miss will now fail. That is the point, but it can surface as a new failure in a downstream suite on upgrade, so it is called out under `Fixed` in the changelog. (2) changes exit codes 1 -> 2 on malformed input, matching the documented contract; `14-cli-reference.md` §14.1 updated to say so. (3) is cosmetic on GitHub, load-bearing on PyPI.
+
+**Outcome:** Full suite green before and after (370 -> 372 passed, 3 skipped); ruff, ruff format, mypy strict, and `check_version.py` clean; wheel/sdist rebuilt and metadata verified. Two regression tests were added to `tests/unit/test_session.py` despite the usual don't-write-tests-unprompted default: the fix's four new lines were the repo's only non-platform-specific coverage gap, and `fail_under = 99` sits right at the total, so leaving them bare risked a red CI on the release commit and contradicted the pyproject comment claiming the only sub-100% lines are POSIX-only. `session.py` is back to 100%; the sole remaining gap is `record/proxy.py:132-134`, as documented. Also fixed: unfilled Apache-2.0 copyright placeholder, missing `[0.3.3]` changelog compare link, absent `[project.urls]` Documentation/Changelog/Issues, missing trailing newline in `.pre-commit-config.yaml`, and a `publish.yml` guard failing the build when a release tag disagrees with the packaged version.
+
+### Entry 28
+
+**Type:** Decision
+**Mode:** Autonomous (version and scope choices confirmed by the user)
+**Timestamp:** 2026-07-25T12:00:00+02:00
+**Task:** Resume and close out the pre-PyPI-release audit (`fix/pre-release-audit`): apply the two
+blocking findings from the 10:31 handoff, finish the un-audited surfaces, and settle the release
+version.
+
+**Context:** The handoff left two confirmed-but-unfixed defects and two pending decisions. (1) The
+`anyio>=4.0` floor is wrong — `anyio.Lock()`/`anyio.Event()` are constructed outside a running
+event loop in `replay/server.py`, `transports/http/server.py`, and `replay/server_requests.py`, and
+the out-of-loop adapters only exist from 4.2; the local lockfile pins 4.14.2, so CI never sees it.
+(2) `Cassette.load` reads `format_version` off the raw JSON before validation, so a non-object top
+level raised `AttributeError` past `cli._LOAD_ERRORS`. (3) Version: v0.3.3 is *untagged* and
+unpublished (tags stop at v0.3.2) yet CHANGELOG.md already carried a dated `[0.3.3]` section plus an
+`[Unreleased]` section holding the audit fixes. (4) Four lower-priority observations were documented
+but not acted on.
+
+**Decision:** (1) Floor raised to `anyio>=4.2` with an inline reason in `pyproject.toml`; `uv lock`
+re-run (resolution unchanged). (2) Guarded `Cassette.load` on both pre-validation reads — a non-dict
+top level *and* a non-integer `format_version`, which had the same defect shape (`TypeError` on the
+`>` compare) and was not in the handoff. Both raise `ValueError`, which `_LOAD_ERRORS` already
+catches, so all four subcommands exit 2 without touching `cli.py`. (3) Folded `[Unreleased]` into
+`[0.3.3]`, redated 2026-07-25 and retitled — its old subtitle "No code, flag, or behavior changes"
+was already false. 0.3.3 was never tagged, so it is not a released version and a 0.3.4 bump would
+leave a dated changelog entry no tag will ever match; this also follows Entry 26's precedent. (4)
+All four observations acted on per user selection: `PatternSet` added to the top-level `__all__`
+before a release freezes the surface; `record --port/--max-idle` with a stdio `-- CMD` is now an
+exit-2 usage error (single fixed message naming both flags, mirroring the existing `--pace-scale`
+message rather than building per-flag prose); `_peek_transport` widened to
+`(OSError, ValueError, UnsupportedFormatVersion)`; and the pytest fixture now calls `close()`
+instead of `finalize()` when the test body already failed, detected via a
+`pytest_runtest_makereport` wrapper hook plus a `StashKey` (the fixture's `yield` never sees a test
+failure, so a `try/except` around it cannot work).
+
+**Impact / Risk:** The anyio floor changes the install contract — under SemVer that argues for a
+minor bump, but nothing has been published, so 0.3.3 *is* the first release and the floor is simply
+part of it. The `record` flag rejection is a behavior change for anyone passing `--port` with a
+stdio command today; it was silently ignored, so nothing that worked stops working. The fixture
+teardown change can *hide* a replay miss when a test fails for its own reasons — deliberate: the
+test is already red, and the report checks still run on every passing test.
+
+**Outcome:** Full toolchain green — ruff, ruff format, mypy strict, `check_version.py`, and the full
+suite (382 passed, 2 skipped before the observation fixes; re-run after). Twelve regression tests
+added across `tests/unit/test_cassette_schema.py`, `tests/unit/test_cli_surface.py`, and
+`tests/system/test_fixture.py`, again against the usual don't-write-tests-unprompted default, because
+`fail_under = 99` leaves no room for uncovered new branches. Audit surfaces closed out with no
+further defects: `docs/guide/` (all 16 files — every flag, exit code, and quoted error string
+verified against `cli.py`/`session.py`), `examples/` (library_mode, lint pack, and every README lint
+recipe executed), `tests/` layer conventions (no `__init__.py`, no duplicate basenames), and the two
+previously unread modules (`lint/patterns.py`, `replay/new_episodes.py`).
+
+### Entry 29
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T14:10:00+02:00
+**Task:** Second pre-release audit of the whole repo before the PyPI publish of 0.3.3.
+
+**Context:** Four defects needed a judgement call rather than a mechanical fix.
+
+1. The fixture read `request.node.fspath`, which exists only while pytest's deprecated
+   `legacypath` plugin is loaded. The whole suite passed because that plugin is on by default,
+   so CI could never have caught it — `-p no:legacypath` (and any future pytest that drops
+   legacypath) broke the fixture outright.
+2. A zero-message recording wrote an empty cassette. `docs/.../15-runbook` already documented
+   "No cassette written", so code and docs disagreed and one of them had to move. Three tests
+   pinned the write.
+3. Replay answered a request that matched a recorded one with no recorded response using the
+   miss error, but recorded no miss — exit `0`, test green, client told the interaction was
+   missing.
+4. `PatternSet.for_surface` was public on a class that 0.3.3 adds to the top-level `__all__`,
+   and it returns the private `_Compiled` dataclass.
+
+**Decision:**
+
+1. Use `node.path` (pytest ≥ 7, floor is 8.0). While in the same function, resolve a relative
+   `mcp_cassette_dir` against `rootpath` rather than the cwd — the documented default is
+   rootpath-relative, so the ini value silently disagreed with it from a subdirectory. One
+   pytester regression test added (running the inner suite with `-p no:legacypath`) against the
+   don't-write-tests-unprompted default, because nothing else in the suite can catch a
+   plugin-availability regression.
+2. Moved the code, not the docs: skip the save when nothing was captured, on both transports.
+   An empty cassette cannot replay anything, and in `once` mode its existence permanently
+   diverts later runs to the replay branch, so a mis-wired first run can never re-record
+   itself. The report is still written, so the fixture's "zero messages" failure is unchanged.
+   The three pinning tests were re-pointed: two now assert absence, and the two that were
+   really testing "interrupt/finalize writes the cassette" now feed the recorder a message
+   first, which is the stronger assertion they meant to make.
+3. Both replay servers now `record_miss` for a matched-but-unanswered exchange, including the
+   `initialize` handshake, which bypasses the matcher and needed the call by hand.
+4. Renamed to `_for_surface`. Last chance to do it without a breaking change.
+
+**Impact / Risk:** (2) is a user-visible behavior change — a caller that expected a cassette
+file to exist after a traffic-free `record` run will now find none; that file was unusable and
+`session.finalize()` already treated the run as a failure. (3) turns sessions that silently
+passed into exit `3` / failed tests; that is the point, but a suite replaying a truncated
+cassette will go red on upgrade with an accurate message. (1) and (4) are safe.
+
+**Outcome:** ruff, ruff format, mypy strict, and the full suite green (306 unit+system, 96+3
+integration, plus a full 386-test run before the last two fixes; final full run after).
+`uv build` produces a wheel carrying `py.typed`; `uv lock --check` clean; the examples suite,
+`library_mode.py`, and the documented `lint`/`inspect` CLI recipes all run as written. Two
+known limitations left unfixed and reported instead of changed: `NewEpisodesProxy` has no
+server-death cancel (the stdio read is an un-cancellable worker thread — same constraint
+documented for the recording proxy's interrupt path), and a `CassetteSession` built directly
+rather than through the fixture or `use_cassette` leaves a `<cassette>.faults.json` sidecar
+next to the cassette.
+
+### Entry 30
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T15:20:00+02:00
+**Task:** Close out the two limitations Entry 29 reported rather than fixed.
+
+**Context:** Both turned out to be bigger than the flags suggested.
+
+1. Entry 29 flagged "`NewEpisodesProxy` has no server-death cancel". Probing it showed
+   `StdioRecordingProxy` — the shipping main path — *has* the cancel and still hangs: with the
+   server dead and the client holding stdin, `mcp-cassette record` never exits. So the bug was
+   in the flagship recorder too, and the existing `cancel_scope.cancel()` was decorative.
+   Root cause: anyio's `FileReadStream.receive` runs `to_thread.run_sync` with
+   `abandon_on_cancel=False`, so a cancel waits on the read; and `WorkerThread` is **not**
+   daemon, so even `abandon_on_cancel=True` would only move the hang to interpreter exit,
+   where `threading._shutdown` joins it. Verified both facts in the installed anyio.
+2. Entry 29 flagged a leftover `<cassette>.faults.json`. The leftover is the lesser half: that
+   filename is the one `docs/guide/how-to/05-inject-faults.md` and CLAUDE.md tell users to
+   hand-write, so `with_faults()` on a session with the default `report_path` silently
+   *overwrote* a committed overlay before leaving its own behind.
+
+**Decision:**
+
+1. Rejected making stdin abandonable (the non-daemon worker defeats it) and converged on the
+   mechanism this codebase already chose and documented for the same constraint: finalize, then
+   `os._exit`. Added `exit_on_server_death(process, finalize)` in `record/proxy.py`, shared by
+   both proxies, exiting with the wrapped server's own code (which the CLI reference already
+   documents as `record`'s exit code). Guarded by a `_client_eof` flag so the normal path —
+   client EOF first, nothing blocked — still unwinds through the task group and keeps its
+   subprocess coverage; only the genuinely stuck case hard-exits.
+2. Write the generated overlay into a session-owned `TemporaryDirectory` cleaned up in
+   `close()`. Deliberately *not* "unlink the derived path in close()": that would delete a
+   user's hand-written overlay, turning a leftover-file bug into data loss.
+
+Four in-process tests added (both proxies' death paths, plus the normal-unwind counterpart) —
+the real paths `os._exit` and so discard subprocess coverage, which is exactly why the existing
+interrupt tests are structured this way.
+
+**Impact / Risk:** (1) touches the shutdown path CLAUDE.md calls out as the subtlest code in
+the repo. The normal record path is unchanged by construction (`_client_eof` gate) and was
+re-verified end to end: piped session records identically, a server exiting 7 propagates 7, and
+the previously hanging probe now exits. A crash-during-recording now ends the session instead
+of hanging, so a suite that silently hung will now fail fast — the point, but a visible change.
+(2) is strictly a fix; the fixture and `use_cassette` never hit the clobber because both pass a
+temp `report_path`.
+
+**Outcome:** ruff, ruff format, mypy strict green; 393 passed / 2 skipped; coverage 99% with the
+gate holding. `uv build` clean. Manual verification of the overlay fix shows a hand-written
+`<cassette>.faults.json` untouched, the generated one outside the cassette directory, and no
+stray files after `close()`.
+
+### Entry 31
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T00:00:00Z
+**Task:** Run the release flow for v0.3.3.
+
+**Context:** The release flow prescribes branching `chore/release-v0.3.3` from `main`
+and committing the version bump there. Neither precondition held: the 0.3.3 bump
+already landed on `main` via PR #10 (`pyproject.toml`, `__init__.py`, and `uv.lock`
+all read 0.3.3 on both `main` and the feature branch), and the release content —
+the pre-release audit fixes plus the expanded 0.3.3 changelog — sits on
+`fix/pre-release-audit`, 12 commits ahead of `origin/main`. Branching from `main`
+would have orphaned that work; a fresh bump commit would have been a no-op.
+
+**Decision:** Reuse `fix/pre-release-audit` as the release branch and skip the
+flow's bump-and-commit step (steps 2, 3, 7 as written). Verified instead that every
+manifest already reads 0.3.3 and that the changelog section is complete and its
+compare links are intact. The only new commit is the CLAUDE.md sync, which carries a
+`docs(claude)` subject rather than `chore: release v0.3.3` — a CLAUDE.md-only diff
+under a release subject would misdescribe itself, and the release identity lives in
+the PR and the annotated tag.
+
+**Impact / Risk:** The v0.3.3 history has no single "release commit" to point at.
+Low risk: the tag is annotated and points at the merge commit, and `publish.yml`
+already fails the build when a release tag disagrees with the packaged version, so a
+version/tag mismatch cannot reach PyPI.
+
+**Outcome:** Docs synced and PR opened. Tag and GitHub release deliberately not
+created — the user asked to stop short of the release.

@@ -33,13 +33,18 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "anyio>=4.0",
+    # >=4.2 for the out-of-loop Lock()/Event() adapters (constructed outside a
+    # running event loop by the replay and HTTP servers).
+    "anyio>=4.2",
     "pydantic>=2.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/cheneeheng/mcp-cassette"
 Repository = "https://github.com/cheneeheng/mcp-cassette"
+Documentation = "https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/index.md"
+Changelog = "https://github.com/cheneeheng/mcp-cassette/blob/main/CHANGELOG.md"
+Issues = "https://github.com/cheneeheng/mcp-cassette/issues"
 
 [project.scripts]
 mcp-cassette = "mcp_cassette.cli:main"

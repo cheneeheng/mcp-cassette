@@ -32,7 +32,7 @@ Set in `pyproject.toml` under `[tool.pytest.ini_options]`, or in `pytest.ini` / 
 | Option | Default | Effect |
 |---|---|---|
 | `mcp_cassette_mode` | `once` | Suite-wide default record mode. |
-| `mcp_cassette_dir` | `""` (means `<rootpath>/tests/cassettes`) | Base directory for generated cassette paths. |
+| `mcp_cassette_dir` | `""` (means `<rootpath>/tests/cassettes`) | Base directory for generated cassette paths. A relative value resolves against pytest's `rootpath`, not the current directory, so the same cassettes are found from any subdirectory. |
 
 ```toml
 [tool.pytest.ini_options]

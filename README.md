@@ -6,7 +6,7 @@ A **cassette** records the entire session between your agent and a real MCP serv
 
 mcp-cassette operates at the **transport level** (newline-delimited JSON-RPC over stdio; h11 + hand-rolled SSE framing over Streamable HTTP), treats messages semi-opaquely, and does **not** depend on the official `mcp` SDK at runtime — so it works with any MCP client (Claude Code included) unmodified. Sessions containing server-initiated requests (sampling, elicitation) record and replay too.
 
-Full documentation: **[docs/guide/](docs/guide/index.md)** — 15 numbered chapters in
+Full documentation: **[docs/guide/](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/index.md)** — 15 numbered chapters in
 reading order: getting started and how-to guides for test authors (1–10), then
 installation, configuration, CI, CLI reference, and the runbook for operators (11–15).
 The sections below summarize; each ends with a pointer to its full chapter.
@@ -20,7 +20,7 @@ uv add "mcp-cassette[http]"      # remote (Streamable HTTP) record/replay
 
 Python ≥ 3.12. Linux, macOS, and Windows supported. The core install depends only on `anyio` and `pydantic`; the `[http]` extra adds `httpx` and `h11`.
 
-Full chapter: [11. Installation](docs/guide/operations/11-install.md).
+Full chapter: [11. Installation](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/11-install.md).
 
 ## 2. The pytest fixture (the main surface)
 
@@ -44,7 +44,7 @@ def test_agent_reads_remote_tracker(mcp_cassette):
 
 First run stands up a local recording proxy in front of the real URL; every run after replays from the cassette on a local mock Streamable HTTP server. Same record modes, same fault matrix. `Authorization` (and every other header) is forwarded upstream but never written to the cassette.
 
-Full chapters: [2. Record and replay a stdio server](docs/guide/how-to/02-record-and-replay.md), [3. Record and replay a remote HTTP server](docs/guide/how-to/03-remote-http.md).
+Full chapters: [2. Record and replay a stdio server](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/02-record-and-replay.md), [3. Record and replay a remote HTTP server](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/03-remote-http.md).
 
 ### 2.1 Record modes
 
@@ -61,7 +61,7 @@ Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp
 
 CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server.
 
-Full chapters: [12. Configuration](docs/guide/operations/12-configure.md), [13. CI pipeline](docs/guide/operations/13-ci.md).
+Full chapters: [12. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/12-configure.md), [13. CI pipeline](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/13-ci.md).
 
 ## 3. Use it as a library
 
@@ -79,7 +79,7 @@ with use_cassette("cassettes/search.mcp.json", mode="once") as session:
 
 Precedence, highest first: `MCP_CASSETTE_MODE` (env) → `mode=` argument → default `once` — so the CI invariant holds through this door too. The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable.
 
-Full chapter: [4. Use it as a library](docs/guide/how-to/04-use-as-a-library.md).
+Full chapter: [4. Use it as a library](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/04-use-as-a-library.md).
 
 ## 4. Fault injection
 
@@ -102,7 +102,7 @@ def test_agent_survives_tool_trouble(mcp_cassette, fault):
 
 Fault types: `delay`, `timeout`, `error`, `malformed`, `disconnect`. Faults live in a `FaultOverlay`; the recorded cassette is never mutated.
 
-Full chapter: [5. Inject faults](docs/guide/how-to/05-inject-faults.md).
+Full chapter: [5. Inject faults](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/05-inject-faults.md).
 
 ## 5. Replay timing
 
@@ -115,7 +115,7 @@ mcp-cassette serve demo.json --pace recorded --pace-scale 0.2    # 5x faster
 
 Also `@pytest.mark.mcp_cassette(pace="recorded", pace_scale=0.2)` and `use_cassette(..., pace=PaceConfig(mode="recorded"))`. Per-gap cap defaults to 5000 ms so one pathological recorded pause cannot look like a hung job; `--pace-cap-ms 0` opts into uncapped. A `delay` fault stacks on top of recorded latency.
 
-Full chapter: [6. Replay timing](docs/guide/how-to/06-replay-timing.md).
+Full chapter: [6. Replay timing](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/06-replay-timing.md).
 
 ## 6. The CLI
 
@@ -131,15 +131,15 @@ mcp-cassette inspect demo.json --faults demo.faults.json             # dry-run: 
 mcp-cassette diff old.json new.json --tools-only                     # exit 5 when the server surface moved
 ```
 
-A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — see [§12.6 Checkpointing](docs/guide/operations/12-configure.md#126-checkpointing) for recovery and why it is never written to the cassette path itself.
+A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — see [§12.6 Checkpointing](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/12-configure.md#126-checkpointing) for recovery and why it is never written to the cassette path itself.
 
-Full chapter: [14. CLI reference](docs/guide/operations/14-cli-reference.md).
+Full chapter: [14. CLI reference](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/14-cli-reference.md).
 
 ## 7. Redaction
 
 Cassettes are verbatim transcripts, and you commit them — so redaction runs at capture time, on a deep copy, with defaults always on: values under keys matching `*token*`, `*secret*`, `*password*`, `*apikey*`, `*api_key*`, or `authorization` are replaced with `REDACTED` before the cassette is written. Add your own rules with `--redact` (key-glob or JSON pointer). Read every new cassette before its first commit anyway.
 
-Full chapter: [8. Redact secrets](docs/guide/how-to/08-redact-secrets.md).
+Full chapter: [8. Redact secrets](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/08-redact-secrets.md).
 
 ## 8. Linting your cassettes
 
@@ -163,8 +163,8 @@ mcp-cassette lint demo.json --fail-on warning
 
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known* smells, nothing more.
 
-Full chapter: [9. Lint with your own pattern packs](docs/guide/how-to/09-lint-pattern-packs.md).
+Full chapter: [9. Lint with your own pattern packs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/09-lint-pattern-packs.md).
 
 ## 9. License
 
-See [LICENSE](LICENSE).
+See [LICENSE](https://github.com/cheneeheng/mcp-cassette/blob/main/LICENSE).

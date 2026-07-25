@@ -66,6 +66,21 @@ def apply_protocol_version(
         )
 
 
+def no_response_miss(request_obj: dict[str, Any]) -> str:
+    """Miss summary for a request the cassette records without a response.
+
+    Shared by both replay transports so the two report the same wording.
+
+    Args:
+        request_obj: The incoming client request object.
+
+    Returns:
+        The one-line summary appended to the session's misses.
+    """
+    method = request_obj.get("method", "<none>")
+    return f"{method} matched a recorded request that has no recorded response"
+
+
 class _Disconnect(Exception):  # noqa: N818 — internal control-flow signal, not an error
     """Internal signal: a disconnect fault fired; close pipes and exit 0."""
 
@@ -176,6 +191,12 @@ class ReplayServer:
 
         exchange = self._matcher.find(obj)
         if exchange is None or exchange.response is None:
+            if exchange is not None:
+                # The request matched a recorded one whose response was never
+                # captured (a recording cut short mid-call, or a .partial promoted
+                # by hand). The client gets the same error as an outright miss, so
+                # the session has to fail the same way rather than exiting 0.
+                self._matcher.record_miss(no_response_miss(obj))
             await self._send(out, self._unmatched_error(obj))
             return
 
@@ -242,6 +263,10 @@ class ReplayServer:
         msg_id = obj.get("id")
         init = self._initialize_exchange
         if init is None or init.response is None:
+            # The initialize exchange bypasses the matcher, so the miss has to be
+            # recorded by hand — without it the session would exit 0 having told the
+            # client the handshake failed.
+            self._matcher.record_miss(no_response_miss(obj))
             await self._send(
                 out,
                 make_error_response(

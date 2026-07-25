@@ -58,12 +58,37 @@ def test_record_without_server_cmd_exits_2(
     assert "pass a remote --url URL or a server command" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("flag", [["--port", "8901"], ["--max-idle", "30"]])
+def test_record_stdio_with_http_only_flags_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], flag: list[str]
+) -> None:
+    # Silently ignoring them is worse than a usage error, per --pace-scale's precedent.
+    rc = main(["record", "--cassette", str(tmp_path / "c.json"), *flag, "--", "true"])
+    assert rc == 2
+    assert "--port/--max-idle apply to --url recording only" in capsys.readouterr().err
+
+
 def test_serve_missing_cassette_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     rc = main(["serve", str(tmp_path / "nope.json")])
     assert rc == 2
     assert "mcp-cassette serve:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["inspect", "serve", "diff", "lint"])
+def test_non_object_cassette_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    # A JSON array top level used to raise AttributeError past _LOAD_ERRORS.
+    path = tmp_path / "arr.json"
+    path.write_text("[1, 2, 3]", encoding="utf-8")
+    argv = [command, str(path)]
+    if command == "diff":
+        argv.append(str(path))
+    rc = main(argv)
+    assert rc == 2
+    assert f"mcp-cassette {command}:" in capsys.readouterr().err
 
 
 def test_serve_new_episodes_without_server_cmd_exits_2(

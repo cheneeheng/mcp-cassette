@@ -174,16 +174,19 @@ class RecordingProxy:
                 await self._client.aclose()
                 self.finalize()
 
-    def _snapshot(self) -> Cassette | None:
-        # No file may exist for a session that never reached the upstream — a cassette
-        # of nothing but a failed connect is noise, checkpoints included.
-        if not self._upstream_ok or self._recorder.message_count == 0:
-            return None
+    def _build(self) -> Cassette:
         return self._recorder.build(
             transport="http",
             server_url=self.server_url,
             session_id=self._session_id,
         )
+
+    def _snapshot(self) -> Cassette | None:
+        # No file may exist for a session that never reached the upstream — a cassette
+        # of nothing but a failed connect is noise, checkpoints included.
+        if not self._upstream_ok or self._recorder.message_count == 0:
+            return None
+        return self._build()
 
     def finalize(self) -> None:
         """Write the cassette (and report) once; skipped after a first-contact error."""
@@ -193,12 +196,11 @@ class RecordingProxy:
         if self._fatal is not None:
             checkpoint.discard(self.cassette_path)
             return
-        cassette = self._recorder.build(
-            transport="http",
-            server_url=self.server_url,
-            session_id=self._session_id,
-        )
-        cassette.save(self.cassette_path)
+        # No file for a session that captured nothing (see _snapshot, which declines
+        # the same session's checkpoints). The report is still written, so the fixture
+        # still reports the empty recording.
+        if self._recorder.message_count:
+            self._build().save(self.cassette_path)
         checkpoint.discard(self.cassette_path)
         if self.report_path is not None:
             write_report(self.report_path, {"messages": self._recorder.message_count})

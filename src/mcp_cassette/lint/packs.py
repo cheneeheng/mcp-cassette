@@ -171,10 +171,6 @@ class PatternSet:
         """Pack rule ids in load order (bundled ids belong to the bundled rules)."""
         return [c.rule_id for c in self._compiled if c.rule_id is not None]
 
-    def for_surface(self, surface: Surface) -> list[_Compiled]:
-        """Every compiled pattern applying to this surface, in iteration order."""
-        return [c for c in self._compiled if surface in c.surfaces]
-
     def match(self, text: str, surface: Surface) -> list[PatternMatch]:
         """Every pattern this text matches on the given surface.
 
@@ -194,8 +190,8 @@ class PatternSet:
                 severity=c.severity,
                 message=c.message,
             )
-            for c in self.for_surface(surface)
-            if c.regex.search(text)
+            for c in self._compiled
+            if surface in c.surfaces and c.regex.search(text)
         ]
 
 

@@ -20,9 +20,14 @@ except ImportError:  # pragma: no cover - pytest is a test-only extra
     pytest = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from _pytest.config import Config
     from _pytest.config.argparsing import Parser
     from _pytest.fixtures import FixtureRequest
+    from _pytest.nodes import Item
+    from _pytest.reports import TestReport
+    from _pytest.runner import CallInfo
 
 _SANITIZE = re.compile(r"[^A-Za-z0-9_.-]+")
 
@@ -70,8 +75,13 @@ def _cassette_path(request: FixtureRequest, marker_kwargs: dict[str, Any]) -> Pa
         return Path(marker_kwargs["cassette"])
     base_ini = str(request.config.getini("mcp_cassette_dir"))
     root = Path(request.config.rootpath)
-    base = Path(base_ini) if base_ini else root / "tests" / "cassettes"
-    module = Path(str(request.node.fspath)).stem
+    # A relative ini value resolves against rootpath, never the cwd: cassettes are
+    # committed next to the tests, so the same run must find them whether pytest was
+    # invoked from the repo root or a subdirectory. An absolute value wins as written.
+    base = root / base_ini if base_ini else root / "tests" / "cassettes"
+    # node.path, not node.fspath: the legacy py.path attribute exists only while the
+    # deprecated `legacypath` plugin is loaded, so `-p no:legacypath` broke the fixture.
+    module: str = request.node.path.stem
     node_name = _SANITIZE.sub("_", request.node.name)
     return base / module / f"{node_name}.mcp.json"
 
@@ -97,6 +107,17 @@ def _pace_config(marker_kwargs: dict[str, Any]) -> PaceConfig | None:
 
 
 if pytest is not None:  # pragma: no branch — pytest is always present in the test env
+    _FAILED = pytest.StashKey[bool]()
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_runtest_makereport(
+        item: Item, call: CallInfo[None]
+    ) -> Generator[None, TestReport, TestReport]:
+        """Record whether the test body failed, for the fixture's teardown."""
+        report = yield
+        if report.when == "call" and report.failed:
+            item.stash[_FAILED] = True
+        return report
 
     @pytest.fixture
     def mcp_cassette(request: FixtureRequest, tmp_path: Path) -> Any:
@@ -104,7 +125,8 @@ if pytest is not None:  # pragma: no branch — pytest is always present in the 
 
         First run records through the proxy; every run after replays offline. On
         teardown the session report is checked and the test fails on an empty recording
-        or any replay miss.
+        or any replay miss — unless the test body already failed, in which case the
+        session is only closed, so its own failure is what the report shows.
         """
         marker = request.node.get_closest_marker("mcp_cassette")
         marker_kwargs: dict[str, Any] = dict(marker.kwargs) if marker else {}
@@ -119,4 +141,10 @@ if pytest is not None:  # pragma: no branch — pytest is always present in the 
             report_path=report_path,
         )
         yield session
-        session.finalize()
+        if request.node.stash.get(_FAILED, False):
+            # The test already failed on its own terms; a teardown ERROR on top of
+            # the FAILED only buries it. Matches use_cassette, which skips the
+            # report checks when its block raised.
+            session.close()
+        else:
+            session.finalize()

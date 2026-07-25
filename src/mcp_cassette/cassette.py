@@ -103,10 +103,22 @@ class Cassette(BaseModel):
         Raises:
             UnsupportedFormatVersion: If the file's ``format_version`` is newer than
                 this library understands.
+            ValueError: If the top level is not a JSON object, or ``format_version``
+                is not an integer. Both are read before validation, so they cannot be
+                left to pydantic.
             pydantic.ValidationError: If the file does not match the schema.
         """
         data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"{path}: cassette must be a JSON object, got {type(data).__name__}"
+            )
         version = data.get("format_version", FORMAT_VERSION)
+        if not isinstance(version, int):
+            raise ValueError(
+                f"{path}: format_version must be an integer, got "
+                f"{type(version).__name__}"
+            )
         if version > FORMAT_VERSION:
             raise UnsupportedFormatVersion(
                 f"cassette format_version {version} is newer than supported "

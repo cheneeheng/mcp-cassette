@@ -135,6 +135,7 @@ def test_stdio_finalize_clears_the_sidecar(tmp_path: Path) -> None:
     cassette_path = tmp_path / "c.json"
     checkpoint.partial_path(cassette_path).write_text("{}", encoding="utf-8")
     proxy = StdioRecordingProxy(server_cmd=["unused"], cassette_path=str(cassette_path))
+    proxy._recorder.on_line("client", b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')  # noqa: SLF001
     proxy._finalize()  # noqa: SLF001
     assert cassette_path.exists()
     assert not checkpoint.partial_path(cassette_path).exists()

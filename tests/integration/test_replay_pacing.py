@@ -1,7 +1,13 @@
 """Replay pacing integration (ITER_02_v3 §04): recorded gaps become real sleeps.
 
-Bounds are deliberately asymmetric — a tight floor (the sleeps must actually happen)
-and a loose ceiling (a loaded CI runner must not flake the suite).
+Bounds are deliberately asymmetric — a floor (the sleeps must actually happen) and a
+loose ceiling (a loaded CI runner must not flake the suite).
+
+Every floor is set to roughly *half* the expected signal. Each measurement is the
+difference between two subprocess runs, so it carries the jitter of two interpreter
+startups; on a loaded Windows or macOS runner that is easily several hundred
+milliseconds. Half the signal is still unambiguous — instant replay contributes ~0 to
+these deltas — while leaving the other half as headroom.
 """
 
 from __future__ import annotations
@@ -107,8 +113,8 @@ def test_recorded_gaps_are_replayed(tmp_path: Path) -> None:
         _serve(cassette, "--pace", "recorded", "--pace-scale", "0.1"), messages
     )
 
-    # Three recorded gaps of 500 ms each must actually be spent.
-    assert paced - instant >= 1.2
+    # Three recorded gaps of 500 ms each must actually be spent (1.5 s of signal).
+    assert paced - instant >= 0.75
     assert paced - scaled >= 0.7
     assert paced < 30.0
 
@@ -142,7 +148,8 @@ def test_delay_fault_is_additive_on_top_of_pacing(tmp_path: Path) -> None:
     both = _elapsed(
         _serve(cassette, "--pace", "recorded", "--faults", faults), messages
     )
-    assert both - paced >= 0.7
+    # The injected delay is 1000 ms of signal on top of the same recorded pacing.
+    assert both - paced >= 0.5
 
 
 def test_timeout_fault_spends_no_pacing_sleep(tmp_path: Path) -> None:
