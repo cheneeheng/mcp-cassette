@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Pre-PyPI-release audit. Two behavior fixes, the rest packaging and metadata.
+
+### Fixed
+
+- `with_faults()` sessions are now finalized. The pytest fixture finalizes the
+  session it hands the test, but a fault test runs the *derivative* returned by
+  `with_faults()`; that derivative was never checked, so replay misses in fault
+  tests were silently unreported and an HTTP server started on it outlived the
+  test. `with_faults()` now registers the copy on its parent, and the parent's
+  `close()`/`finalize()` cover it.
+- `serve`, `inspect`, and `diff` printed a raw traceback and exited `1` on a
+  malformed or unreadable cassette; `serve --faults` and `inspect --faults` did
+  the same on a missing or malformed overlay. All load sites now share one error
+  set and report the documented usage error (exit `2`). `inspect` also loads the
+  overlay before printing, so a bad overlay no longer fails halfway through a
+  report.
+- Fill in the Apache-2.0 copyright holder, which was still the license
+  template's `[yyyy] [name of copyright owner]` placeholder.
+- Restore the CHANGELOG compare links dropped for 0.3.3: `[Unreleased]` pointed
+  at `v0.3.2` and the `[0.3.3]` link was missing.
+- Gitignore the cassette `examples/library_mode.py` records on its first run, so
+  following the examples README no longer dirties the working tree.
+
+### Changed
+
+- README links are absolute GitHub URLs. The README is the PyPI long
+  description, where relative links resolve against `pypi.org` and 404.
+- `[project.urls]` adds Documentation, Changelog, and Issues for the PyPI
+  sidebar.
+- `publish.yml` fails the build when a release tag disagrees with the packaged
+  version, rather than publishing a filename PyPI will never let us reuse.
+
 ## [0.3.3] - 2026-07-24
 
 Packaging and discoverability release preparing the first PyPI publish. No
@@ -247,7 +279,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.2.2...v0.3.0
