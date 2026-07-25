@@ -170,6 +170,7 @@ class CassetteSession:
             cassette_path.name + ".faults.json"
         )
         self._last_action: _Action | None = None
+        self._derived: list[CassetteSession] = []
         self._portal_cm: Any = None
         self._portal: Any = None
         self._serve_future: Any = None
@@ -178,6 +179,11 @@ class CassetteSession:
     def with_faults(self, *faults: Fault) -> CassetteSession:
         """Return a copy of this session with the given faults applied.
 
+        The copy is registered on this session, because the pytest fixture finalizes
+        the session it handed the test, not the derivative the test actually ran.
+        Without the link a fault test's replay misses would go unreported and an
+        HTTP server started on the derivative would outlive the test.
+
         Args:
             *faults: Faults to inject at replay time.
 
@@ -185,7 +191,7 @@ class CassetteSession:
             A new :class:`CassetteSession` (so parametrized tests do not share state).
         """
         overlay = FaultOverlay(faults=list(faults))
-        return CassetteSession(
+        derived = CassetteSession(
             mode=self.mode,
             cassette_path=self.cassette_path,
             match=self.match,
@@ -193,6 +199,8 @@ class CassetteSession:
             pace=self.pace,
             report_path=self.report_path,
         )
+        self._derived.append(derived)
+        return derived
 
     def server_command(self, real_cmd: list[str]) -> list[str]:
         """Build the MCP server command the agent should launch for this test.
@@ -355,12 +363,18 @@ class CassetteSession:
 
         Idempotent, and a no-op when :meth:`server_url` was never called (the
         background server is started only by an explicit ``server_url()``, never
-        lazily, so there is nothing to race against).
+        lazily, so there is nothing to race against). Sessions derived by
+        :meth:`with_faults` are closed too.
         """
+        for derived in self._derived:
+            derived.close()
         self._stop_background()
 
     def finalize(self) -> None:
         """Close the session, check the report, and raise on violations.
+
+        When :meth:`with_faults` derived sessions from this one, they are the
+        sessions that ran, so their reports are the ones checked.
 
         Raises:
             CassetteError: If a recording captured zero messages (or could not
@@ -368,6 +382,10 @@ class CassetteSession:
                 request.
         """
         self.close()
+        if self._derived:
+            for derived in self._derived:
+                derived.finalize()
+            return
         fatal = getattr(self._http_engine, "fatal_error", None)
         if fatal is not None:
             raise CassetteError(f"recording failed: {fatal}")

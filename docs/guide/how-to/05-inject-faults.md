@@ -27,7 +27,9 @@ def test_agent_survives_tool_trouble(mcp_cassette, fault):
 ```
 
 `with_faults()` returns a **new** `CassetteSession`, so parametrized tests never share
-state. Pass several faults in one call to combine them.
+state. Pass several faults in one call to combine them. The fixture still finalizes on
+teardown — the derived session is registered on the one the fixture handed you, so a
+fault test's replay misses fail the test exactly as an ordinary one's do.
 
 **Verify:** the agent takes its degraded path and the test still passes offline.
 
