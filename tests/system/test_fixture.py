@@ -162,6 +162,36 @@ def test_marker_pacing_reaches_the_serve_command(
     pytester.runpytest_inprocess().assert_outcomes(passed=1)
 
 
+# A test that plants a replay-miss report the fixture will read at teardown, then
+# ends on the verdict substituted in. %s, not .format, because of the JSON braces.
+_MISS_REPORT = """
+    import json
+
+    def test_target(mcp_cassette):
+        mcp_cassette._last_action = "replay"
+        mcp_cassette.report_path.write_text(json.dumps({"misses": ["tools/call"]}))
+        assert %s
+    """
+
+
+def test_replay_miss_fails_a_passing_test(  # type: ignore[no-untyped-def]
+    pytester: pytest.Pytester, monkeypatch
+) -> None:
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+    pytester.makepyfile(_MISS_REPORT % "True")
+    pytester.runpytest_inprocess().assert_outcomes(passed=1, errors=1)
+
+
+def test_failing_test_is_not_buried_under_a_teardown_error(  # type: ignore[no-untyped-def]
+    pytester: pytest.Pytester, monkeypatch
+) -> None:
+    # The test's own failure is the signal; finalize's teardown ERROR on top of it is
+    # noise. Matches use_cassette, which skips the report checks when its block raised.
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+    pytester.makepyfile(_MISS_REPORT % 'False, "the test itself failed"')
+    pytester.runpytest_inprocess().assert_outcomes(failed=1)
+
+
 def test_parametrized_paths_are_unique(pytester: pytest.Pytester, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
     pytester.makepyfile(
