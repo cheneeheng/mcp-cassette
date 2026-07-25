@@ -562,7 +562,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", specifier = ">=4.0" },
+    { name = "anyio", specifier = ">=4.2" },
     { name = "h11", marker = "extra == 'http'", specifier = ">=0.14" },
     { name = "httpx", marker = "extra == 'http'", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.0" },
