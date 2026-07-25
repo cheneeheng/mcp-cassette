@@ -104,9 +104,9 @@ discoverability, plus the behavior fixes the audit turned up.
 
 ### Changed
 
-- `PatternSet.for_surface` is now private (`_for_surface`). It handed out an
-  internal dataclass and has one caller inside the class; making it public would
-  have frozen that dataclass into the API `PatternSet` now exports.
+- `PatternSet.for_surface` is gone, inlined into its one caller
+  (`PatternSet.match`). It handed out an internal dataclass, which keeping it
+  public would have frozen into the API `PatternSet` now exports.
 - README links are absolute GitHub URLs. The README is the PyPI long
   description, where relative links resolve against `pypi.org` and 404.
 - `[project.urls]` adds Documentation, Changelog, and Issues for the PyPI

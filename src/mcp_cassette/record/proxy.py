@@ -221,17 +221,19 @@ class StdioRecordingProxy:
         os._exit(130)
 
     def _snapshot(self) -> Cassette | None:
+        # None for a session that captured nothing, so no file exists for it — a
+        # checkpoint is skipped and _finalize writes nothing. An empty cassette cannot
+        # replay anything, and in `once` mode its mere existence would send every later
+        # run down the replay branch, so a mis-wired first run could never re-record
+        # itself.
         if self._recorder.message_count == 0:
             return None
         return self._recorder.build()
 
     def _finalize(self) -> None:
-        # No file for a session that captured nothing — the same policy _snapshot
-        # applies to checkpoints. An empty cassette cannot replay anything, and in
-        # `once` mode its mere existence would send every later run down the replay
-        # branch, so a mis-wired first run could never re-record itself.
-        if self._recorder.message_count:
-            self._recorder.build().save(self.cassette_path)
+        cassette = self._snapshot()
+        if cassette is not None:
+            cassette.save(self.cassette_path)
         checkpoint.discard(self.cassette_path)
         if self.report_path is not None:
             _write_report(self.report_path, {"messages": self._recorder.message_count})
