@@ -58,6 +58,16 @@ def test_record_without_server_cmd_exits_2(
     assert "pass a remote --url URL or a server command" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("flag", [["--port", "8901"], ["--max-idle", "30"]])
+def test_record_stdio_with_http_only_flags_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], flag: list[str]
+) -> None:
+    # Silently ignoring them is worse than a usage error, per --pace-scale's precedent.
+    rc = main(["record", "--cassette", str(tmp_path / "c.json"), *flag, "--", "true"])
+    assert rc == 2
+    assert "--port/--max-idle apply to --url recording only" in capsys.readouterr().err
+
+
 def test_serve_missing_cassette_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

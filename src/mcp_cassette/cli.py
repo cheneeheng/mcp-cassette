@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--port",
         type=int,
         default=0,
-        help="Local port for the recording proxy (default: ephemeral).",
+        help="Local port for the --url recording proxy (default: ephemeral).",
     )
     rec.add_argument(
         "--max-idle",
@@ -76,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="SECONDS",
         help=(
-            "End the recording after this much client inactivity — the "
+            "End a --url recording after this much client inactivity — the "
             "unattended-CI escape hatch (default: off; recording ends on signal)."
         ),
     )
@@ -363,6 +363,12 @@ def _cmd_record(args: argparse.Namespace) -> int:
             max_idle=args.max_idle,
             checkpoint_interval=args.checkpoint_interval,
         ).run()
+    if args.port or args.max_idle is not None:
+        sys.stderr.write(
+            "mcp-cassette record: --port/--max-idle apply to --url recording only, "
+            "not to a stdio -- CMD\n"
+        )
+        return 2
     proxy = StdioRecordingProxy(
         server_cmd=server_cmd,
         cassette_path=args.cassette,
