@@ -7,10 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Pre-PyPI-release audit. Two behavior fixes, the rest packaging and metadata.
+## [0.3.3] - 2026-07-25
+
+First PyPI release, gated on a full pre-release audit. Packaging and
+discoverability, plus the behavior fixes the audit turned up.
+
+### Added
+
+- Ship the PEP 561 `py.typed` marker in the wheel so consumers' type checkers
+  see the library's type hints.
+- `.github/workflows/publish.yml`: build once, publish to TestPyPI via manual
+  `workflow_dispatch` and to PyPI on GitHub release, both through Trusted
+  Publishing (OIDC) — no long-lived tokens.
+- `PatternSet` is exported from the top-level `mcp_cassette` namespace. It was
+  public in `mcp_cassette.lint` and documented, but absent from the package's
+  `__all__` — fixed before a release freezes the surface.
 
 ### Fixed
 
+- Raise the `anyio` floor to `>=4.2`. The replay and HTTP servers construct
+  `anyio.Lock()` / `anyio.Event()` outside a running event loop, and the
+  adapters that make that legal only exist from 4.2 — on 4.0/4.1 a consumer got
+  `AsyncLibraryNotFoundError` the moment a replay server was built.
+- `Cassette.load` raised `AttributeError` (a traceback, exit `1`) on a cassette
+  whose JSON top level is not an object, and `TypeError` on a non-integer
+  `format_version`. Both are read before validation, so pydantic never saw
+  them; both are now `ValueError` and exit `2` like every other malformed
+  cassette.
+- `record --port` / `--max-idle` with a stdio `-- CMD` silently ignored both
+  flags. They belong to `--url` recording and are now a usage error (exit `2`),
+  matching how `--pace-scale` without `--pace` is handled.
+- The `mcp_cassette` fixture finalized unconditionally, so a test that failed
+  *and* hit a replay miss reported both a FAILED and a teardown ERROR, burying
+  the real failure. Teardown now only closes the session when the test body
+  already failed — the behavior `use_cassette` always had.
+- `CassetteSession._peek_transport` caught only `(FileNotFoundError,
+  ValueError)`; a directory or permission `OSError`, or an unsupported
+  `format_version`, escaped raw out of `server_command()`.
 - `with_faults()` sessions are now finalized. The pytest fixture finalizes the
   session it hands the test, but a fault test runs the *derivative* returned by
   `with_faults()`; that derivative was never checked, so replay misses in fault
@@ -38,22 +71,6 @@ Pre-PyPI-release audit. Two behavior fixes, the rest packaging and metadata.
   sidebar.
 - `publish.yml` fails the build when a release tag disagrees with the packaged
   version, rather than publishing a filename PyPI will never let us reuse.
-
-## [0.3.3] - 2026-07-24
-
-Packaging and discoverability release preparing the first PyPI publish. No
-code, flag, or behavior changes.
-
-### Added
-
-- Ship the PEP 561 `py.typed` marker in the wheel so consumers' type checkers
-  see the library's type hints.
-- `.github/workflows/publish.yml`: build once, publish to TestPyPI via manual
-  `workflow_dispatch` and to PyPI on GitHub release, both through Trusted
-  Publishing (OIDC) — no long-lived tokens.
-
-### Changed
-
 - License metadata now uses the PEP 639 SPDX form (`license = "Apache-2.0"`,
   `license-files = ["LICENSE"]`) instead of the deprecated table form;
   hatchling pinned `>=1.27` accordingly.

@@ -401,3 +401,56 @@ release commit subject.
 **Impact / Risk:** (1) is a behavior change: fault tests that were silently passing over a replay miss will now fail. That is the point, but it can surface as a new failure in a downstream suite on upgrade, so it is called out under `Fixed` in the changelog. (2) changes exit codes 1 -> 2 on malformed input, matching the documented contract; `14-cli-reference.md` §14.1 updated to say so. (3) is cosmetic on GitHub, load-bearing on PyPI.
 
 **Outcome:** Full suite green before and after (370 -> 372 passed, 3 skipped); ruff, ruff format, mypy strict, and `check_version.py` clean; wheel/sdist rebuilt and metadata verified. Two regression tests were added to `tests/unit/test_session.py` despite the usual don't-write-tests-unprompted default: the fix's four new lines were the repo's only non-platform-specific coverage gap, and `fail_under = 99` sits right at the total, so leaving them bare risked a red CI on the release commit and contradicted the pyproject comment claiming the only sub-100% lines are POSIX-only. `session.py` is back to 100%; the sole remaining gap is `record/proxy.py:132-134`, as documented. Also fixed: unfilled Apache-2.0 copyright placeholder, missing `[0.3.3]` changelog compare link, absent `[project.urls]` Documentation/Changelog/Issues, missing trailing newline in `.pre-commit-config.yaml`, and a `publish.yml` guard failing the build when a release tag disagrees with the packaged version.
+
+### Entry 28
+
+**Type:** Decision
+**Mode:** Autonomous (version and scope choices confirmed by the user)
+**Timestamp:** 2026-07-25T12:00:00+02:00
+**Task:** Resume and close out the pre-PyPI-release audit (`fix/pre-release-audit`): apply the two
+blocking findings from the 10:31 handoff, finish the un-audited surfaces, and settle the release
+version.
+
+**Context:** The handoff left two confirmed-but-unfixed defects and two pending decisions. (1) The
+`anyio>=4.0` floor is wrong — `anyio.Lock()`/`anyio.Event()` are constructed outside a running
+event loop in `replay/server.py`, `transports/http/server.py`, and `replay/server_requests.py`, and
+the out-of-loop adapters only exist from 4.2; the local lockfile pins 4.14.2, so CI never sees it.
+(2) `Cassette.load` reads `format_version` off the raw JSON before validation, so a non-object top
+level raised `AttributeError` past `cli._LOAD_ERRORS`. (3) Version: v0.3.3 is *untagged* and
+unpublished (tags stop at v0.3.2) yet CHANGELOG.md already carried a dated `[0.3.3]` section plus an
+`[Unreleased]` section holding the audit fixes. (4) Four lower-priority observations were documented
+but not acted on.
+
+**Decision:** (1) Floor raised to `anyio>=4.2` with an inline reason in `pyproject.toml`; `uv lock`
+re-run (resolution unchanged). (2) Guarded `Cassette.load` on both pre-validation reads — a non-dict
+top level *and* a non-integer `format_version`, which had the same defect shape (`TypeError` on the
+`>` compare) and was not in the handoff. Both raise `ValueError`, which `_LOAD_ERRORS` already
+catches, so all four subcommands exit 2 without touching `cli.py`. (3) Folded `[Unreleased]` into
+`[0.3.3]`, redated 2026-07-25 and retitled — its old subtitle "No code, flag, or behavior changes"
+was already false. 0.3.3 was never tagged, so it is not a released version and a 0.3.4 bump would
+leave a dated changelog entry no tag will ever match; this also follows Entry 26's precedent. (4)
+All four observations acted on per user selection: `PatternSet` added to the top-level `__all__`
+before a release freezes the surface; `record --port/--max-idle` with a stdio `-- CMD` is now an
+exit-2 usage error (single fixed message naming both flags, mirroring the existing `--pace-scale`
+message rather than building per-flag prose); `_peek_transport` widened to
+`(OSError, ValueError, UnsupportedFormatVersion)`; and the pytest fixture now calls `close()`
+instead of `finalize()` when the test body already failed, detected via a
+`pytest_runtest_makereport` wrapper hook plus a `StashKey` (the fixture's `yield` never sees a test
+failure, so a `try/except` around it cannot work).
+
+**Impact / Risk:** The anyio floor changes the install contract — under SemVer that argues for a
+minor bump, but nothing has been published, so 0.3.3 *is* the first release and the floor is simply
+part of it. The `record` flag rejection is a behavior change for anyone passing `--port` with a
+stdio command today; it was silently ignored, so nothing that worked stops working. The fixture
+teardown change can *hide* a replay miss when a test fails for its own reasons — deliberate: the
+test is already red, and the report checks still run on every passing test.
+
+**Outcome:** Full toolchain green — ruff, ruff format, mypy strict, `check_version.py`, and the full
+suite (382 passed, 2 skipped before the observation fixes; re-run after). Twelve regression tests
+added across `tests/unit/test_cassette_schema.py`, `tests/unit/test_cli_surface.py`, and
+`tests/system/test_fixture.py`, again against the usual don't-write-tests-unprompted default, because
+`fail_under = 99` leaves no room for uncovered new branches. Audit surfaces closed out with no
+further defects: `docs/guide/` (all 16 files — every flag, exit code, and quoted error string
+verified against `cli.py`/`session.py`), `examples/` (library_mode, lint pack, and every README lint
+recipe executed), `tests/` layer conventions (no `__init__.py`, no duplicate basenames), and the two
+previously unread modules (`lint/patterns.py`, `replay/new_episodes.py`).
