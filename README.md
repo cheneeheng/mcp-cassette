@@ -184,6 +184,8 @@ mcp-cassette lint demo.json --fail-on warning
 
 `[tool.mcp_cassette.lint]` in `pyproject.toml` makes your packs, selection, and failure threshold the default for every invocation, so the CI command stays generic. Packs extend the bundled rules; they never replace them.
 
+A pack adds *patterns*, not *surfaces*: patterns match tool descriptions (from `tools/list`) and tool result text (from `tools/call`), which is everything lint reads. A tool's `name` and `inputSchema` are compared, not pattern-matched — that is `R002`'s and `diff`'s job.
+
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known* smells, nothing more.
 
 ### 8.2 Diff: a drifting server surface

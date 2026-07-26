@@ -43,6 +43,16 @@ Documentation, examples, and CI. No code, flag, or behavior changes.
 - A CI assertion that `examples/lint-pack.toml` actually fires (`P001` present in
   the output, not merely exit `4`, which the bundled rules produce on their own).
   A starter pack nobody can see match is a poor advertisement for the feature.
+- `HT-08.2`, what a pattern pack can and cannot reach, plus shorter statements of
+  the same in `OP-04.6` and README `§8.1`. The docs named the `surfaces` field but
+  never said what lint reads in total, so two things were invisible: a cassette
+  with no `tools/list` and no `tools/call` lints clean because there is nothing to
+  scan, not because it is safe; and `name`/`inputSchema` are extracted but never
+  pattern-matched, so "flag any tool whose schema grew a parameter" is `R002`'s or
+  `diff`'s job and no pack can express it. States the split — `R001`/`R004` are
+  pattern rules a pack extends, `R002`/`R003` are structural and it cannot.
+  **Subsequent `HT-08` section codes shift by one** (old `HT-08.2` "Make it the
+  project default" is now `HT-08.3`, and so on).
 - A troubleshooting row for a replay that hangs on `tools/call`: the cassette
   holds a server-initiated request and replay waits for the agent's answer by
   design. Sampling appeared nowhere in the guide, so the deliberate hang had no

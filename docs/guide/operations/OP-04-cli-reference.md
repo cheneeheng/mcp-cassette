@@ -126,6 +126,10 @@ lint's `R002` is the gate. See
 
 Heuristic security scan of recorded tool descriptions and results.
 
+Scope: lint reads tool `description`s from recorded `tools/list` responses and text content
+from recorded `tools/call` responses — nothing else. A cassette containing neither method
+lints clean because there is nothing to scan, not because it is safe.
+
 | Rule | Severity | What it catches |
 |---|---|---|
 | `R001` | error | Instruction-injection phrasing in a tool description. |
