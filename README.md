@@ -1,5 +1,10 @@
 # mcp-cassette
 
+[![CI](https://github.com/cheneeheng/mcp-cassette/actions/workflows/ci.yml/badge.svg)](https://github.com/cheneeheng/mcp-cassette/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mcp-cassette.svg)](https://pypi.org/project/mcp-cassette/)
+[![Python](https://img.shields.io/pypi/pyversions/mcp-cassette.svg)](https://pypi.org/project/mcp-cassette/)
+[![License](https://img.shields.io/pypi/l/mcp-cassette.svg)](https://github.com/cheneeheng/mcp-cassette/blob/main/LICENSE)
+
 Record/replay testing for MCP (Model Context Protocol) agents: capture real sessions as cassettes, replay them as deterministic mock servers — vcrpy for MCP.
 
 A **cassette** records the entire session between your agent and a real MCP server — local stdio or remote Streamable HTTP — as a structured, diffable, committable file. Replayed, it stands in for the live server, so your agent test suite stops hitting live servers and stops being flaky, slow, and expensive.
@@ -225,6 +230,14 @@ A red drift gate is not a failure to re-record away: read the diff, decide wheth
 
 Full chapters: [HT-08. Lint with your own pattern packs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-08-lint-pattern-packs.md), [HT-09. Gate a drifting server surface](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-09-gate-a-drifting-server.md).
 
-## 9. License
+## 9. Built with Claude Code
 
-See [LICENSE](https://github.com/cheneeheng/mcp-cassette/blob/main/LICENSE).
+mcp-cassette was built with the help of [Claude Code](https://claude.com/claude-code) under human direction and
+review.
+
+It is an independent open-source project: not an Anthropic product, and not affiliated
+with or endorsed by Anthropic. "Model Context Protocol" and "Claude" are Anthropic's.
+
+## 10. License
+
+Apache-2.0 — see [LICENSE](https://github.com/cheneeheng/mcp-cassette/blob/main/LICENSE).
