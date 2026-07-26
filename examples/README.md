@@ -17,7 +17,29 @@ replays.
 | `lint-pack.toml` | A starter lint pattern pack: copy it, rename the ids, edit the regexes. |
 | `test_echo.py` | Four pytest examples built on the `mcp_cassette` fixture (stdio). |
 | `test_echo_http.py` | One pytest example built on `mcp_cassette.server_url` (Streamable HTTP; needs the `[http]` extra — the repo's dev group has it). |
-| `cassettes/` | The committed cassettes those tests replay, plus two for the lint demo: `tools.mcp.json` (a clean `tools/list` recording) and `injected.mcp.json` (the same recording with a deliberately poisoned tool description). |
+| `cassettes/` | The committed cassettes those tests replay, plus three for the lint and drift demos: `tools.mcp.json` (a clean `tools/list` recording), `injected.mcp.json` (the same recording with a deliberately poisoned tool description), and `tools-v2.mcp.json` (the server one version later — poisoned description *and* a changed `inputSchema`). |
+
+## The golden cassette
+
+`cassettes/echo_and_add.mcp.json` is the canonical one: the committed recording behind
+`test_echo_and_add`, the core record-once/replay-forever loop. The contract it
+demonstrates is the whole point of the library —
+
+1. record once, locally, against the real server;
+2. commit the cassette and review it like code;
+3. CI only replays and lints, never records.
+
+Step 3 is the one that needs enforcing, and `MCP_CASSETTE_MODE=none` is what enforces it.
+Prove replay-only mode against one file or the whole directory:
+
+```bash
+MCP_CASSETTE_MODE=none uv run pytest examples/test_echo.py -q   # one file: 4 passed
+MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 5 passed
+```
+
+No server, no network, no credentials. Under `none` a missing cassette fails the run with
+`no cassette at <path> and recording is forbidden` rather than quietly recording a new one
+— delete `cassettes/echo_and_add.mcp.json` on a scratch branch and run it to see.
 
 ## Run them
 
@@ -219,15 +241,33 @@ mcp-cassette lint examples/cassettes/injected.mcp.json \
 
 mcp-cassette lint examples/cassettes/injected.mcp.json --format json   # for CI
 
-# your own rules, declaratively — packs extend the bundled set, never replace it
-mcp-cassette lint examples/cassettes/tools.mcp.json   --pattern-pack examples/lint-pack.toml
+# your own rules, declaratively — packs extend the bundled set, never replace it.
+# tools-v2's description exfiltrates a .env file, which is what P001 in the pack matches:
+mcp-cassette lint examples/cassettes/tools-v2.mcp.json --pattern-pack examples/lint-pack.toml
+# -> P001 (from the pack) + 3 x R001 (bundled), exit 4
 ```
+
+`tools-v2.mcp.json` is the same server one version later — poisoned description *and* a
+new `callback_url` parameter — so it exercises the two-step gate end to end:
+
+```bash
+mcp-cassette lint examples/cassettes/tools.mcp.json         # exit 0
+mcp-cassette lint examples/cassettes/tools-v2.mcp.json      # 3 x R001: exit 4
+mcp-cassette diff examples/cassettes/tools.mcp.json \
+                  examples/cassettes/tools-v2.mcp.json --tools-only   # exit 5
+```
+
+The schema change carries no suspicious wording, so only `diff` catches it — which is why
+both steps exist. Walked through in
+[HT-09. Gate a drifting server surface](../docs/guide/how-to/HT-09-gate-a-drifting-server.md).
 
 Each finding carries a JSON-pointer locator into the cassette (open it and jump
 there). Exit `0` means no error-severity findings — warnings (R003 duplicate tool
 names, R004 instruction-shaped result text) alone don't fail the run. These are
 heuristic pattern rules, not a guarantee.
 
-To regenerate the pair: record `tools.mcp.json` with the pipe trick above (send
-`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` as the third line), copy it to
-`injected.mcp.json`, and plant something suspicious in a `description`.
+To regenerate the trio: record `tools.mcp.json` with the pipe trick above (send
+`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` as the third line), then copy it twice.
+`injected.mcp.json` plants something suspicious in `echo`'s `description`;
+`tools-v2.mcp.json` does that *and* adds a `callback_url` property to `echo`'s
+`inputSchema`, which is the half no wording can betray.

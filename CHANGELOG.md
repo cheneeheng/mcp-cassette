@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Documentation, examples, and CI. No code, flag, or behavior changes.
+
+### Added
+
+- `examples/cassettes/tools-v2.mcp.json`: the example echo server one version
+  later, carrying an injected tool description *and* a changed `inputSchema`.
+  The existing `injected.mcp.json` stays the R001 rule fixture; this one is the
+  drift artifact, and its schema change is the case `lint` cannot see —
+  demonstrating why the gate needs both steps.
+- `docs/guide/how-to/HT-09-gate-a-drifting-server.md`: the two-step lint + diff
+  gate walked end to end against the committed example cassettes, with real
+  output and exit codes, plus what each step catches and misses. Closes the gap
+  where the gate existed only as prose with placeholder paths in `OP-03`.
+- An `examples` CI job that replays the example cassettes offline and asserts
+  the gate's exit codes (lint clean `0`, lint drifted `4`, `diff --tools-only`
+  `5`). Nothing collected `examples/` before, so its cassettes could rot
+  unnoticed, and the numbers quoted in the docs had nothing enforcing them.
+- A runnable lint + diff snippet in the README's gating section, pointing at the
+  committed example cassettes and at `HT-09`. The section previously offered only
+  pattern-pack configuration, which is what led issue #9 to ask for a demo that
+  largely already existed.
+- README `§2.2` and an `examples/README.md` section naming
+  `examples/cassettes/echo_and_add.mcp.json` as the canonical golden cassette and
+  stating the contract it stands for — record once locally, commit the cassette,
+  CI only replays and lints — with the replay-only proof command for both a single
+  file and the whole directory.
+- Document that `mcp_cassette_dir` is fixture-only and that `pytest -o
+  mcp_cassette_dir=...` overrides it per invocation (`OP-02.2`, README `§2.1`).
+  The option read as a gap in the CLI and library doors; it is not one. The
+  fixture is the only door that derives a cassette path — from the test node name
+  — so a base directory has nothing to join onto elsewhere, and a
+  `MCP_CASSETTE_DIR` env var would reach one door of three. `MCP_CASSETTE_MODE` is
+  cross-door precisely because all three delegate to `resolve_mode`.
+- A CI assertion that `examples/lint-pack.toml` actually fires (`P001` present in
+  the output, not merely exit `4`, which the bundled rules produce on their own).
+  A starter pack nobody can see match is a poor advertisement for the feature.
+- `HT-08.2`, what a pattern pack can and cannot reach, plus shorter statements of
+  the same in `OP-04.6` and README `§8.1`. The docs named the `surfaces` field but
+  never said what lint reads in total, so two things were invisible: a cassette
+  with no `tools/list` and no `tools/call` lints clean because there is nothing to
+  scan, not because it is safe; and `name`/`inputSchema` are extracted but never
+  pattern-matched, so "flag any tool whose schema grew a parameter" is `R002`'s or
+  `diff`'s job and no pack can express it. States the split — `R001`/`R004` are
+  pattern rules a pack extends, `R002`/`R003` are structural and it cannot.
+  **Subsequent `HT-08` section codes shift by one** (old `HT-08.2` "Make it the
+  project default" is now `HT-08.3`, and so on).
+- A troubleshooting row for a replay that hangs on `tools/call`: the cassette
+  holds a server-initiated request and replay waits for the agent's answer by
+  design. Sampling appeared nowhere in the guide, so the deliberate hang had no
+  symptom entry to find it by.
+
+### Changed
+
+- Renumber the guide from one global 1–15 sequence to per-section codes — `GS`
+  getting started, `HT` how-to, `TS` troubleshooting, `OP` operations — each
+  numbered within its own series (`operations/OP-03-ci.md`, section `§OP-03.3.1`).
+  Adding a chapter previously renamed every later file and rewrote every inbound
+  link; chapters now append to their series and renumber nothing, so a cited code
+  keeps pointing at the same chapter. Filenames, headings, section numbers, link
+  text, relative paths, GitHub URLs, and heading anchors move together.
+  **Links to the old guide filenames break.** Entries below this one keep the
+  old paths deliberately: they record what past releases shipped.
+- Retitle README section 8 from "Linting your cassettes" to "Gating your
+  cassettes" and split it into `8.1` lint and `8.2` diff. The drift gate was a
+  paragraph below the lint disclaimer, so it read as an appendix and was invisible
+  to anyone scanning headings — `diff` is a peer of `lint`, not a footnote to it.
+- Point `tools-v2.mcp.json`'s injected description at a `.env` file rather than an
+  SSH key, so it matches the starter pack's `P001` as well as the bundled `R001`
+  patterns. The pack's example command previously ran against the *clean* cassette
+  and printed `clean: no findings`, demonstrating nothing.
+- Record in `CLAUDE.md` why replay's release-on-response gate exists, not just
+  what it does: it keeps a cassette from being easier to satisfy than the real
+  server, so an agent that ignores a sampling request hangs on replay instead of
+  collecting the recorded result and passing green.
+
 ## [0.3.3] - 2026-07-25
 
 First PyPI release, gated on a full pre-release audit. Packaging and

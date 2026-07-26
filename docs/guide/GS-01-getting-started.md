@@ -1,11 +1,11 @@
-# 1. Getting started
+# GS-01. Getting started
 
 Goal: go from nothing to a test that records a real MCP session once and then replays it
 offline, forever.
 
 **Time:** about 10 minutes.
 
-## 1.1 Before you begin
+## GS-01.1 Before you begin
 
 - Python 3.12 or newer. Linux, macOS, and Windows are all supported.
 - pytest 8 or newer in your test environment.
@@ -16,7 +16,7 @@ offline, forever.
 Recording contacts the real server, so you also need whatever that server needs —
 credentials, network access — but only on the first run.
 
-## 1.2 Install
+## GS-01.2 Install
 
 ```
 uv add --dev mcp-cassette
@@ -42,9 +42,9 @@ mcp_cassette -- .../mcp_cassette/pytest_plugin.py
 ```
 
 If nothing matches, the package is installed in a different environment than the one
-pytest runs in. See [11. Installation](operations/11-install.md).
+pytest runs in. See [OP-01. Installation](operations/OP-01-install.md).
 
-## 1.3 Write the test
+## GS-01.3 Write the test
 
 The fixture gives you a `CassetteSession`. Call `server_command()` with the real server
 command and hand the result to your agent instead of the real command.
@@ -58,7 +58,7 @@ def test_agent_summarizes_repo(mcp_cassette):
 
 Nothing else changes. `cmd` is a plain `list[str]`.
 
-## 1.4 Record the first run
+## GS-01.4 Record the first run
 
 ```
 uv run pytest tests/test_agent.py::test_agent_summarizes_repo
@@ -97,7 +97,7 @@ timing span: 412 ms
 to the proxied server` means the agent never launched the command you were handed. Check
 that `cmd` really reached the agent's MCP server configuration.
 
-## 1.5 Replay
+## GS-01.5 Replay
 
 Run the same test again:
 
@@ -115,7 +115,7 @@ cmd = mcp_cassette.server_command(["python", "does-not-exist.py"])
 The test still passes on replay, because the real command is never launched once a
 cassette exists.
 
-## 1.6 Commit the cassette
+## GS-01.6 Commit the cassette
 
 ```
 git add tests/cassettes/
@@ -124,9 +124,9 @@ git commit -m "test: record github server cassette"
 
 Cassettes are JSON with stable key order and two-space indentation, so they diff and
 review like source. Read the recorded content before committing — see
-[8. Redact secrets](how-to/08-redact-secrets.md).
+[HT-07. Redact secrets](how-to/HT-07-redact-secrets.md).
 
-## 1.7 Lock CI down
+## GS-01.7 Lock CI down
 
 Set this in your pipeline so no CI run can silently record against a live server:
 
@@ -135,15 +135,15 @@ MCP_CASSETTE_MODE=none
 ```
 
 In `none` mode a missing cassette fails the test instead of recording it. Full pipeline
-setup is in [13. CI pipeline](operations/13-ci.md).
+setup is in [OP-03. CI pipeline](operations/OP-03-ci.md).
 
-## 1.8 You're set up
+## GS-01.8 You're set up
 
 From here:
 
 - Re-record after the server changes:
-  [2. Record and replay a stdio server](how-to/02-record-and-replay.md).
+  [HT-01. Record and replay a stdio server](how-to/HT-01-record-and-replay.md).
 - Test failure paths without a broken server:
-  [5. Inject faults](how-to/05-inject-faults.md).
+  [HT-04. Inject faults](how-to/HT-04-inject-faults.md).
 - Your MCP server is remote, not a local command:
-  [3. Record and replay a remote HTTP server](how-to/03-remote-http.md).
+  [HT-02. Record and replay a remote HTTP server](how-to/HT-02-remote-http.md).

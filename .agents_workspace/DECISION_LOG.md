@@ -594,3 +594,66 @@ version/tag mismatch cannot reach PyPI.
 
 **Outcome:** Docs synced and PR opened. Tag and GitHub release deliberately not
 created — the user asked to stop short of the release.
+
+### Entry 32
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T00:00:00Z
+**Task:** Issue #9 — golden cassette example with a diff/lint CI gate
+
+**Context:** The guide numbered its 15 chapters in one global sequence, so adding
+the new how-to meant renaming six files and rewriting ~25 inbound links — a cost
+that recurs on every future addition. The user asked for a prefix or code before
+the numbering. Two schemes were viable: per-section codes (GS/HT/TS/OP) with
+independent numbering, or dropping numbers and relying on directories.
+
+**Decision:** Per-section codes with per-section numbering (`HT-06`,
+`OP-03.3.1`). Directories alone were rejected because duplicate numbers across
+directories make a bare "chapter 3" ambiguous in conversation, which is the
+ambiguity the global sequence existed to prevent. New chapters now append to
+their own series and renumber nothing, so a cited code is stable forever.
+
+Two sub-calls inside that: (a) CHANGELOG.md entries were left pointing at the old
+filenames — they describe what past releases shipped, and rewriting them would
+misreport history; only the new entry will mention the rename. (b) The new
+chapter is `HT-09`, a how-to, rather than a new `use-cases/` section — one
+document does not justify a section, and the prefix scheme makes promoting it to
+`UC-01` later a pure rename.
+
+**Impact / Risk:** Any external link to a guide file by its old path breaks. The
+repo is pre-1.0 and the guide has been public only since 0.3.3, so the exposure
+is small; the README's absolute GitHub URLs were all updated. A link-integrity
+pass over all 22 markdown files confirms every relative link and anchor resolves.
+
+**Outcome:** 15 files renamed via `git mv` (history follows), all links and
+section numbers updated, link check clean.
+
+### Entry 33
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-25T00:00:00Z
+**Task:** Issue #9 — what the new example artifact should be
+
+**Context:** Issue #9 asked for a toy server, a first cassette, a second cassette
+where the description or schema changes, a lint failure case, and CI output. Most
+of that already shipped: `examples/echo_server.py`, `tools.mcp.json`, and
+`injected.mcp.json` (which fails R001). The open question was whether
+`injected.mcp.json` already satisfied the "second cassette" ask.
+
+**Decision:** Add `tools-v2.mcp.json` rather than extend `injected.mcp.json`.
+They answer different questions and conflating them would cost both lessons:
+`injected.mcp.json` is a rule fixture proving R001 fires, while `tools-v2` is a
+narrative artifact — the same server one version later. `tools-v2` carries an
+`inputSchema` change as well as a description change, because the issue asked for
+schema drift specifically and nothing in the repo demonstrated `diff --tools-only`
+on a schema. That schema change is also the load-bearing example for why the gate
+has two steps: it carries no suspicious wording, so lint cannot see it.
+
+**Impact / Risk:** One more committed cassette to keep current. Mitigated by the
+new `examples` CI job, which asserts all three exit codes, so a behavior change in
+lint or diff fails the build instead of silently making HT-09 wrong.
+
+**Outcome:** Cassette added and verified (lint 0 / lint 4 / diff 5), CI job added
+and its assertions verified locally including the failure path.

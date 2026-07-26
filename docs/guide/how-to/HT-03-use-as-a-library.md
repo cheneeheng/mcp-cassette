@@ -1,4 +1,4 @@
-# 4. Use it as a library
+# HT-03. Use it as a library
 
 **When:** your agent harness is not a pytest suite — a notebook, a benchmark runner, a
 CLI of your own, or a different test framework.
@@ -8,7 +8,7 @@ The pytest fixture and the CLI are two front doors onto the same machinery. `use
 is the third: a context manager that hands you a `CassetteSession` with the same modes,
 the same fault matrix, and the same failure semantics.
 
-## 4.1 stdio: command substitution
+## HT-03.1 stdio: command substitution
 
 ```python
 from mcp_cassette import use_cassette
@@ -25,7 +25,7 @@ agent changes — only which command it launches.
 **Verify:** the cassette file exists after the first run, and the second run works with
 the real server stopped.
 
-## 4.2 Streamable HTTP: URL substitution
+## HT-03.2 Streamable HTTP: URL substitution
 
 ```python
 with use_cassette("cassettes/remote.mcp.json", mode="once") as session:
@@ -36,7 +36,7 @@ with use_cassette("cassettes/remote.mcp.json", mode="once") as session:
 `server_url` starts a server in *this* process on a background thread bound to
 `127.0.0.1` on an ephemeral port. It is stopped when the block exits.
 
-## 4.3 The one asymmetry, stated up front
+## HT-03.3 The one asymmetry, stated up front
 
 For stdio you get a **command list**, not an in-process server. An MCP stdio server *is*
 a program the client launches; the only seam is which command it launches. HTTP is the
@@ -44,7 +44,7 @@ opposite: an HTTP config carries no command at all, so something must already be
 listening before the agent connects — running it ourselves is the minimum, not a
 preference.
 
-## 4.4 Modes and precedence
+## HT-03.4 Modes and precedence
 
 Precedence, highest first: `MCP_CASSETTE_MODE` (env) → `mode=` argument → default
 `once`. The environment stays the top tier so the CI invariant holds through this door
@@ -65,7 +65,7 @@ cassette.
 An unknown mode raises `ValueError` naming the bad value, its source (`env
 MCP_CASSETTE_MODE` or `mode=` argument), and the four valid modes.
 
-## 4.5 What the block raises, and when
+## HT-03.5 What the block raises, and when
 
 A clean exit calls `finalize()`, which raises `CassetteError` if:
 
@@ -76,14 +76,14 @@ If the `with` body raises, the session is closed — no thread or socket leaks �
 exception propagates untouched. Report checks are skipped deliberately: a replay miss is
 usually a consequence of the real failure, and chaining it on top buries the cause.
 
-## 4.6 The report sidecar goes to a temp directory
+## HT-03.6 The report sidecar goes to a temp directory
 
 Unlike the fixture (which passes pytest's `tmp_path`), `use_cassette` creates a
 `TemporaryDirectory` for the session report and removes it on exit — so you never find
 untracked JSON next to cassettes you commit. Pass `report_path=` to opt into a durable
 file. The faults sidecar derives from the report's directory and is cleaned up with it.
 
-## 4.7 Faults, matching, and pacing
+## HT-03.7 Faults, matching, and pacing
 
 Every knob the fixture has is a keyword argument:
 
@@ -100,7 +100,7 @@ with use_cassette(
     ...
 ```
 
-## 4.8 Limits worth knowing
+## HT-03.8 Limits worth knowing
 
 - **Nesting is allowed, sharing is not.** Two blocks may be open at once for two
   different cassettes (two MCP servers in one agent). Two sessions on the *same* cassette
@@ -109,8 +109,8 @@ with use_cassette(
   works from async callers as long as the block is entered from a thread that is not the
   event loop.
 
-## 4.9 Related
+## HT-03.9 Related
 
-- [2. Record and replay a stdio server](02-record-and-replay.md)
-- [3. Record and replay a remote HTTP server](03-remote-http.md)
-- [6. Replay timing](06-replay-timing.md)
+- [HT-01. Record and replay a stdio server](HT-01-record-and-replay.md)
+- [HT-02. Record and replay a remote HTTP server](HT-02-remote-http.md)
+- [HT-05. Replay timing](HT-05-replay-timing.md)

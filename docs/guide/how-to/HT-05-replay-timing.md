@@ -1,4 +1,4 @@
-# 6. Replay recorded timing
+# HT-05. Replay recorded timing
 
 **When:** your agent's behavior depends on *how long* the server takes — timeout
 handling, progress-notification UX, concurrency assumptions, retry/backoff logic.
@@ -10,7 +10,7 @@ right default — fast, deterministic suites — and it stays the default.
 
 Pacing is the opt-in that replays those recorded gaps.
 
-## 6.1 Turn it on
+## HT-05.1 Turn it on
 
 ```bash
 mcp-cassette serve demo.mcp.json --pace recorded
@@ -34,7 +34,7 @@ with use_cassette("c.mcp.json", pace=PaceConfig(mode="recorded", scale=0.2)) as 
 **Verify:** the test takes measurably longer, and your agent's timeout branch is reached
 (or provably not reached) instead of being skipped by instant responses.
 
-## 6.2 What it does and does not do
+## HT-05.2 What it does and does not do
 
 | | |
 |---|---|
@@ -48,7 +48,7 @@ Negative or missing gaps become zero, silently. Concurrent HTTP exchanges can in
 such that a response's recorded offset precedes its request's; zero means "as fast as
 possible", which is exactly the pre-pacing behavior for that pair.
 
-## 6.3 Why `--pace-cap-ms` defaults to 5000
+## HT-05.3 Why `--pace-cap-ms` defaults to 5000
 
 A cassette recorded interactively can easily contain a 40-second human pause between
 calls. Replaying that verbatim by default would turn one opt-in flag into a hung CI job.
@@ -59,7 +59,7 @@ never to look like a hang. `--pace-cap-ms 0` opts into uncapped replay explicitl
 `--pace none` but reads as a mistake, so it is rejected. `--pace-scale` or
 `--pace-cap-ms` without `--pace recorded` exits 2 rather than being silently ignored.
 
-## 6.4 Pacing and faults compose
+## HT-05.4 Pacing and faults compose
 
 Order at each emission point is **pace, then fault**.
 
@@ -74,14 +74,14 @@ Pacing covers **realistic** latency (what the real server did); faults cover
 **pathological** latency (what you want to prove your agent survives). They are different
 tools; use both.
 
-## 6.5 The invariant this bends, deliberately
+## HT-05.5 The invariant this bends, deliberately
 
 The standing promise is *no network, no subprocess, no wall-clock reads in the response
 path*. With pacing off — the default everywhere — that still holds exactly: the pacer
 returns without sleeping and without reading a clock. Turning pacing on trades that
 determinism for recorded-latency fidelity, by design.
 
-## 6.6 Related
+## HT-05.6 Related
 
-- [5. Inject faults](05-inject-faults.md)
-- [14. CLI reference](../operations/14-cli-reference.md)
+- [HT-04. Inject faults](HT-04-inject-faults.md)
+- [OP-04. CLI reference](../operations/OP-04-cli-reference.md)

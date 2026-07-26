@@ -1,4 +1,4 @@
-# 8. Redact secrets from cassettes
+# HT-07. Redact secrets from cassettes
 
 **When:** before you commit a cassette recorded against a real server. Cassettes are
 verbatim transcripts; anything the server said is in the file.
@@ -9,7 +9,7 @@ Redaction is applied to a **deep copy** at capture time. The bytes in flight are
 altered, so the agent under test sees the real values while the cassette gets the
 scrubbed ones. Each affected message is flagged with `"redacted": true`.
 
-## 8.1 Defaults are always on
+## HT-07.1 Defaults are always on
 
 These key-globs are matched case-insensitively against every dict key at any depth, and
 the matching value is replaced with `REDACTED`:
@@ -24,7 +24,7 @@ Disable them only if you have a reason:
 mcp-cassette record --cassette demo.json --no-default-redactions -- python tools/server.py
 ```
 
-## 8.2 Add your own rules
+## HT-07.2 Add your own rules
 
 A rule locator is either a **key-glob** (anything not starting with `/`) or a **JSON
 pointer** (starting with `/`) addressing exactly one location. Repeat `--redact` for
@@ -57,7 +57,7 @@ rules = [
 ]
 ```
 
-## 8.3 Limits you must know about
+## HT-07.3 Limits you must know about
 
 - Redaction is **structural** — it needs JSON keys. A message captured as `raw` (a line
   that did not parse as JSON) is stored unchanged and never redacted.
@@ -72,12 +72,12 @@ rules = [
 > before its first commit. Once it is pushed, rotating the leaked credential is the only
 > real remedy.
 
-## 8.4 Then lint it
+## HT-07.4 Then lint it
 
 Redaction protects *your* secrets. Linting checks the *other* direction — whether the
 recorded tool descriptions and results carry prompt-injection smells before they reach a
-model. See [13. CI pipeline](../operations/13-ci.md#133-lint-cassettes-before-they-reach-a-model).
+model. See [OP-03. CI pipeline](../operations/OP-03-ci.md#op-033-lint-cassettes-before-they-reach-a-model).
 
 Redaction and pattern packs are often confused: redaction hides **values** at record
 time, while a pack detects **phrasing** at lint time. Different jobs — see
-[9. Lint with your own pattern packs](09-lint-pattern-packs.md).
+[HT-08. Lint with your own pattern packs](HT-08-lint-pattern-packs.md).

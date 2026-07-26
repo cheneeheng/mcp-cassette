@@ -27,6 +27,46 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy src
 
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      # Nothing else collects examples/ (testpaths is tests/), so its committed
+      # cassettes would rot unnoticed. They are the surface people evaluate the
+      # project on.
+      - run: uv run pytest examples/ -q
+      # The two-step gate walked through in HT-09, asserted by exit code so the
+      # documented numbers cannot drift away from what the tool does.
+      - name: Cassette gate
+        run: |
+          expect() {
+            want=$1; shift
+            "$@" && got=0 || got=$?
+            if [ "$got" != "$want" ]; then
+              echo "::error::expected exit $want, got $got: $*"
+              exit 1
+            fi
+          }
+          expect 0 uv run mcp-cassette lint examples/cassettes/tools.mcp.json
+          expect 4 uv run mcp-cassette lint examples/cassettes/tools-v2.mcp.json
+          expect 5 uv run mcp-cassette diff \
+            examples/cassettes/tools.mcp.json \
+            examples/cassettes/tools-v2.mcp.json --tools-only
+      # The starter pack is only worth shipping if it demonstrably fires. Exit 4
+      # alone would not prove that — the bundled R001s produce 4 by themselves —
+      # so assert the P001 finding.
+      - name: Starter pattern pack fires
+        run: |
+          uv run mcp-cassette lint examples/cassettes/tools-v2.mcp.json \
+            --pattern-pack examples/lint-pack.toml > pack.out 2>&1 || true
+          grep -q '^P001 ' pack.out || {
+            echo "::error::examples/lint-pack.toml matched nothing on tools-v2"
+            cat pack.out
+            exit 1
+          }
+
   test:
     strategy:
       fail-fast: false
