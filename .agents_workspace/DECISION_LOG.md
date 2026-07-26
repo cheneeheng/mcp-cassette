@@ -657,3 +657,37 @@ lint or diff fails the build instead of silently making HT-09 wrong.
 
 **Outcome:** Cassette added and verified (lint 0 / lint 4 / diff 5), CI job added
 and its assertions verified locally including the failure path.
+
+### Entry 34
+
+**Type:** Decision
+**Mode:** Autonomous (option confirmed by the user)
+**Timestamp:** 2026-07-26T00:00:00Z
+**Task:** Resolve the per-transport split in `serve --new-episodes --faults`
+
+**Context:** Found while documenting every fault-injection surface in HT-04. The
+http branch of `_cmd_serve` passed the overlay to `HttpReplayServer` alongside the
+fall-through URL, so faults applied to matched requests; the stdio branch built
+`NewEpisodesProxy` without an injector, so `--faults` was accepted and silently
+ignored. Two ways to converge: reject the pair, or thread faults through the
+stdio new-episodes proxy to match http.
+
+**Decision:** Reject the pair (exit 2, checked before the cassette loads).
+`CassetteSession` already raises `CassetteError` whenever an overlay meets a
+non-replay action, and `new_episodes` is one — so both programmatic doors already
+forbade this and the CLI was the outlier; the http path honoring it was the
+accident, not the feature. The semantics argue the same way: a fault changes the
+path the agent takes, and under `new_episodes` that changed path is what gets
+appended, recording a session that never happens without the fault. Threading
+faults through instead would have meant extracting fault application out of
+`ReplayServer._apply_fault_and_respond` (entangled with the release-gate tracker
+and the deferred-task path) and defining `disconnect`/`timeout` against a live
+child process — ~60-100 lines to enable a combination that should not exist.
+
+**Impact / Risk:** User-visible CLI behavior change: an http user who combined the
+two flags now gets exit 2 where it previously worked. Semver patch, and no
+internal caller is affected because `session.py` raises before it could ever build
+that command. Recorded in HT-04.6 and OP-04.
+
+**Outcome:** Implemented in `cli.py` with a unit test asserting exit 2 and the
+message; full suite green (393 passed, 2 skipped).
