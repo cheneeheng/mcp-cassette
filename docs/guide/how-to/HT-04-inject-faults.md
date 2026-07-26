@@ -179,11 +179,17 @@ mode (resolved action: record)
 cassette exists (`resolved action: new_episodes`). Record the cassette first (or stop
 forcing `MCP_CASSETTE_MODE=all` for that run), then add the fault.
 
-The CLI has no such conflict to raise on: `record` and `serve` are separate commands, and
-`--faults` only exists on `serve`. The one edge is `serve --new-episodes --faults`: over
-HTTP the overlay still applies to requests that match the cassette (misses fall through
-live), while over stdio the overlay is **ignored** — the new-episodes proxy takes no
-injector. Don't combine the two flags on a stdio cassette expecting faults.
+The CLI enforces the same rule as a usage error. `record` and `serve` are separate
+commands and `--faults` only exists on `serve`, so the only conflict left is
+`serve --new-episodes --faults`, which exits `2` on both transports:
+
+```
+mcp-cassette serve: --faults applies to replay only; --new-episodes records novel
+exchanges live
+```
+
+Run the fault matrix against the finished cassette, in plain `serve`, once
+`new_episodes` has appended what it needed to.
 
 ## HT-04.7 Related
 

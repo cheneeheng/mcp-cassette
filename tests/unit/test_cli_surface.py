@@ -233,6 +233,25 @@ def test_serve_stdio_cassette_with_url_exits_2(
     assert "--url applies to http cassettes" in capsys.readouterr().err
 
 
+def test_serve_new_episodes_with_faults_exits_2(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Rejected before the cassette is even loaded: a usage error on both
+    # transports, matching the CassetteError the programmatic doors raise when an
+    # overlay meets a non-replay action.
+    rc = main(
+        [
+            "serve",
+            str(tmp_path / "missing.json"),
+            "--new-episodes",
+            "--faults",
+            str(tmp_path / "f.json"),
+        ]
+    )
+    assert rc == 2
+    assert "--faults applies to replay only" in capsys.readouterr().err
+
+
 def test_serve_http_new_episodes_without_url_exits_2(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

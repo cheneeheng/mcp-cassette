@@ -64,7 +64,7 @@ Stands up a replay server. The transport is inferred from the cassette.
 | `--ordering per_method\|strict\|none` | `per_method` | Match ordering discipline. |
 | `--ignore-param POINTER` | — | JSON pointer excluded from matching. Repeatable. |
 | `--rewrite-protocol-version` | off | Answer `initialize` with the client's requested version. |
-| `--faults PATH` | — | Fault overlay JSON sidecar. |
+| `--faults PATH` | — | Fault overlay JSON sidecar. Replay-only: with `--new-episodes` it is a usage error (exit `2`). |
 | `--pace none\|recorded` | `none` | Replay recorded inter-message latency. Off by default — replay is instant. |
 | `--pace-scale FLOAT` | `1.0` | Multiply every recorded gap. Must be `> 0`. Requires `--pace recorded`. |
 | `--pace-cap-ms MS` | `5000` | Per-gap upper bound; `0` is uncapped. Requires `--pace recorded`. |
@@ -78,7 +78,7 @@ mcp-cassette serve demo.json --new-episodes -- python tools/server.py
 ```
 
 Replay answers requests but emits nothing on its own — it needs a client. `--url` against
-a stdio cassette is a usage error (exit `2`).
+a stdio cassette is a usage error (exit `2`), as is `--faults` with `--new-episodes`.
 
 ## OP-04.4 `inspect`
 

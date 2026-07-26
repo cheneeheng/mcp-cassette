@@ -401,6 +401,16 @@ def _build_pace(args: argparse.Namespace) -> tuple[PaceConfig | None, str | None
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
+    if args.new_episodes and args.faults:
+        # Same rule the programmatic doors enforce (CassetteSession raises when an
+        # overlay meets a non-replay action): a fault changes the path the agent
+        # takes, and under --new-episodes that changed path is what gets appended
+        # to the cassette.
+        sys.stderr.write(
+            "mcp-cassette serve: --faults applies to replay only; --new-episodes "
+            "records novel exchanges live\n"
+        )
+        return 2
     try:
         cassette = Cassette.load(args.cassette)
         overlay = FaultOverlay.load(args.faults) if args.faults else None
