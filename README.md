@@ -158,7 +158,7 @@ def test_agent_survives_tool_trouble(mcp_cassette, fault):
 
 Fault types: `delay`, `timeout`, `error`, `malformed`, `disconnect`. Faults live in a `FaultOverlay`; the recorded cassette is never mutated.
 
-Every door can inject them: `with_faults(...)` on the fixture session, `use_cassette(..., faults=FaultOverlay(...))` in library code, and `serve --faults <overlay>.json` on the CLI — the fixture just writes your overlay to a temp file and passes that same flag. Faults are replay-only; `with_faults` under a recording mode raises.
+Every door can inject them: `with_faults(...)` on the fixture session, `use_cassette(..., faults=FaultOverlay(...))` in library code, and `serve --faults <overlay>.json` on the CLI — the fixture just writes your overlay to a temp file and passes that same flag. Faults are replay-only, on every door: `with_faults` under a recording mode raises (`new_episodes` counts as recording), and `serve --new-episodes --faults` is a usage error.
 
 Faults fire on the **response** side, after a request matched a recorded exchange — there is no fault that corrupts the request on its way in. An unmatched request never reaches the injector at all: the client gets a `-32001` unmatched error and the server exits `3`, whether or not a fault targeted that method. `inspect --faults` dry-runs which recorded requests an overlay would hit, and a fault that never fired warns at shutdown, so a typo'd method name is visible instead of silent.
 

@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Documentation, examples, and CI. No code, flag, or behavior changes.
+Documentation, examples, and CI, plus one CLI behavior fix: `serve
+--new-episodes --faults` is now a usage error instead of behaving differently
+per transport. No flag was added or removed.
 
 ### Added
 
+- README status badges (CI, PyPI version, supported Python versions, license)
+  and a "Built with Claude Code" section stating the tool the project was built
+  with and its non-affiliation with Anthropic. The Python and license badges read
+  PyPI metadata, so `requires-python` and the `license` field stay the single
+  source of truth.
 - `examples/cassettes/tools-v2.mcp.json`: the example echo server one version
   later, carrying an injected tool description *and* a changed `inputSchema`.
   The existing `injected.mcp.json` stays the R001 rule fixture; this one is the
@@ -81,6 +88,34 @@ Documentation, examples, and CI. No code, flag, or behavior changes.
   what it does: it keeps a cassette from being easier to satisfy than the real
   server, so an agent that ignores a sampling request hangs on replay instead of
   collecting the recorded result and passing green.
+- Reorder the README so the three front doors — pytest fixture, `use_cassette`,
+  CLI — are one chapter (`§2`) ahead of the feature chapters, and lift record
+  modes out of the pytest section into `§3` with a per-door precedence table. The
+  modes were a subsection of the fixture while applying to every door, and the
+  CLI sat below fault injection and pacing, so the surfaces read as features of
+  pytest rather than as peers.
+- Rewrite `HT-04` to cover every door rather than the fixture plus a CLI
+  footnote: adds the `use_cassette(..., faults=...)` door, a stdio-vs-HTTP table
+  of what each fault type looks like on the wire, and the consequence of the
+  after-match rule — an unmatched request never reaches the injector, so it fails
+  as a replay miss (`-32001`, exit `3`), and no fault can act on the request
+  side at all.
+- Record the faults-are-replay-only rule as a `CLAUDE.md` invariant, including
+  why `new_episodes` counts as recording for this purpose.
+
+### Fixed
+
+- `mcp-cassette serve --new-episodes --faults` behaved differently per transport:
+  the http path passed the overlay to `HttpReplayServer` alongside the
+  fall-through URL, while the stdio path built `NewEpisodesProxy` without an
+  injector, so `--faults` was accepted and silently ignored. Both now exit `2`
+  with `--faults applies to replay only; --new-episodes records novel exchanges
+  live`, checked before the cassette is loaded. This is the rule the programmatic
+  doors already enforced (`CassetteSession` raises when an overlay meets a
+  non-replay action), so the http behavior was the outlier: a fault changes the
+  path the agent takes, and under `new_episodes` that changed path is what gets
+  appended to the cassette. **An http caller combining the two flags now gets a
+  usage error** where the run previously started.
 
 ## [0.3.3] - 2026-07-25
 
