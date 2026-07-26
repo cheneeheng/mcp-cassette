@@ -78,14 +78,14 @@ are also CLI-recorded, not test-recorded (see the lint section).
   `tools/call` returns a JSON-RPC error, without touching the recorded cassette. One
   recording drives a whole resilience matrix. Faults fire *after* a request matches, so
   the faulted call must still correspond to a recorded interaction.
-- **`test_server_initiated_sampling`** (v2) — the `summarize` tool sends a
+- **`test_server_initiated_sampling`** — the `summarize` tool sends a
   `sampling/createMessage` request *to the client* and only answers once the client
   responds. Replay re-emits the recorded sampling request, accepts whatever the client
   answers (the answer comes from an LLM and legitimately differs every run — it is
   never matched against the recording), and only then releases the recorded tool
   result. Change the canned answer in `_answer_sampling` and replay still returns the
   recorded summary.
-- **`test_http_echo_and_add`** (v2) — `mcp_cassette.server_url(real_url)` is the HTTP
+- **`test_http_echo_and_add`** — `mcp_cassette.server_url(real_url)` is the HTTP
   analog of `server_command`: the fixture hands back a local `/mcp` URL to plug into
   the agent's config. First run it is a recording proxy in front of the real server;
   every run after it is a local mock server rebuilt from the cassette — the test then
@@ -147,7 +147,7 @@ Piping closes stdin at EOF, which cleanly ends the session. In a real test the c
 your agent, not `printf` — the fixture just hands it `mcp-cassette record ... -- <server>`
 (or `mcp-cassette serve <cassette>`) as the server command and the agent drives it.
 
-### Over HTTP (v2)
+### Over HTTP
 
 The HTTP flavors take a URL instead of a command, and *serve* one instead of speaking
 stdio — so unlike the pipes above, driving them by hand takes an HTTP client. The
@@ -222,7 +222,7 @@ curl -si http://127.0.0.1:8902/mcp \
 #   -H 'mcp-session-id: <value from above>'
 ```
 
-## Linting your cassettes (v2)
+## Linting your cassettes
 
 Recorded tool descriptions and results are third-party content headed for a model's
 context window; `lint` scans them for known injection smells before they get there.

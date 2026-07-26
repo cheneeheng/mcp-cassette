@@ -1,4 +1,4 @@
-"""The Streamable HTTP (v2) example: record a "remote" server once, replay offline.
+"""The Streamable HTTP example: record a "remote" server once, replay offline.
 
 ``mcp_cassette.server_url(real_url)`` is the HTTP analog of ``server_command`` — the
 fixture hands back a local URL to plug into the agent's MCP config. First run it is a

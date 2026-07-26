@@ -22,7 +22,11 @@ Python ≥ 3.12. Linux, macOS, and Windows supported. The core install depends o
 
 Full chapter: [OP-01. Installation](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-01-install.md).
 
-## 2. The pytest fixture (the main surface)
+## 2. The three front doors
+
+One machinery, three ways in: the **pytest fixture**, the **`use_cassette` library door**, and the **CLI**. Same cassette format, same record modes (§3), same fault matrix (§5), same failure semantics — they differ only in who drives the session and where the cassette path comes from.
+
+### 2.1 The pytest fixture (the main surface)
 
 ```python
 def test_agent_summarizes_repo(mcp_cassette):
@@ -46,11 +50,47 @@ First run stands up a local recording proxy in front of the real URL; every run 
 
 Full chapters: [HT-01. Record and replay a stdio server](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-01-record-and-replay.md), [HT-02. Record and replay a remote HTTP server](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-02-remote-http.md).
 
-### 2.1 Record modes
+### 2.2 Use it as a library
+
+Not a pytest suite? `use_cassette` is the same machinery behind a context manager — same modes, same fault matrix, same failure semantics:
+
+```python
+from mcp_cassette import use_cassette
+
+with use_cassette("cassettes/search.mcp.json", mode="once") as session:
+    cmd = session.server_command(["python", "-m", "my_server"])
+    run_my_agent(mcp_servers={"search": {"command": cmd[0], "args": cmd[1:]}})
+# clean exit -> finalize(): background server stopped, report checked,
+#               CassetteError raised on an empty recording or any replay miss
+```
+
+The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable.
+
+Full chapter: [HT-03. Use it as a library](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-03-use-as-a-library.md).
+
+### 2.3 The CLI
+
+```
+mcp-cassette record --cassette demo.json -- python tools/server.py   # wrap a real server
+mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp   # proxy a remote one
+mcp-cassette serve demo.json                                         # drop-in replay server (transport inferred)
+mcp-cassette serve demo.json --faults demo.faults.json               # replay with faults
+mcp-cassette inspect demo.json                                       # per-method counts + timing
+mcp-cassette inspect demo.json --timeline --grep 'tools/call'        # message timeline, payload-grepped
+mcp-cassette inspect demo.json --format json > summary.json          # deterministic, diffable
+mcp-cassette inspect demo.json --faults demo.faults.json             # dry-run: which requests a fault hits
+mcp-cassette diff old.json new.json --tools-only                     # exit 5 when the server surface moved
+```
+
+A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — see [§OP-02.6 Checkpointing](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md#op-026-checkpointing) for recovery and why it is never written to the cassette path itself.
+
+`inspect`, `lint` (§8.1), and `diff` (§8.2) are CLI-only workflows in practice, but not CLI-only code: `lint_cassette` and `diff_cassettes` are exported from the package for scripted gates.
+
+Full chapter: [OP-04. CLI reference](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-04-cli-reference.md).
+
+## 3. Record modes
 
 The mode decides, once per test run, whether that run records or replays; the recording unit is always the entire session — every message from server launch to session end — never an individual tool call.
-
-Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp_cassette_mode` (ini) → default `once`.
 
 | Mode | Cassette absent | Cassette present |
 |---|---|---|
@@ -59,11 +99,21 @@ Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp
 | `all` | record | re-record |
 | `new_episodes` | record | replay; misses fall through to the real server and are appended |
 
-CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server.
+How each door selects a mode, highest precedence first:
+
+| Door | Selection |
+|---|---|
+| pytest fixture | `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp_cassette_mode` (ini) → default `once` |
+| `use_cassette` | `MCP_CASSETTE_MODE` (env) → `mode=` argument → default `once` |
+| CLI | explicit by command: `record` records, `serve` replays, `serve --new-episodes` appends misses |
+
+CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server — the env var wins through both programmatic doors, and the CLI has no door that records by accident.
 
 Cassette paths come from the marker's `cassette=`, else `mcp_cassette_dir` (ini), else `<rootpath>/tests/cassettes`; `pytest -o mcp_cassette_dir=...` overrides it for one invocation. That setting is fixture-only, and deliberately has no env var — the fixture is the one door that *derives* a path from the test name. The CLI and `use_cassette` take the full path from you, so you compose the directory into it yourself.
 
-### 2.2 The CI contract: record once, commit, replay forever
+Full chapter: [OP-02. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md).
+
+## 4. The CI contract: record once, commit, replay forever
 
 Three steps, and the third is the one that has to be enforced:
 
@@ -80,27 +130,9 @@ MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 
 
 Both run with no server, no network, and no credentials. Under `none`, a deleted or unmerged cassette fails with `no cassette at <path> and recording is forbidden` — delete one on a scratch branch to see it.
 
-Full chapters: [OP-02. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md), [OP-03. CI pipeline](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-03-ci.md).
+Full chapter: [OP-03. CI pipeline](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-03-ci.md).
 
-## 3. Use it as a library
-
-Not a pytest suite? `use_cassette` is the same machinery behind a context manager — same modes, same fault matrix, same failure semantics:
-
-```python
-from mcp_cassette import use_cassette
-
-with use_cassette("cassettes/search.mcp.json", mode="once") as session:
-    cmd = session.server_command(["python", "-m", "my_server"])
-    run_my_agent(mcp_servers={"search": {"command": cmd[0], "args": cmd[1:]}})
-# clean exit -> finalize(): background server stopped, report checked,
-#               CassetteError raised on an empty recording or any replay miss
-```
-
-Precedence, highest first: `MCP_CASSETTE_MODE` (env) → `mode=` argument → default `once` — so the CI invariant holds through this door too. The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable.
-
-Full chapter: [HT-03. Use it as a library](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-03-use-as-a-library.md).
-
-## 4. Fault injection
+## 5. Fault injection
 
 One recorded cassette drives a whole resilience matrix:
 
@@ -121,9 +153,13 @@ def test_agent_survives_tool_trouble(mcp_cassette, fault):
 
 Fault types: `delay`, `timeout`, `error`, `malformed`, `disconnect`. Faults live in a `FaultOverlay`; the recorded cassette is never mutated.
 
+Every door can inject them: `with_faults(...)` on the fixture session, `use_cassette(..., faults=FaultOverlay(...))` in library code, and `serve --faults <overlay>.json` on the CLI — the fixture just writes your overlay to a temp file and passes that same flag. Faults are replay-only; `with_faults` under a recording mode raises.
+
+Faults fire on the **response** side, after a request matched a recorded exchange — there is no fault that corrupts the request on its way in. An unmatched request never reaches the injector at all: the client gets a `-32001` unmatched error and the server exits `3`, whether or not a fault targeted that method. `inspect --faults` dry-runs which recorded requests an overlay would hit, and a fault that never fired warns at shutdown, so a typo'd method name is visible instead of silent.
+
 Full chapter: [HT-04. Inject faults](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-04-inject-faults.md).
 
-## 5. Replay timing
+## 6. Replay timing
 
 Replay is instant by default. When your agent's timeout, progress-stream, or retry logic depends on *how long* the server took, replay the recorded gaps instead:
 
@@ -136,24 +172,6 @@ Also `@pytest.mark.mcp_cassette(pace="recorded", pace_scale=0.2)` and `use_casse
 
 Full chapter: [HT-05. Replay timing](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-05-replay-timing.md).
 
-## 6. The CLI
-
-```
-mcp-cassette record --cassette demo.json -- python tools/server.py   # wrap a real server
-mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp   # proxy a remote one
-mcp-cassette serve demo.json                                         # drop-in replay server (transport inferred)
-mcp-cassette serve demo.json --faults demo.faults.json               # replay with faults
-mcp-cassette inspect demo.json                                       # per-method counts + timing
-mcp-cassette inspect demo.json --timeline --grep 'tools/call'        # message timeline, payload-grepped
-mcp-cassette inspect demo.json --format json > summary.json          # deterministic, diffable
-mcp-cassette inspect demo.json --faults demo.faults.json             # dry-run: which requests a fault hits
-mcp-cassette diff old.json new.json --tools-only                     # exit 5 when the server surface moved
-```
-
-A recording is checkpointed to a `<cassette>.partial` sidecar every 5 seconds (`--checkpoint-interval SECONDS`, `0` disables), so a hard kill loses only what arrived since the last checkpoint. The sidecar is a valid cassette — see [§OP-02.6 Checkpointing](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md#op-026-checkpointing) for recovery and why it is never written to the cassette path itself.
-
-Full chapter: [OP-04. CLI reference](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-04-cli-reference.md).
-
 ## 7. Redaction
 
 Cassettes are verbatim transcripts, and you commit them — so redaction runs at capture time, on a deep copy, with defaults always on: values under keys matching `*token*`, `*secret*`, `*password*`, `*apikey*`, `*api_key*`, or `authorization` are replaced with `REDACTED` before the cassette is written. Add your own rules with `--redact` (key-glob or JSON pointer). Read every new cassette before its first commit anyway.
@@ -163,6 +181,8 @@ Full chapter: [HT-07. Redact secrets](https://github.com/cheneeheng/mcp-cassette
 ## 8. Gating your cassettes
 
 Two gates, and they cover each other's blind spots: `lint` catches text that *looks* hostile, `diff` catches a surface that *moved*. A poisoned description that was there from the first recording never moves; an innocuous new parameter never looks hostile.
+
+Both run against a cassette file, not a session, so they belong in CI next to your test run rather than inside it.
 
 ### 8.1 Lint: injection smells
 
