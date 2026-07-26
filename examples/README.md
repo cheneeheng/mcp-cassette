@@ -266,6 +266,8 @@ there). Exit `0` means no error-severity findings — warnings (R003 duplicate t
 names, R004 instruction-shaped result text) alone don't fail the run. These are
 heuristic pattern rules, not a guarantee.
 
-To regenerate the pair: record `tools.mcp.json` with the pipe trick above (send
-`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` as the third line), copy it to
-`injected.mcp.json`, and plant something suspicious in a `description`.
+To regenerate the trio: record `tools.mcp.json` with the pipe trick above (send
+`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` as the third line), then copy it twice.
+`injected.mcp.json` plants something suspicious in `echo`'s `description`;
+`tools-v2.mcp.json` does that *and* adds a `callback_url` property to `echo`'s
+`inputSchema`, which is the half no wording can betray.
