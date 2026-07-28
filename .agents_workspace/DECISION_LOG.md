@@ -657,3 +657,70 @@ lint or diff fails the build instead of silently making HT-09 wrong.
 
 **Outcome:** Cassette added and verified (lint 0 / lint 4 / diff 5), CI job added
 and its assertions verified locally including the failure path.
+
+### Entry 34
+
+**Type:** Decision
+**Mode:** Autonomous (option confirmed by the user)
+**Timestamp:** 2026-07-26T00:00:00Z
+**Task:** Resolve the per-transport split in `serve --new-episodes --faults`
+
+**Context:** Found while documenting every fault-injection surface in HT-04. The
+http branch of `_cmd_serve` passed the overlay to `HttpReplayServer` alongside the
+fall-through URL, so faults applied to matched requests; the stdio branch built
+`NewEpisodesProxy` without an injector, so `--faults` was accepted and silently
+ignored. Two ways to converge: reject the pair, or thread faults through the
+stdio new-episodes proxy to match http.
+
+**Decision:** Reject the pair (exit 2, checked before the cassette loads).
+`CassetteSession` already raises `CassetteError` whenever an overlay meets a
+non-replay action, and `new_episodes` is one — so both programmatic doors already
+forbade this and the CLI was the outlier; the http path honoring it was the
+accident, not the feature. The semantics argue the same way: a fault changes the
+path the agent takes, and under `new_episodes` that changed path is what gets
+appended, recording a session that never happens without the fault. Threading
+faults through instead would have meant extracting fault application out of
+`ReplayServer._apply_fault_and_respond` (entangled with the release-gate tracker
+and the deferred-task path) and defining `disconnect`/`timeout` against a live
+child process — ~60-100 lines to enable a combination that should not exist.
+
+**Impact / Risk:** User-visible CLI behavior change: an http user who combined the
+two flags now gets exit 2 where it previously worked. Semver patch, and no
+internal caller is affected because `session.py` raises before it could ever build
+that command. Recorded in HT-04.6 and OP-04.
+
+**Outcome:** Implemented in `cli.py` with a unit test asserting exit 2 and the
+message; full suite green (393 passed, 2 skipped).
+
+### Entry 35
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-28T00:00:00Z
+**Task:** Run the release flow for v0.3.4.
+
+**Context:** The release flow prescribes branching `chore/release-v0.3.4` from
+`main` and landing the bump through its own PR. That precondition did not hold:
+the entire v0.3.4 content (README restructure, `HT-04` rewrite, badges, the
+`serve --new-episodes --faults` fix) already sits on `docs/readme-structure-and-v2-cleanup`
+with PR #14 open, green on all nine checks, and mergeable against an unmoved
+`main`. A separate release branch would either have to wait for #14 to merge —
+two PRs for one release — or duplicate its diff.
+
+**Decision:** Fold the bump into the existing branch and PR rather than opening a
+second one. Bump level PATCH (0.3.3 -> 0.3.4): everything under the changelog's
+`Added` is documentation, examples, or CI, no public symbol was added or changed,
+and the one behavior change is a bug fix that removes an accidental flag
+combination. Promoted the existing `[Unreleased]` section to `[0.3.4] - 2026-07-28`
+in place (its prose was already written for this release) and left an empty
+`[Unreleased]` heading, matching the shape at the v0.3.3 tag. Steps 7-10 run
+in-session rather than through the `ceh-git-workflow` subagents, per the session's
+standing instruction not to dispatch agents unrequested; the flow explicitly
+allows the in-session path.
+
+**Impact / Risk:** The v0.3.4 release commit rides a branch named `docs/...`, so
+the branch name understates what landed. PR #14's title and body were updated to
+say it carries the release. Tag still points at the merge commit on `main`, so the
+release provenance is unaffected.
+
+**Outcome:** Pending — recorded before the commit.

@@ -102,7 +102,7 @@ def _answer_sampling(request: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.mark.mcp_cassette(cassette=CASSETTES / "sampling.mcp.json")
 def test_server_initiated_sampling(mcp_cassette: mcc.CassetteSession) -> None:
-    """Sampling replays too (v2): the server asks the *client* mid-call.
+    """Sampling replays too: the server asks the *client* mid-call.
 
     The ``summarize`` tool sends a ``sampling/createMessage`` request and only
     responds once the client answers. On replay, mcp-cassette re-emits the recorded
