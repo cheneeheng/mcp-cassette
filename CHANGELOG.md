@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-28
+
 Documentation, examples, and CI, plus one CLI behavior fix: `serve
 --new-episodes --faults` is now a usage error instead of behaving differently
 per transport. No flag was added or removed.
@@ -448,7 +450,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.0...v0.3.1

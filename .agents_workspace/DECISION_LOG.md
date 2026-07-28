@@ -691,3 +691,36 @@ that command. Recorded in HT-04.6 and OP-04.
 
 **Outcome:** Implemented in `cli.py` with a unit test asserting exit 2 and the
 message; full suite green (393 passed, 2 skipped).
+
+### Entry 35
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-28T00:00:00Z
+**Task:** Run the release flow for v0.3.4.
+
+**Context:** The release flow prescribes branching `chore/release-v0.3.4` from
+`main` and landing the bump through its own PR. That precondition did not hold:
+the entire v0.3.4 content (README restructure, `HT-04` rewrite, badges, the
+`serve --new-episodes --faults` fix) already sits on `docs/readme-structure-and-v2-cleanup`
+with PR #14 open, green on all nine checks, and mergeable against an unmoved
+`main`. A separate release branch would either have to wait for #14 to merge —
+two PRs for one release — or duplicate its diff.
+
+**Decision:** Fold the bump into the existing branch and PR rather than opening a
+second one. Bump level PATCH (0.3.3 -> 0.3.4): everything under the changelog's
+`Added` is documentation, examples, or CI, no public symbol was added or changed,
+and the one behavior change is a bug fix that removes an accidental flag
+combination. Promoted the existing `[Unreleased]` section to `[0.3.4] - 2026-07-28`
+in place (its prose was already written for this release) and left an empty
+`[Unreleased]` heading, matching the shape at the v0.3.3 tag. Steps 7-10 run
+in-session rather than through the `ceh-git-workflow` subagents, per the session's
+standing instruction not to dispatch agents unrequested; the flow explicitly
+allows the in-session path.
+
+**Impact / Risk:** The v0.3.4 release commit rides a branch named `docs/...`, so
+the branch name understates what landed. PR #14's title and body were updated to
+say it carries the release. Tag still points at the merge commit on `main`, so the
+release provenance is unaffected.
+
+**Outcome:** Pending — recorded before the commit.
