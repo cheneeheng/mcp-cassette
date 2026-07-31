@@ -5,11 +5,44 @@ or remote Streamable HTTP — into **cassettes** (structured JSON files you comm
 replays those cassettes as deterministic mock MCP servers. Your agent test suite stops
 hitting live servers.
 
-Every chapter carries a stable code: `GS` getting started, `HT` how-to, `TS`
-troubleshooting, `OP` operations. The code is the filename and the heading prefix, so
-`OP-02` is `operations/OP-02-configure.md` and "see §OP-02.4" means section 4 of that
-chapter. Numbering runs per section, so a new chapter appends to its own series and
-never renumbers the others — a code, once cited, keeps pointing at the same chapter.
+## The mental model
+
+mcp-cassette never patches your agent. It hands you a **command list** (stdio) or a
+**URL** (HTTP) to drop into the agent's MCP server configuration, in the slot where the
+real server would go. What sits behind that slot changes between runs:
+
+```mermaid
+flowchart LR
+    T["your test or harness"] --> S["server_command() / server_url()"]
+    S -->|"first run: no cassette"| R["recording proxy"]
+    R <--> V[("real MCP server")]
+    R -.writes.-> C[("cassette.json")]
+    S -->|"every run after"| P["replay server"]
+    C -.reads.-> P
+```
+
+On the first run that slot holds a recording proxy wrapping the real server, and every
+JSON-RPC message in both directions is captured. On every run after, it holds a replay
+server answering from the cassette — no network, no subprocess, no live dependency.
+
+The unit of recording is the **whole session** — every message from server launch to
+shutdown, all tool calls included — never an individual tool call. Re-recording therefore
+rewrites the entire cassette file, not one entry inside it.
+
+Three front doors open the same machinery, and the picture above is identical for all
+three:
+
+| Door | You call | Use it when |
+|---|---|---|
+| pytest fixture | `mcp_cassette.server_command(...)` | your tests are a pytest suite |
+| library | `with use_cassette(...) as session:` | your harness is a notebook, a benchmark runner, or another test framework |
+| CLI | `mcp-cassette record` / `mcp-cassette serve` | you drive recording by hand or from a shell script |
+
+Under the hood it works at the transport level (newline-delimited JSON-RPC over stdio, or
+Streamable HTTP) and treats messages semi-opaquely, so it works with any MCP client
+unmodified and never imports the `mcp` SDK at runtime.
+
+## Where to start
 
 The two audiences do not mix:
 
@@ -24,7 +57,7 @@ The two audiences do not mix:
 - **GS-01** [Getting started](GS-01-getting-started.md) — install, write one test, record
   it, replay it.
 - **HT-01** [Record and replay a stdio server](how-to/HT-01-record-and-replay.md) — the
-  core loop, record modes, re-recording.
+  core loop through all three doors, record modes, re-recording.
 - **HT-02** [Record and replay a remote HTTP server](how-to/HT-02-remote-http.md) —
   `server_url`, the `[http]` extra.
 - **HT-03** [Use it as a library](how-to/HT-03-use-as-a-library.md) — `use_cassette` for
@@ -56,13 +89,10 @@ The two audiences do not mix:
 - **OP-05** [Runbook: replay misses and failed recordings](operations/OP-05-runbook-replay-misses.md)
   — the two incidents that actually happen.
 
-## How it works, in one paragraph
+## Chapter codes
 
-mcp-cassette works at the transport level (newline-delimited JSON-RPC over stdio, or
-Streamable HTTP) and treats messages semi-opaquely, so it works with any MCP client
-unmodified and never imports the `mcp` SDK at runtime. There are three front doors — the
-pytest fixture, the CLI, and `use_cassette` for plain Python — and none of them
-monkeypatches your agent: each hands you a **command list** (stdio) or a **URL** (HTTP) to
-plug into the agent's MCP server configuration. On the first run that command is a
-recording proxy wrapping the real server; on every run after it is a replay server
-reading from the cassette.
+Every chapter carries a stable code: `GS` getting started, `HT` how-to, `TS`
+troubleshooting, `OP` operations. The code is the filename and the heading prefix, so
+`OP-02` is `operations/OP-02-configure.md` and "see §OP-02.4" means section 4 of that
+chapter. Numbering runs per section, so a new chapter appends to its own series and
+never renumbers the others — a code, once cited, keeps pointing at the same chapter.

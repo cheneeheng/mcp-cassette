@@ -28,21 +28,10 @@ or, with pip:
 pip install mcp-cassette
 ```
 
-The pytest plugin registers itself through the `pytest11` entry point. Confirm it is
-loaded:
-
-```
-uv run pytest --fixtures -q | grep mcp_cassette
-```
-
-Expected output includes:
-
-```
-mcp_cassette -- .../mcp_cassette/pytest_plugin.py
-```
-
-If nothing matches, the package is installed in a different environment than the one
-pytest runs in. See [OP-01. Installation](operations/OP-01-install.md).
+The pytest plugin registers itself through the `pytest11` entry point — there is nothing
+to configure. If the `mcp_cassette` fixture turns up missing in the next step, the
+package is installed in a different environment than the one pytest runs in; the health
+check in [OP-01.3](operations/OP-01-install.md) confirms it.
 
 ## GS-01.3 Write the test
 
@@ -76,22 +65,18 @@ call.
 uv run mcp-cassette inspect tests/cassettes/test_agent/test_agent_summarizes_repo.mcp.json
 ```
 
-Expected output, roughly:
+Expected output starts, roughly:
 
 ```
 cassette: tests/cassettes/test_agent/test_agent_summarizes_repo.mcp.json
-format_version: 2
 transport: stdio
-recorded_at: 2026-07-20T09:12:44.113000+00:00
-protocol_version: 2024-11-05
 server: github-server 1.0.0
 messages: 8
-  initialize: 2
-  notifications/initialized: 1
-  tools/call: 4
-  tools/list: 1
-timing span: 412 ms
 ```
+
+A non-zero `messages` count is the thing to check. The full summary — protocol version,
+per-method counts, timing span — is in
+[HT-06. Inspect and diff cassettes](how-to/HT-06-inspect-and-diff.md).
 
 **If it fails:** an error reading `recording captured zero messages — agent never spoke
 to the proxied server` means the agent never launched the command you were handed. Check

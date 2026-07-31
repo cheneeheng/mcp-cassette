@@ -1,45 +1,64 @@
 # HT-01. Record and replay a stdio server
 
-**When:** your MCP server runs as a local command and your test drives an agent against
-it.
-**Prerequisites:** [GS-01. Getting started](../GS-01-getting-started.md) completed; a working
-test using the `mcp_cassette` fixture.
+**When:** your MCP server runs as a local command and you want a test or harness to drive
+an agent against it once, then offline forever.
+**Prerequisites:** mcp-cassette installed; the server launchable as a command, for example
+`python tools/github_server.py`.
 
-## HT-01.1 The core loop
+The task is the same through all three doors: put a cassette in the slot where the real
+server command goes. Pick your door and read that section — they do not build on each
+other.
 
-```python
-def test_agent_summarizes_repo(mcp_cassette):
-    cmd = mcp_cassette.server_command(["python", "tools/github_server.py"])
-    result = run_my_agent(mcp_servers={"github": cmd})
-    assert "summary" in result
-```
+| Door | Section | Read it if |
+|---|---|---|
+| pytest fixture | [HT-01.1](#ht-011-with-the-pytest-fixture) | your tests are a pytest suite |
+| library (`use_cassette`) | [HT-01.2](#ht-012-with-use_cassette) | your harness is a notebook, benchmark, or another test framework |
+| CLI | [HT-01.3](#ht-013-with-the-cli) | you record by hand or from a shell script |
 
-`server_command()` returns one of two things, decided by the record mode and whether the
-cassette file exists:
+[HT-01.4](#ht-014-behaviour-shared-by-all-three-doors) holds what is identical everywhere:
+record modes, re-recording, matching, and what failure looks like.
 
-| Resolved action | What the returned command is |
-|---|---|
-| record | `python -m mcp_cassette record --cassette <path> --report <path> -- <your command>` |
-| replay | `python -m mcp_cassette serve <path> --report <path> --ordering per_method` |
-| new_episodes | `python -m mcp_cassette serve <path> ... --new-episodes -- <your command>` |
+## HT-01.1 With the pytest fixture
 
-The agent is never patched. It launches whatever command you give it.
+1. Take the command from the fixture instead of hard-coding it.
 
-## HT-01.2 Choose where the cassette lives
+   ```python
+   def test_agent_summarizes_repo(mcp_cassette):
+       cmd = mcp_cassette.server_command(["python", "tools/github_server.py"])
+       result = run_my_agent(mcp_servers={"github": cmd})
+       assert "summary" in result
+   ```
 
-By default the cassette path is
-`tests/cassettes/<test-module-name>/<test-node-name>.mcp.json`, with any character
-outside `A-Za-z0-9_.-` in the node name replaced by `_` (so parametrized tests each get
-their own file).
+   `cmd` is a plain `list[str]`. The agent is never patched — it launches whatever you
+   give it.
 
-Override the directory for the whole suite in `pyproject.toml`:
+2. Run the test. No cassette exists, so this records.
+
+   ```
+   uv run pytest tests/test_agent.py::test_agent_summarizes_repo
+   ```
+
+3. Run it again. The cassette exists, so this replays.
+
+   ```
+   uv run pytest tests/test_agent.py::test_agent_summarizes_repo
+   ```
+
+**Verify:** the second run passes with the real server stopped. Prove it by pointing at a
+command that cannot start — `server_command(["python", "does-not-exist.py"])` still
+passes on replay, because the real command is never launched once a cassette exists.
+
+**Cassette location** is a fixture concern only (the other two doors take an explicit
+path). The default is `tests/cassettes/<test-module>/<test-node>.mcp.json`, with any
+character outside `A-Za-z0-9_.-` in the node name replaced by `_`, so parametrized tests
+each get their own file. Override for the suite:
 
 ```toml
 [tool.pytest.ini_options]
 mcp_cassette_dir = "tests/fixtures/cassettes"
 ```
 
-Override one test's file with the marker:
+or for one test:
 
 ```python
 @pytest.mark.mcp_cassette(cassette="tests/cassettes/shared/github.mcp.json")
@@ -47,17 +66,72 @@ def test_agent_summarizes_repo(mcp_cassette):
     ...
 ```
 
-**Verify:** run the test and confirm the file appears where you expect.
+## HT-01.2 With `use_cassette`
 
-## HT-01.3 Pick a record mode
+1. Open the block and take the command from the session.
 
-The modes answer one question, decided once per test run: does this run record or
-replay? The unit is always the **entire session** — every message from server launch to
-session end, all tool calls included — never an individual tool call. `all` therefore
-re-records and overwrites the whole cassette file each run, not single entries in it.
+   ```python
+   from mcp_cassette import use_cassette
 
-Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` →
-`mcp_cassette_mode` (ini) → default `once`.
+   with use_cassette("cassettes/github.mcp.json", mode="once") as session:
+       cmd = session.server_command(["python", "tools/github_server.py"])
+       run_my_agent(mcp_servers={"github": {"command": cmd[0], "args": cmd[1:]}})
+   ```
+
+2. Run your harness once to record, and again to replay. `once` mode decides by whether
+   the file exists — the same rule the fixture uses.
+
+**Verify:** `cassettes/github.mcp.json` exists after the first run, and the second run
+completes with the real server stopped.
+
+A clean exit calls `finalize()`, which raises `CassetteError` on an empty recording or an
+unmatched replay request. If your own code raises inside the block, the session is closed
+(no thread or socket leaks) and **your** exception propagates untouched — the report check
+is skipped deliberately, because a replay miss is usually a consequence of the real
+failure and chaining it on top buries the cause.
+
+Full library surface, including the report sidecar and nesting rules:
+[HT-03. Use it as a library](HT-03-use-as-a-library.md).
+
+## HT-01.3 With the CLI
+
+There is no mode here — you choose by picking the subcommand.
+
+1. Point the agent's MCP configuration at `record`, wrapping the real command after `--`:
+
+   ```
+   mcp-cassette record --cassette cassettes/github.mcp.json -- python tools/github_server.py
+   ```
+
+2. Run the agent. `record` is a transparent proxy: it forwards its own stdin to the
+   wrapped server and captures both directions on the way through. Nothing is captured
+   unless a client actually drives it.
+
+3. Swap the configuration to `serve` and drop the real command:
+
+   ```
+   mcp-cassette serve cassettes/github.mcp.json
+   ```
+
+**Verify:** inspect the file between the two steps.
+
+```
+mcp-cassette inspect cassettes/github.mcp.json
+```
+
+A non-zero `messages` count means the recording took. Replay answers requests but emits
+nothing on its own, so it also needs a client to drive it.
+
+Every flag is in [OP-04. CLI reference](../operations/OP-04-cli-reference.md).
+
+## HT-01.4 Behaviour shared by all three doors
+
+### Record modes
+
+The mode answers one question, decided once per run: does this run record or replay? The
+unit is always the **entire session** — every message from server launch to session end —
+never an individual tool call. `all` therefore re-records the whole cassette file, not
+single entries in it.
 
 | Mode | Cassette absent | Cassette present |
 |---|---|---|
@@ -66,30 +140,30 @@ Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` →
 | `all` | record | re-record |
 | `new_episodes` | record | replay; misses fall through to the real server and are appended |
 
-An invalid mode raises `ValueError: invalid mcp_cassette mode ...` at fixture setup.
+Precedence differs by door, but `MCP_CASSETTE_MODE` is the top tier in both that have
+one — so the CI invariant holds no matter which door a suite uses:
 
-```python
-@pytest.mark.mcp_cassette(mode="none")
-def test_never_records(mcp_cassette):
-    ...
-```
+| Door | Precedence, highest first |
+|---|---|
+| fixture | `MCP_CASSETTE_MODE` → marker `mode=` → `mcp_cassette_mode` ini → `once` |
+| library | `MCP_CASSETTE_MODE` → `mode=` argument → `once` |
+| CLI | n/a — `record` and `serve` are separate commands |
 
-## HT-01.4 Re-record after the server changes
+An invalid mode raises `ValueError` naming the bad value and its source.
+
+### Re-record after the server changes
 
 > **Warning:** re-recording overwrites the cassette in place. The old recording is gone
 > unless it is committed to git. Commit first, or work on a branch.
 
-Pick one:
-
-1. **One test, one cassette** — delete the file and run normally. `once` mode records it
-   again.
+1. **One cassette** — delete the file and run normally; `once` records it again.
 
    ```
    rm tests/cassettes/test_agent/test_agent_summarizes_repo.mcp.json
    uv run pytest tests/test_agent.py::test_agent_summarizes_repo
    ```
 
-2. **A whole file or suite** — force record mode for that run.
+2. **A whole suite** — force record mode for that run.
 
    ```
    MCP_CASSETTE_MODE=all uv run pytest tests/test_agent.py
@@ -112,17 +186,15 @@ Pick one:
 plain `uv run pytest` (replay) passes.
 
 > **Note:** `MCP_CASSETTE_MODE=all` cannot produce a green run for tests that depend on
-> replay semantics — determinism assertions and any test using `with_faults()` (faults
+> replay semantics — determinism assertions, and anything using `with_faults()` (faults
 > are replay-only and raise `CassetteError` under a recording action). Re-record those
-> per file with the delete-and-rerun approach.
+> with the delete-and-rerun approach instead.
 
-## HT-01.5 Control how requests are matched
+### Matching
 
-The JSON-RPC `id` is never matched on; the replay server re-stamps the client's `id`
-onto the recorded response. Matching is structural over the parsed JSON, and by default
+The JSON-RPC `id` is never matched on; the replay server re-stamps the client's `id` onto
+the recorded response. Matching is structural over the parsed JSON, and by default
 compares `method` and `params`.
-
-Three ordering disciplines, set per test on the marker:
 
 | `ordering` | Behaviour |
 |---|---|
@@ -130,48 +202,44 @@ Three ordering disciplines, set per test on the marker:
 | `strict` | The next unconsumed exchange must match, or the request is a miss. |
 | `none` | Any matching exchange answers, unlimited times, in any order. |
 
-Ignore a volatile field so it does not break matching:
+Same three settings, three spellings:
 
-```python
-@pytest.mark.mcp_cassette(
-    ordering="strict",
-    ignore_params=["/params/arguments/requestId"],
-)
-def test_agent(mcp_cassette):
-    ...
-```
+| Setting | Fixture marker | Library | CLI |
+|---|---|---|---|
+| ordering | `ordering="strict"` | `MatchConfig(ordering="strict")` | `--ordering strict` |
+| ignore a volatile field | `ignore_params=["/params/arguments/requestId"]` | `MatchConfig(ignore_params=[...])` | `--ignore-param /params/...` |
+| accept the client's protocol version | `rewrite_protocol_version=True` | `MatchConfig(rewrite_protocol_version=True)` | `--rewrite-protocol-version` |
 
 `ignore_params` entries are JSON pointers into the request object.
 
-If the client and the recording disagree on the MCP protocol version at `initialize`,
-`rewrite_protocol_version=True` makes replay answer with the version the client asked
-for instead of the recorded one:
+### What failure looks like
 
-```python
-@pytest.mark.mcp_cassette(rewrite_protocol_version=True)
-def test_agent(mcp_cassette):
-    ...
-```
+Two conditions fail a session: a recording that captured zero messages (the agent never
+spoke to the proxied server), and a replay that hit any unmatched request. Each door
+reports them differently:
 
-**Verify:** the test passes on replay with no `unmatched request(s)` failure.
+| Door | How it surfaces |
+|---|---|
+| fixture | `finalize()` on teardown fails the test, listing each miss as `method params=<digest>` |
+| library | `finalize()` raises `CassetteError` on clean block exit |
+| CLI | `serve` exits `3` on an unmatched request |
 
-## HT-01.6 What happens on failure
+### Server-initiated requests
 
-On teardown, the fixture calls `finalize()` and fails the test when:
+Sampling and elicitation — the server asking the *client* mid-call — are recorded
+generically and replay on both transports. The recorded server request is re-emitted with
+its recorded id, the client's answer is accepted as-is and never matched against the
+recording, and the recorded response is released only after the client answers. There is
+deliberately no internal timeout for an unanswered server request: use your test runner's
+own timeout, and the shutdown summary names the request still pending.
 
-- a recording captured zero messages (the agent never spoke to the proxied server), or
-- replay hit any unmatched request. The failure message lists each miss as
-  `method params=<digest>` and tells you to re-record.
+## HT-01.5 Related
 
-The replay subprocess itself exits with code `3` on an unmatched request.
-
-## HT-01.7 Server-initiated requests
-
-Sampling and elicitation (the server asking the *client* mid-call) are recorded
-generically and replay on both transports. On replay the recorded server request is
-re-emitted with its recorded id, the client's answer is accepted as-is and never matched
-against the recording, and the recorded response is released only after the client
-answers.
-
-There is deliberately no internal timeout for an unanswered server request. Use pytest's
-own timeout; the shutdown summary names the request still pending.
+- [HT-02. Record and replay a remote HTTP server](HT-02-remote-http.md) — the same task
+  when the server is a URL, not a command.
+- [HT-03. Use it as a library](HT-03-use-as-a-library.md) — the full `use_cassette`
+  surface.
+- [OP-02. Configuration](../operations/OP-02-configure.md) — every ini option and marker
+  keyword.
+- [OP-05. Runbook: replay misses](../operations/OP-05-runbook-replay-misses.md) — when a
+  replay misses in CI.

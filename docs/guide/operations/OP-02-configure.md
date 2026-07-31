@@ -3,6 +3,30 @@
 **Audience:** operators. Every setting that changes record/replay behaviour, its default,
 and its effect.
 
+## OP-02.0 One setting, three spellings
+
+Most settings exist on all three doors under different names. Find the row, then read the
+detail section it points at.
+
+| Setting | pytest marker / ini | `use_cassette` | CLI | Detail |
+|---|---|---|---|---|
+| record mode | `mode=` / `mcp_cassette_mode` | `mode=` | pick `record` or `serve` | [OP-02.1](#op-021-record-mode) |
+| cassette path | `cassette=` / `mcp_cassette_dir` | `cassette` argument | `--cassette PATH` / positional | [OP-02.2](#op-022-ini-options) |
+| match ordering | `ordering=` | `MatchConfig(ordering=)` | `--ordering` | [OP-02.4](#op-024-matching) |
+| ignore a param | `ignore_params=` | `MatchConfig(ignore_params=)` | `--ignore-param` | [OP-02.4](#op-024-matching) |
+| protocol rewrite | `rewrite_protocol_version=` | `MatchConfig(rewrite_protocol_version=)` | `--rewrite-protocol-version` | [OP-02.4](#op-024-matching) |
+| faults | `with_faults(...)` | `faults=` | `--faults PATH` | [HT-04](../how-to/HT-04-inject-faults.md) |
+| pacing | `pace=`, `pace_scale=`, `pace_cap_ms=` | `pace=PaceConfig(...)` | `--pace`, `--pace-scale`, `--pace-cap-ms` | [HT-05](../how-to/HT-05-replay-timing.md) |
+| redaction | **not available** | **not available** | `--redact`, `--no-default-redactions` | [OP-02.5](#op-025-redaction) |
+| checkpoint interval | not available | not available | `--checkpoint-interval` | [OP-02.6](#op-026-checkpointing) |
+
+Two rows are deliberately uneven. `MCP_CASSETTE_MODE` is the only genuinely cross-door
+*environment* setting — all three doors delegate to `resolve_mode`, which is what makes the
+CI `none` invariant hold everywhere. Redaction and checkpointing are record-time proxy
+settings and are reachable only from the CLI or from `StdioRecordingProxy` directly; see
+[HT-07.3](../how-to/HT-07-redact-secrets.md#ht-073-the-gap-in-the-fixture-and-use_cassette)
+for what to do when you need a custom rule from a pytest suite.
+
 ## OP-02.1 Record mode
 
 Precedence, highest first: `MCP_CASSETTE_MODE` (env) → marker `mode=` →

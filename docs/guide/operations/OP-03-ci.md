@@ -4,6 +4,30 @@
 **Goal:** cassette-backed tests run offline and deterministically, and no pipeline can
 silently record against a live server.
 
+## OP-03.0 The whole pipeline
+
+Three steps. Everything below is the reasoning behind them.
+
+```yaml
+- name: Test                          # 1. offline, deterministic, cannot record
+  env:
+    MCP_CASSETTE_MODE: none
+  run: uv run pytest
+
+- name: Lint cassettes                # 2. third-party text headed for a model
+  run: uv run mcp-cassette lint tests/cassettes/**/*.mcp.json --format json
+
+- name: Drift gate                    # 3. scheduled job only, against a fresh recording
+  run: uv run mcp-cassette diff tests/cassettes/tools.mcp.json fresh.mcp.json --tools-only
+```
+
+Give the test job **no MCP server credentials** ([OP-03.2](#op-032-do-not-give-ci-upstream-credentials)).
+Step 3 needs a fresh recording, which is a scheduled job with its own credentials — never
+the pull-request pipeline ([HT-09.5](../how-to/HT-09-gate-a-drifting-server.md#ht-095-wire-it-into-ci)).
+
+Exit codes you will see in a red build: `3` a replay miss, `4` a lint finding, `5` the
+surface drifted, `2` a usage or file error.
+
 ## OP-03.1 The one non-negotiable setting
 
 ```

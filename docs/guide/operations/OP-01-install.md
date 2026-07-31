@@ -2,6 +2,27 @@
 
 **Audience:** operators standing up mcp-cassette in a project or pipeline.
 
+## OP-01.0 The whole setup, in five commands
+
+Install, verify, and lock the pipeline down. Every line is explained below; run these if
+you just need it working.
+
+```
+uv add --dev mcp-cassette                                # 1. install (core: stdio)
+uv add --dev "mcp-cassette[http]"                        # 2. only if you record remote HTTP servers
+uv run mcp-cassette --help                               # 3. CLI is on PATH
+uv run pytest --fixtures -q | grep mcp_cassette          # 4. pytest plugin is loaded
+export MCP_CASSETTE_MODE=none                            # 5. in CI only — forbid recording
+```
+
+Step 5 is the one non-negotiable pipeline setting: in `none` mode a missing cassette fails
+the test instead of silently recording against a live server. Set it in the CI environment,
+never in a developer shell. Full pipeline wiring is [OP-03](OP-03-ci.md).
+
+**Verify:** step 3 prints usage listing `record`, `serve`, `inspect`, `diff`, `lint`; step 4
+prints a line pointing at `.../mcp_cassette/pytest_plugin.py`. If step 4 prints nothing, go
+to [OP-01.3](#op-013-post-install-health-check).
+
 ## OP-01.1 Requirements
 
 | Item | Requirement |

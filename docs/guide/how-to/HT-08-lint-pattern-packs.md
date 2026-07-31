@@ -1,17 +1,27 @@
 # HT-08. Lint with your own pattern packs
 
-**When:** the bundled rules catch generic smells, but you need to catch *yours* — a
-vendor name that must never appear in a tool description, an internal hostname that
-signals a misconfigured staging server, domain-specific exfiltration phrasing.
+**When:** the bundled rules catch generic smells, but you need to catch *yours* — a vendor
+name that must never appear in a tool description, an internal hostname that signals a
+misconfigured staging server, domain-specific exfiltration phrasing.
 **Prerequisites:** a cassette and a TOML file you control.
 
 **There is no Python rule-plugin API, and that is deliberate.** A `Rule` protocol and
-`register_rule()` would be a public contract to keep semver-stable forever, and would
-make `lint` execute arbitrary third-party code on a supply-chain-security surface — the
-one place that is least appropriate. Regex packs cover the per-project need at a fraction
-of the API surface.
+`register_rule()` would be a public contract to keep semver-stable forever, and would make
+`lint` execute arbitrary third-party code on a supply-chain-security surface — the one
+place that is least appropriate. Regex packs cover the per-project need at a fraction of
+the API surface.
 
-## HT-08.1 A starter pack
+Linting is an operation on a cassette *file*, so this task has **two doors, not three** —
+there is no pytest fixture surface. Write the pack once; both doors read the same file.
+
+| Door | Section | Covers |
+|---|---|---|
+| CLI | [HT-08.2](#ht-082-with-the-cli) | `lint --pattern-pack`, `--select`/`--ignore`, `--fail-on` |
+| library | [HT-08.3](#ht-083-with-the-library) | `lint_cassette()` returning a `LintReport` |
+
+## HT-08.1 Write the pack
+
+Both doors need this file first.
 
 ```toml
 version = 1                       # pack format version; only 1 is accepted
@@ -26,16 +36,6 @@ surfaces = ["description"]        # default: both description and result
 message = "description describes sending environment variables off-host"  # optional
 ```
 
-```bash
-mcp-cassette lint demo.mcp.json --pattern-pack team-rules.toml
-```
-
-**Verify:** a cassette containing the phrase exits 4 and prints `P001 error /messages/...`
-with the JSON pointer to the evidence.
-
-A pack finding is an ordinary finding whose `rule` is the pack's id — nothing about
-parsing lint output changes.
-
 | Field | Meaning |
 |---|---|
 | `id` | Appears verbatim in output, `--select`, and `--ignore`. 1–16 characters, `[A-Za-z][A-Za-z0-9_-]*`, not starting with `R`. |
@@ -49,7 +49,66 @@ parsing lint output changes.
 Catastrophic backtracking in a pack regex is the pack author's risk — your file, your CI
 job. There is no per-pattern timeout, because no other rule has one.
 
-## HT-08.2 What a pack can reach, and what it cannot
+## HT-08.2 With the CLI
+
+1. Run the pack against a cassette:
+
+   ```
+   mcp-cassette lint demo.mcp.json --pattern-pack team-rules.toml
+   ```
+
+2. Make it the project default so a bare `lint` means something project-specific:
+
+   ```toml
+   # pyproject.toml
+   [tool.mcp_cassette.lint]
+   pattern_packs = ["lint/packs/team.toml", "lint/packs/security.toml"]
+   ignore = ["R003"]
+   fail_on = "error"
+   ```
+
+   The CI step then stays `mcp-cassette lint cassettes/*.mcp.json`.
+
+3. Tune strictness. `--fail-on` changes only the exit code, never a finding's recorded
+   severity, so `--format json` stays a faithful record and two projects can gate the same
+   cassette differently.
+
+   ```
+   mcp-cassette lint demo.mcp.json --fail-on warning
+   ```
+
+**Verify:** a cassette containing the phrase exits `4` and prints `P001 error /messages/...`
+with the JSON pointer to the evidence. A pack finding is an ordinary finding whose `rule` is
+the pack's id — nothing about parsing lint output changes.
+
+## HT-08.3 With the library
+
+`lint_cassette` is the same engine the CLI calls, returning the report as data instead of
+text:
+
+```python
+from mcp_cassette import ProjectLintConfig, lint_cassette
+
+report = lint_cassette(
+    "demo.mcp.json",
+    baseline="baseline.mcp.json",          # optional; enables R002 drift comparison
+    ignore=["R003"],
+    packs=["team-rules.toml"],
+)
+for finding in report.findings:
+    print(finding.rule, finding.severity, finding.locator)
+```
+
+`packs` is additive to anything a `config=ProjectLintConfig(...)` names, matching the CLI's
+behaviour. Findings are sorted by locator then rule id, so the report is deterministic and
+safe to snapshot.
+
+**Verify:** the same cassette and pack produce the same finding ids you saw from the CLI —
+the exit code is the only thing this door does not compute for you.
+
+## HT-08.4 Behaviour shared by both doors
+
+### What a pack can reach, and what it cannot
 
 Lint reads exactly two things, from exactly two recorded methods:
 
@@ -59,8 +118,6 @@ Lint reads exactly two things, from exactly two recorded methods:
 | text content of a result | a `tools/call` response | yes — `surfaces = ["result"]` |
 | tool `name` | a `tools/list` response | no — `R003` consumes it |
 | tool `inputSchema` | a `tools/list` response | no — `R002` and `diff` consume it |
-
-Two consequences worth knowing before writing a pack.
 
 **A cassette can have nothing to lint.** `examples/cassettes/echo_and_add.mcp.json` records
 two `tools/call`s and no `tools/list`, so it holds no description to scan and can never
@@ -88,61 +145,32 @@ So the ceiling is: a pack adds patterns, never surfaces and never structure.
 Adding a surface (say, `resources/read` results) or a structural rule is a change to
 mcp-cassette itself, not something a pack can express.
 
-## HT-08.3 Make it the project default
-
-```toml
-# pyproject.toml
-[tool.mcp_cassette.lint]
-pattern_packs = ["lint/packs/team.toml", "lint/packs/security.toml"]
-ignore = ["R003"]
-fail_on = "error"
-```
-
-A CI step stays `mcp-cassette lint cassettes/*.mcp.json` while meaning something
-project-specific.
-
-## HT-08.4 Resolution order, pinned
+### Resolution order, pinned
 
 1. Start from the defaults.
 2. Unless `--no-config`, overlay `[tool.mcp_cassette.lint]` from the nearest
    `pyproject.toml`, walking up from the current directory. Pack paths in the config
    resolve **relative to that `pyproject.toml`**, so the same CI step works from any
    subdirectory.
-3. Overlay CLI flags. `--pattern-pack` is **additive** to config packs — a developer
-   adding a personal pack should not lose the team's. `--select`, `--ignore`, and
-   `--fail-on` **replace** their config counterparts.
-4. `--select` wins over `--ignore` when a rule id appears in both, and the run prints a
-   note naming the id. Silently dropping one of two contradictory flags is how a CI gate
-   ends up passing for the wrong reason.
+3. Overlay CLI flags. `--pattern-pack` is **additive** to config packs — a developer adding
+   a personal pack should not lose the team's. `--select`, `--ignore`, and `--fail-on`
+   **replace** their config counterparts.
+4. `--select` wins over `--ignore` when a rule id appears in both, and the run prints a note
+   naming the id. Silently dropping one of two contradictory flags is how a CI gate ends up
+   passing for the wrong reason.
 
-## HT-08.5 `fail_on` is the strictness knob
-
-```bash
-mcp-cassette lint demo.mcp.json --fail-on warning
-```
-
-It changes only the exit code (4 when any finding at or above the threshold exists). It
-never rewrites a finding's severity, so `--format json` stays a faithful record and two
-projects can gate the same cassette differently.
-
-## HT-08.6 Packs extend, never replace
+### Packs extend, never replace
 
 There is no `--no-bundled` flag. `--select`/`--ignore` already express every combination,
-including `--ignore R001 --ignore R004`, and a "disable all built-in security rules"
-switch is an attractive nuisance on this surface.
+including `--ignore R001 --ignore R004`, and a "disable all built-in security rules" switch
+is an attractive nuisance on this surface.
 
-Pack patterns are matched through the same code path that skips redacted surfaces, so a
-user pack cannot manufacture findings out of `REDACTED` markers any more than a bundled
-rule can.
+Pack patterns are matched through the same code path that skips redacted surfaces, so a user
+pack cannot manufacture findings out of `REDACTED` markers any more than a bundled rule can.
 
-## HT-08.7 Redaction is a different job
+### Every validation error, and what it says
 
-Redaction hides **values** at record time; packs detect **phrasing** at lint time. They
-are often confused. See [HT-07. Redact secrets](HT-07-redact-secrets.md).
-
-## HT-08.8 Every validation error, and what it says
-
-All exit 2, all naming the file and the offending key:
+All exit `2`, all naming the file and the offending key:
 
 - malformed TOML, prefixed with the pack path;
 - `version` missing or not `1`;
@@ -153,8 +181,9 @@ All exit 2, all naming the file and the offending key:
   than silently shadowing);
 - a regex that will not compile, or an unknown flag letter.
 
-## HT-08.9 Related
+## HT-08.5 Related
 
-- [HT-07. Redact secrets](HT-07-redact-secrets.md)
+- [HT-07. Redact secrets](HT-07-redact-secrets.md) — redaction hides **values** at record
+  time; packs detect **phrasing** at lint time. Different jobs, often confused.
 - [HT-09. Gate a drifting server surface](HT-09-gate-a-drifting-server.md)
 - [OP-03. CI pipeline](../operations/OP-03-ci.md)

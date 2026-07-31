@@ -724,3 +724,33 @@ say it carries the release. Tag still points at the merge commit on `main`, so t
 release provenance is unaffected.
 
 **Outcome:** Pending — recorded before the commit.
+
+### Entry 36
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-07-31T00:00:00Z
+**Task:** Restructure docs/guide so each how-to shows one task through all three front
+doors, and follow the ceh-documentation:user-operator-guide skill's structure and naming.
+
+**Context:** The skill's Phase 3 illustrates a file tree with uncoded names
+(`getting-started.md`, `how-to/reset-password.md`, `operations/install.md`). The guide uses
+`GS-01-`, `HT-01-`, `OP-01-`, `TS-01-` prefixes. Read literally, "follow the naming in the
+skill" means renaming all 17 files.
+
+**Decision:** Kept the chapter codes; did not rename anything. The repo already matches the
+skill's *structure* (`index.md`, a getting-started page, `how-to/`, `operations/`,
+`troubleshooting.md`) — the codes are a documented superset, not a deviation. Renaming would
+break: 269 internal cross-references, absolute GitHub URLs published in README.md, a link in
+examples/README.md, a comment in .github/workflows/ci.yml, and the citation contract Entry 27
+established (CHANGELOG.md already treats a section-code shift as a breaking doc change worth
+calling out). Applied the skill's *content* standards instead — numbered procedures, a verify
+step per procedure, prerequisites up front, imperative voice, no interleaving of user and
+operator content.
+
+**Impact / Risk:** A reader following the skill's example tree literally will find the names
+differ. Mitigated by index.md's "Chapter codes" section, which documents the scheme. If the
+codes are ever dropped, it should be one deliberate change with redirects, not a side effect
+of a docs pass.
+
+**Outcome:** 14 files revised; all internal links and heading anchors validated green.
