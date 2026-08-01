@@ -1,13 +1,13 @@
-# TS-01. Troubleshooting
+# Troubleshooting
 
 Symptom to fix, for test authors. Operators should also see the
 [runbook](operations/OP-05-runbook-replay-misses.md).
 
-## TS-01.1 Symptom table
+## Symptom table
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `fixture 'mcp_cassette' not found` | The package is not installed in the environment pytest runs in. | Install it there; verify with `uv run pytest --fixtures -q \| grep mcp_cassette`. |
+| `fixture 'mcp_cassette' not found` | The package is not installed in the environment pytest runs in. | Install it there; verify with `uv run pytest --fixtures -q \| grep mcp_cassette` (PowerShell: `\| Select-String mcp_cassette`). |
 | `no cassette at <path> and recording is forbidden (mode=none)` | `MCP_CASSETTE_MODE=none` and no cassette exists. | Record one locally with `once` mode and commit it. |
 | `recording captured zero messages — agent never spoke to the proxied server` | The command from `server_command()` never reached the agent. | Print `cmd` and confirm the agent launches exactly that list. |
 | `replay had N unmatched request(s)` | The agent asked for something the cassette does not contain, or a param drifted. | See [the runbook](operations/OP-05-runbook-replay-misses.md#op-051-incident-1--replay-had-unmatched-requests); usually `ignore_params` or `new_episodes`. |
@@ -25,21 +25,26 @@ Symptom to fix, for test authors. Operators should also see the
 | Recording was killed and the cassette is missing | The recording never finalized. | Recover `<cassette>.partial` — it is a valid cassette holding everything up to the last checkpoint. |
 | A secret appears in a committed cassette | The value's key matched no redaction rule, or it lives inside a text body. | Rotate the credential, then re-record with a `--redact` JSON-pointer rule. See [HT-07. Redact secrets](how-to/HT-07-redact-secrets.md). |
 
-## TS-01.2 A replay missed — read the timeline
+## A replay missed — read the timeline
 
 Before guessing at `ignore_params`, look at what was actually recorded:
 
 ```
-mcp-cassette inspect <cassette> --timeline --grep 'tools/call'
+mcp-cassette inspect tests/cassettes/test_agent/test_agent.mcp.json --timeline --grep 'tools/call'
 ```
 
 The timeline shows every recorded message in order with its method, id, and payload size,
 so you can see whether the request your agent sent is absent, or present with different
-params. If you re-recorded against an upgraded server, `mcp-cassette diff old.json
-new.json` names what changed. See
+params. If you re-recorded against an upgraded server, `diff` names what changed:
+
+```
+mcp-cassette diff tests/cassettes/test_agent/test_agent.mcp.json fresh.mcp.json --tools-only
+```
+
+Both commands, with real output you can run from a clone, are in
 [HT-06. Inspect and diff cassettes](how-to/HT-06-inspect-and-diff.md).
 
-## TS-01.3 Still stuck
+## Still stuck
 
 1. Look at the cassette. It is plain JSON — `mcp-cassette inspect <path> --timeline` for
    the shape, an editor for the exact bytes.

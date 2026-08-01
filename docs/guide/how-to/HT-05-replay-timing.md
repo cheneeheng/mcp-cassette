@@ -61,9 +61,9 @@ your scale, bounded by the cap.
 ## HT-05.3 With the CLI
 
 ```
-mcp-cassette serve demo.mcp.json --pace recorded
-mcp-cassette serve demo.mcp.json --pace recorded --pace-scale 0.2   # 5x faster
-mcp-cassette serve demo.mcp.json --pace recorded --pace-cap-ms 0    # uncapped
+mcp-cassette serve examples/cassettes/echo_and_add.mcp.json --pace recorded
+mcp-cassette serve examples/cassettes/echo_and_add.mcp.json --pace recorded --pace-scale 0.2   # 5x faster
+mcp-cassette serve examples/cassettes/echo_and_add.mcp.json --pace recorded --pace-cap-ms 0    # uncapped
 ```
 
 `--pace-scale` must be greater than zero; `0` would be indistinguishable from `--pace none`

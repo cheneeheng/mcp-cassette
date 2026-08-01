@@ -47,15 +47,15 @@ unmodified and never imports the `mcp` SDK at runtime.
 The two audiences do not mix:
 
 - **Test authors** (you write tests that exercise an agent): start at
-  [GS-01. Getting started](GS-01-getting-started.md), then the `HT` how-to chapters.
+  [Getting started](getting-started.md), then the `HT` how-to chapters.
 - **Operators** (you own the CI pipeline, the recording runs, and the cassette files):
   start at [OP-01. Installation](operations/OP-01-install.md), then
   [OP-03. CI pipeline](operations/OP-03-ci.md).
 
 ## Part I — Test authors
 
-- **GS-01** [Getting started](GS-01-getting-started.md) — install, write one test, record
-  it, replay it.
+- [Getting started](getting-started.md) — install, then one record-and-replay through
+  whichever of the three doors fits your setup.
 - **HT-01** [Record and replay a stdio server](how-to/HT-01-record-and-replay.md) — the
   core loop through all three doors, record modes, re-recording.
 - **HT-02** [Record and replay a remote HTTP server](how-to/HT-02-remote-http.md) —
@@ -74,7 +74,7 @@ The two audiences do not mix:
   the bundled rules with project-specific regexes.
 - **HT-09** [Gate a drifting server surface](how-to/HT-09-gate-a-drifting-server.md) — fail
   the build when a third-party tool description or schema moves under you.
-- **TS-01** [Troubleshooting](TS-01-troubleshooting.md) — symptom to fix.
+- [Troubleshooting](troubleshooting.md) — symptom to fix.
 
 ## Part II — Operators
 
@@ -91,8 +91,12 @@ The two audiences do not mix:
 
 ## Chapter codes
 
-Every chapter carries a stable code: `GS` getting started, `HT` how-to, `TS`
-troubleshooting, `OP` operations. The code is the filename and the heading prefix, so
-`OP-02` is `operations/OP-02-configure.md` and "see §OP-02.4" means section 4 of that
-chapter. Numbering runs per section, so a new chapter appends to its own series and
-never renumbers the others — a code, once cited, keeps pointing at the same chapter.
+The two chapter series carry stable codes: `HT` how-to, `OP` operations. The code is the
+filename and the heading prefix, so `OP-02` is `operations/OP-02-configure.md` and "see
+§OP-02.4" means section 4 of that chapter. Numbering runs per series, so a new chapter
+appends to its own and never renumbers the others — a code, once cited, keeps pointing at
+the same chapter.
+
+Getting started and troubleshooting carry no code. There is exactly one of each, so a
+number would only ever be `01`, and they are the two pages a reader arrives at by name
+rather than by citation.

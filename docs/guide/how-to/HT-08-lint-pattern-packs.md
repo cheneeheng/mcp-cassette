@@ -51,10 +51,18 @@ job. There is no per-pattern timeout, because no other rule has one.
 
 ## HT-08.2 With the CLI
 
-1. Run the pack against a cassette:
+1. Run the pack against a cassette. `examples/lint-pack.toml` carries the same `P001`
+   plus a `P002` for internal hostnames, so this runs from a clone:
 
    ```
-   mcp-cassette lint demo.mcp.json --pattern-pack team-rules.toml
+   mcp-cassette lint examples/cassettes/tools-v2.mcp.json --pattern-pack examples/lint-pack.toml
+   ```
+
+   ```
+   P001 error /messages/4/payload/result/tools/0/description description describes sending environment variables off-host
+   R001 error /messages/4/payload/result/tools/0/description tool "echo": description matches injection pattern (override-instructions)
+   R001 error /messages/4/payload/result/tools/0/description tool "echo": description matches injection pattern (conceal-from-user)
+   R001 error /messages/4/payload/result/tools/0/description tool "echo": description matches injection pattern (hidden-emphasis)
    ```
 
 2. Make it the project default so a bare `lint` means something project-specific:
@@ -74,12 +82,12 @@ job. There is no per-pattern timeout, because no other rule has one.
    cassette differently.
 
    ```
-   mcp-cassette lint demo.mcp.json --fail-on warning
+   mcp-cassette lint examples/cassettes/tools-v2.mcp.json --pattern-pack examples/lint-pack.toml --fail-on warning
    ```
 
-**Verify:** a cassette containing the phrase exits `4` and prints `P001 error /messages/...`
-with the JSON pointer to the evidence. A pack finding is an ordinary finding whose `rule` is
-the pack's id — nothing about parsing lint output changes.
+**Verify:** the step-1 command exits `4` and its first line is the `P001` finding above,
+carrying a JSON pointer to the evidence. A pack finding is an ordinary finding whose
+`rule` is the pack's id — nothing about parsing lint output changes.
 
 ## HT-08.3 With the library
 
@@ -90,13 +98,22 @@ text:
 from mcp_cassette import ProjectLintConfig, lint_cassette
 
 report = lint_cassette(
-    "demo.mcp.json",
-    baseline="baseline.mcp.json",          # optional; enables R002 drift comparison
+    "examples/cassettes/tools-v2.mcp.json",
+    baseline="examples/cassettes/tools.mcp.json",   # optional; enables R002 drift comparison
     ignore=["R003"],
-    packs=["team-rules.toml"],
+    packs=["examples/lint-pack.toml"],
 )
 for finding in report.findings:
     print(finding.rule, finding.severity, finding.locator)
+```
+
+```
+P001 error /messages/4/payload/result/tools/0/description
+R001 error /messages/4/payload/result/tools/0/description
+R001 error /messages/4/payload/result/tools/0/description
+R001 error /messages/4/payload/result/tools/0/description
+R002 error /messages/4/payload/result/tools/0/description
+R002 error /messages/4/payload/result/tools/0/inputSchema
 ```
 
 `packs` is additive to anything a `config=ProjectLintConfig(...)` names, matching the CLI's

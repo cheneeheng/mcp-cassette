@@ -84,7 +84,9 @@ missing instead of trying to record.
 
 ## HT-04.3 With the CLI
 
-1. Write the overlay to a JSON sidecar:
+1. Write the overlay to a JSON sidecar. Save this as `demo.faults.json`; the second fault
+   is deliberately aimed at a method the cassette never recorded, to show what that looks
+   like:
 
    ```json
    {
@@ -93,29 +95,36 @@ missing instead of trying to record.
          "target": { "method": "tools/call", "nth": 1 },
          "type": "error",
          "params": { "code": -32000, "message": "rate limited" }
+       },
+       {
+         "target": { "method": "resources/read" },
+         "type": "timeout"
        }
      ]
    }
    ```
 
-2. Dry-run it before you rely on it:
+2. Dry-run it before you rely on it. This runs from a clone against a bundled cassette:
 
    ```
-   mcp-cassette inspect demo.mcp.json --faults demo.faults.json
+   mcp-cassette inspect examples/cassettes/echo_and_add.mcp.json --faults demo.faults.json
    ```
+
+   After the usual summary, the dry-run block:
 
    ```
    fault overlay dry-run:
-     seq 4 tools/call -> error
+     seq 2 tools/call -> error
      WARNING: timeout on resources/read matches nothing
    ```
 
    `WARNING` lines are inert faults — they target something the cassette never recorded.
+   Drop the second fault from the sidecar and the warning goes away.
 
 3. Point the agent's configuration at `serve` with the sidecar:
 
    ```
-   mcp-cassette serve demo.mcp.json --faults demo.faults.json
+   mcp-cassette serve examples/cassettes/echo_and_add.mcp.json --faults demo.faults.json
    ```
 
 `--faults` works for both transports: `serve` infers stdio or HTTP from the cassette and
@@ -123,7 +132,8 @@ hands the overlay to whichever replay server it starts. This is the door to use 
 agent under test is configured outside Python — an MCP client config file, a shell script,
 another language's test runner.
 
-**Verify:** the dry-run in step 2 lists the exchange you meant to hit, with no `WARNING`.
+**Verify:** the dry-run in step 2 names the `seq` of the exchange you meant to hit, and
+once you have removed the deliberate example fault it prints no `WARNING` line.
 
 ## HT-04.4 Behaviour shared by all three doors
 

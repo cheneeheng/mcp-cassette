@@ -46,6 +46,10 @@ with use_cassette("cassettes/remote.mcp.json", mode="once") as session:
 `server_url` starts a server in *this* process on a background thread bound to
 `127.0.0.1` on an ephemeral port. It is stopped when the block exits.
 
+**Verify:** `mcp-cassette inspect cassettes/remote.mcp.json` reports `transport: http`
+after the first run, and the second run completes with the real endpoint unreachable —
+point at `https://dead.invalid/mcp` to prove it.
+
 ## HT-03.3 The one asymmetry, stated up front
 
 For stdio you get a **command list**, not an in-process server. An MCP stdio server *is*

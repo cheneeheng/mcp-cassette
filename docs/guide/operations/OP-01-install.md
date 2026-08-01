@@ -7,12 +7,19 @@
 Install, verify, and lock the pipeline down. Every line is explained below; run these if
 you just need it working.
 
-```
+```bash
 uv add --dev mcp-cassette                                # 1. install (core: stdio)
 uv add --dev "mcp-cassette[http]"                        # 2. only if you record remote HTTP servers
 uv run mcp-cassette --help                               # 3. CLI is on PATH
 uv run pytest --fixtures -q | grep mcp_cassette          # 4. pytest plugin is loaded
 export MCP_CASSETTE_MODE=none                            # 5. in CI only — forbid recording
+```
+
+Steps 4 and 5 in PowerShell:
+
+```powershell
+uv run pytest --fixtures -q | Select-String mcp_cassette
+$env:MCP_CASSETTE_MODE = "none"
 ```
 
 Step 5 is the one non-negotiable pipeline setting: in `none` mode a missing cassette fails
@@ -55,18 +62,32 @@ the `pytest11` entry point; a package installed elsewhere is invisible to pytest
 
 ## OP-01.3 Post-install health check
 
-1. The CLI is on PATH and the version matches:
+1. The CLI is on PATH:
 
    ```
    uv run mcp-cassette --help
    ```
 
-   Expected: usage text listing the subcommands `record`, `serve`, `inspect`, `lint`.
+   Expected: usage text whose first line lists all five subcommands.
+
+   ```
+   usage: mcp-cassette [-h] {record,serve,inspect,diff,lint} ...
+   ```
+
+   There is no `--version` flag. To check the installed version:
+
+   ```
+   uv run python -c "import mcp_cassette; print(mcp_cassette.__version__)"
+   ```
 
 2. The pytest plugin is loaded:
 
-   ```
+   ```bash
    uv run pytest --fixtures -q | grep mcp_cassette
+   ```
+
+   ```powershell
+   uv run pytest --fixtures -q | Select-String mcp_cassette
    ```
 
    Expected: a line naming `mcp_cassette` and pointing at
