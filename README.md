@@ -12,9 +12,9 @@ A **cassette** records the entire session between your agent and a real MCP serv
 mcp-cassette operates at the **transport level** (newline-delimited JSON-RPC over stdio; h11 + hand-rolled SSE framing over Streamable HTTP), treats messages semi-opaquely, and does **not** depend on the official `mcp` SDK at runtime — so it works with any MCP client (Claude Code included) unmodified. Sessions containing server-initiated requests (sampling, elicitation) record and replay too.
 
 Full documentation: **[docs/guide/](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/index.md)** — chapters in
-reading order: getting started and how-to guides for test authors (`GS`, `HT`, `TS`),
-then installation, configuration, CI, CLI reference, and the runbook for operators (`OP`).
-The sections below summarize; each ends with a pointer to its full chapter.
+reading order: getting started, then how-to guides for test authors (`HT`) and
+troubleshooting, then installation, configuration, CI, CLI reference, and the runbook for
+operators (`OP`). The sections below summarize; each ends with a pointer to its full chapter.
 
 ## 1. Install
 
