@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Documentation only. No runtime code, public API, flag, error string, or exit
+code changed in this range.
+
+### Added
+
+- `OP-03.6 Monitoring`: what to watch when nothing runs as a long-lived process
+  — the three exit codes, `MCP_CASSETTE_MODE` in the test job, and cassette age
+  — plus a CI step that asserts recording is forbidden rather than trusting it.
+  A pipeline that quietly loses `MCP_CASSETTE_MODE=none` stays green until the
+  day it records production traffic.
+- `Getting started` now walks the pytest fixture, `use_cassette`, and the CLI as
+  three self-contained first runs behind a door-picker table. It previously
+  showed only the fixture, leaving a reader to infer that pytest was the only
+  way in.
+- PowerShell variants for the operator entry points (`OP-01.0`, `OP-01.3`,
+  troubleshooting). The project supports Windows, but the install quickstart and
+  the plugin health check were POSIX-only, so the first commands a Windows
+  operator runs could not be pasted.
+- `CLAUDE.md` now documents the Streamable HTTP transport module layout and the
+  real CI gates (the coverage invocation and its `fail_under`), which were
+  discoverable only by reading the workflow.
+
+### Changed
+
+- **Renamed `docs/guide/GS-01-getting-started.md` to `getting-started.md` and
+  `docs/guide/TS-01-troubleshooting.md` to `troubleshooting.md`**, dropping the
+  chapter code from both. Each series had exactly one member, so the number
+  could only ever be `01`. `HT-` and `OP-` keep their codes, where the code
+  carries ordering and the README publishes absolute URLs into both. Any
+  external deep link to the two old filenames breaks; every in-repo reference
+  was updated.
+- Every how-to chapter now shows its task through all three front doors, with
+  the door-independent behaviour (record modes, matching, failure semantics)
+  stated once per chapter instead of scattered.
+- How-to commands now run against the bundled `examples/cassettes/` fixtures
+  instead of `demo.mcp.json`, `old.json`, and `team-rules.toml`, none of which
+  exist in the repo. Everything in `HT-04`, `HT-05`, `HT-06`, and `HT-08` can be
+  pasted into a shell from a clone, and every quoted output is captured from a
+  real run. `OP-04` keeps generic names: it is a syntax reference.
+- Moved `HT-09.5`'s GitHub Actions job to `OP-03.3.2`. A YAML job that handles
+  upstream credentials is operator content and does not belong in a
+  test-authoring chapter; `HT-09.5` now covers only what to do when the gate
+  goes red.
+
+### Fixed
+
+- `OP-02.1` cited `§HT-01.3` (the CLI section) for the record-mode rule that
+  lives in `§HT-01.4`.
+- `OP-01.3`'s post-install health check claimed to verify the installed version.
+  There is no `--version` flag and `--help` prints no version, so the step could
+  not confirm what it promised; it now shows the real check and the full
+  five-subcommand help line, which previously omitted `diff`.
+- The getting-started `inspect` sample reported `format_version: 1`. A freshly
+  recorded cassette writes `2` (`FORMAT_VERSION`); the `1` was copied from an
+  older committed fixture.
+- `HT-09.3` and the getting-started `inspect` sample dropped output lines
+  without marking the elision, so both read as complete transcripts of runs that
+  print more. Both now match real output.
+
 ## [0.3.4] - 2026-07-28
 
 Documentation, examples, and CI, plus one CLI behavior fix: `serve

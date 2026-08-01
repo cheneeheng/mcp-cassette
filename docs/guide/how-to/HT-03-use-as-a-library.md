@@ -5,8 +5,18 @@ CLI of your own, or a different test framework.
 **Prerequisites:** `mcp-cassette` installed (plus the `[http]` extra for HTTP servers).
 
 The pytest fixture and the CLI are two front doors onto the same machinery. `use_cassette`
-is the third: a context manager that hands you a `CassetteSession` with the same modes,
-the same fault matrix, and the same failure semantics.
+is the third: a context manager that hands you a `CassetteSession` with the same modes, the
+same fault matrix, and the same failure semantics.
+
+This chapter is the **reference for that door**. Each task chapter already shows it
+alongside the other two — come here for the details they do not repeat.
+
+| If you want to | Start at | This chapter adds |
+|---|---|---|
+| record/replay a local command | [HT-01.2](HT-01-record-and-replay.md#ht-012-with-use_cassette) | modes, raising behaviour, the report sidecar |
+| record/replay a remote URL | [HT-02.2](HT-02-remote-http.md#ht-022-with-use_cassette) | why HTTP hands you a server, not a command |
+| inject faults | [HT-04.2](HT-04-inject-faults.md#ht-042-with-use_cassette) | how `faults=` composes with `match` and `pace` |
+| replay recorded timing | [HT-05.2](HT-05-replay-timing.md#ht-052-with-use_cassette) | — |
 
 ## HT-03.1 stdio: command substitution
 
@@ -35,6 +45,10 @@ with use_cassette("cassettes/remote.mcp.json", mode="once") as session:
 
 `server_url` starts a server in *this* process on a background thread bound to
 `127.0.0.1` on an ephemeral port. It is stopped when the block exits.
+
+**Verify:** `mcp-cassette inspect cassettes/remote.mcp.json` reports `transport: http`
+after the first run, and the second run completes with the real endpoint unreachable —
+point at `https://dead.invalid/mcp` to prove it.
 
 ## HT-03.3 The one asymmetry, stated up front
 

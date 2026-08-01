@@ -6,46 +6,48 @@ returns garbage, or dies — without breaking a real server.
 
 One recorded cassette drives a whole resilience matrix. The cassette is never mutated:
 faults live in a separate `FaultOverlay`, either built in test code or loaded from a
-`<cassette>.faults.json` sidecar.
+`<cassette>.faults.json` sidecar. Same `Injector`, same hook point, same behavior through
+every door and over both transports.
 
-Every front door injects the same overlay, over either transport:
+| Door | Section | Read it if |
+|---|---|---|
+| pytest fixture | [HT-04.1](#ht-041-with-the-pytest-fixture) | your tests are a pytest suite |
+| library (`use_cassette`) | [HT-04.2](#ht-042-with-use_cassette) | your harness is a notebook, benchmark, or another test framework |
+| CLI | [HT-04.3](#ht-043-with-the-cli) | the agent under test is configured outside Python |
 
-| Door | How you attach the overlay |
-|---|---|
-| pytest fixture | `mcp_cassette.with_faults(fault, ...)` → a derived session (HT-04.1) |
-| `use_cassette` | `use_cassette(..., faults=FaultOverlay(faults=[...]))` (HT-04.2) |
-| CLI | `mcp-cassette serve <cassette> --faults <sidecar>.json` (HT-04.3) |
+[HT-04.4](#ht-044-behaviour-shared-by-all-three-doors) holds the fault types, the one rule
+that trips people up, and what happens if you point a fault at a recording run.
 
-The fixture is a convenience over the CLI flag for stdio: `with_faults` serializes your
-overlay to a temp sidecar and passes `--faults` to the replay subprocess it builds. Over
-HTTP the replay server runs in-process and takes the overlay object directly. Same
-`Injector`, same hook point, same behavior either way.
+## HT-04.1 With the pytest fixture
 
-## HT-04.1 From the pytest fixture
+1. Derive a faulted session from the fixture and use it exactly as you would the fixture
+   itself.
 
-```python
-import mcp_cassette as mcc
-import pytest
+   ```python
+   import mcp_cassette as mcc
+   import pytest
 
-@pytest.mark.parametrize("fault", [
-    mcc.Fault.timeout("tools/call", nth=1),
-    mcc.Fault.error("tools/call", code=-32000, message="rate limited"),
-    mcc.Fault.disconnect("tools/call"),
-])
-def test_agent_survives_tool_trouble(mcp_cassette, fault):
-    session = mcp_cassette.with_faults(fault)
-    cmd = session.server_command(["python", "tools/github_server.py"])
-    result = run_my_agent(mcp_servers={"github": cmd})
-    assert result.completed_with_degraded_tools
-```
+   @pytest.mark.parametrize("fault", [
+       mcc.Fault.timeout("tools/call", nth=1),
+       mcc.Fault.error("tools/call", code=-32000, message="rate limited"),
+       mcc.Fault.disconnect("tools/call"),
+   ])
+   def test_agent_survives_tool_trouble(mcp_cassette, fault):
+       session = mcp_cassette.with_faults(fault)
+       cmd = session.server_command(["python", "tools/github_server.py"])
+       result = run_my_agent(mcp_servers={"github": cmd})
+       assert result.completed_with_degraded_tools
+   ```
+
+2. Run the test. Each parametrized case replays the same cassette under a different fault.
 
 `with_faults()` returns a **new** `CassetteSession`, so parametrized tests never share
-state. Pass several faults in one call to combine them. The fixture still finalizes on
-teardown — the derived session is registered on the one the fixture handed you, so a
-fault test's replay misses fail the test exactly as an ordinary one's do.
+state. Pass several faults in one call to combine them. The derived session is registered
+on the one the fixture handed you, so a fault test's replay misses fail the test exactly as
+an ordinary one's do.
 
-For a remote server, swap the last two lines for `server_url` — the derived session is
-the same object either way:
+For a remote server, swap the last two lines — the derived session is the same object
+either way:
 
 ```python
     url = session.server_url("https://mcp.example.com/mcp")
@@ -54,58 +56,88 @@ the same object either way:
 
 **Verify:** the agent takes its degraded path and the test still passes offline.
 
-## HT-04.2 From library code
+## HT-04.2 With `use_cassette`
 
-`use_cassette` takes the overlay as an argument — build it in Python rather than writing
-a sidecar:
+1. Build the overlay and pass it to the block. There is no `with_faults()` step through
+   this door — the session is constructed with the overlay.
 
-```python
-from mcp_cassette import Fault, FaultOverlay, use_cassette
+   ```python
+   from mcp_cassette import Fault, FaultOverlay, use_cassette
 
-overlay = FaultOverlay(faults=[
-    Fault.error("tools/call", code=-32000, message="rate limited"),
-])
+   overlay = FaultOverlay(faults=[
+       Fault.error("tools/call", code=-32000, message="rate limited"),
+   ])
 
-with use_cassette("cassettes/search.mcp.json", mode="none", faults=overlay) as session:
-    cmd = session.server_command(["python", "-m", "my_server"])
-    run_my_agent(mcp_servers={"search": {"command": cmd[0], "args": cmd[1:]}})
-# finalize() on clean exit: CassetteError on any replay miss, as always
-```
+   with use_cassette("cassettes/search.mcp.json", mode="none", faults=overlay) as session:
+       cmd = session.server_command(["python", "-m", "my_server"])
+       run_my_agent(mcp_servers={"search": {"command": cmd[0], "args": cmd[1:]}})
+   ```
 
-`mode="none"` is worth being explicit about here: faults need a replay action (HT-04.5),
-and `none` fails loudly if the cassette is missing instead of trying to record.
+2. To run a matrix, open one block per fault. Two blocks on the *same* cassette path
+   concurrently is unsupported.
 
-There is no `with_faults()` step through this door — the session is constructed with the
-overlay. To run a matrix, open one `use_cassette` block per fault; two blocks on the
-*same* cassette path concurrently is unsupported.
+`mode="none"` is worth being explicit about here: faults need a replay action
+([HT-04.4](#faults-under-a-recording-mode)), and `none` fails loudly if the cassette is
+missing instead of trying to record.
 
-## HT-04.3 From the CLI
+**Verify:** `finalize()` on clean exit raises `CassetteError` on any replay miss, as always.
 
-Write the overlay to a JSON sidecar and pass it to `serve`:
+## HT-04.3 With the CLI
 
-```json
-{
-  "faults": [
-    {
-      "target": { "method": "tools/call", "nth": 1 },
-      "type": "error",
-      "params": { "code": -32000, "message": "rate limited" }
-    }
-  ]
-}
-```
+1. Write the overlay to a JSON sidecar. Save this as `demo.faults.json`; the second fault
+   is deliberately aimed at a method the cassette never recorded, to show what that looks
+   like:
 
-```
-mcp-cassette serve demo.json --faults demo.faults.json
-```
+   ```json
+   {
+     "faults": [
+       {
+         "target": { "method": "tools/call", "nth": 1 },
+         "type": "error",
+         "params": { "code": -32000, "message": "rate limited" }
+       },
+       {
+         "target": { "method": "resources/read" },
+         "type": "timeout"
+       }
+     ]
+   }
+   ```
 
-The flag works for both transports — `serve` infers stdio or HTTP from the cassette and
+2. Dry-run it before you rely on it. This runs from a clone against a bundled cassette:
+
+   ```
+   mcp-cassette inspect examples/cassettes/echo_and_add.mcp.json --faults demo.faults.json
+   ```
+
+   After the usual summary, the dry-run block:
+
+   ```
+   fault overlay dry-run:
+     seq 2 tools/call -> error
+     WARNING: timeout on resources/read matches nothing
+   ```
+
+   `WARNING` lines are inert faults — they target something the cassette never recorded.
+   Drop the second fault from the sidecar and the warning goes away.
+
+3. Point the agent's configuration at `serve` with the sidecar:
+
+   ```
+   mcp-cassette serve examples/cassettes/echo_and_add.mcp.json --faults demo.faults.json
+   ```
+
+`--faults` works for both transports: `serve` infers stdio or HTTP from the cassette and
 hands the overlay to whichever replay server it starts. This is the door to use when the
-agent under test is configured outside Python (an MCP client config file, a shell script,
-another language's test runner): it points at `mcp-cassette serve` like any other server
-command or URL.
+agent under test is configured outside Python — an MCP client config file, a shell script,
+another language's test runner.
 
-## HT-04.4 Fault types
+**Verify:** the dry-run in step 2 names the `seq` of the exchange you meant to hit, and
+once you have removed the deliberate example fault it prints no `WARNING` line.
+
+## HT-04.4 Behaviour shared by all three doors
+
+### Fault types
 
 | Constructor | Effect |
 |---|---|
@@ -129,42 +161,29 @@ differs:
 
 `delay` and `error` behave identically on both.
 
-## HT-04.5 The one rule that trips people up
+### The one rule that trips people up
 
-**Faults fire after a request matches.** They live on the response side: the replay
-server matches the incoming request against the cassette first, and only then consults
-the injector. There is deliberately no fault that corrupts or drops a request on its way
-*in* — the request is only ever read, never re-emitted, so there is nothing to corrupt.
-To exercise "the call never got an answer", target that method with `timeout` (hang) or
+**Faults fire after a request matches.** They live on the response side: the replay server
+matches the incoming request against the cassette first, and only then consults the
+injector. There is deliberately no fault that corrupts or drops a request on its way *in* —
+the request is only ever read, never re-emitted, so there is nothing to corrupt. To
+exercise "the call never got an answer", target that method with `timeout` (hang) or
 `disconnect` (server dies).
 
 Two consequences:
 
-- A fault on `tools/call` does nothing unless the cassette contains a matching
-  `tools/call` exchange for that request.
+- A fault on `tools/call` does nothing unless the cassette contains a matching `tools/call`
+  exchange for that request.
 - On an **unmatched** request the injector is never consulted at all, whether or not a
   fault targeted that method. The client gets a `-32001` unmatched error and the replay
   server exits `3` — the standard replay-miss failure, not a fault. The same holds for a
   request that matched a recorded one carrying no recorded response.
 
 A fault targeting a method the cassette never recorded is otherwise silently inert (a
-warning at shutdown, not a failure) — check for it up front with:
+warning at shutdown, not a failure). The dry-run in [HT-04.3](#ht-043-with-the-cli) is how
+you catch that up front, whichever door you inject through.
 
-```
-mcp-cassette inspect demo.json --faults demo.faults.json
-```
-
-Expected output:
-
-```
-fault overlay dry-run:
-  seq 4 tools/call -> error
-  WARNING: timeout on resources/read matches nothing
-```
-
-The `WARNING` lines are exactly the inert faults.
-
-## HT-04.6 Faults under a recording mode
+### Faults under a recording mode
 
 Through the programmatic doors — `with_faults()` on the fixture session, or `faults=` on
 `use_cassette` — an overlay on a session whose mode resolves to anything but `replay`
@@ -175,12 +194,12 @@ CassetteError: faults apply to replay only; with_faults cannot run under a recor
 mode (resolved action: record)
 ```
 
-`new_episodes` resolves to a recording action too and raises the same way once the
-cassette exists (`resolved action: new_episodes`). Record the cassette first (or stop
-forcing `MCP_CASSETTE_MODE=all` for that run), then add the fault.
+`new_episodes` resolves to a recording action too and raises the same way once the cassette
+exists (`resolved action: new_episodes`). Record the cassette first — or stop forcing
+`MCP_CASSETTE_MODE=all` for that run — then add the fault.
 
-The CLI enforces the same rule as a usage error. `record` and `serve` are separate
-commands and `--faults` only exists on `serve`, so the only conflict left is
+The CLI enforces the same rule as a usage error. `record` and `serve` are separate commands
+and `--faults` only exists on `serve`, so the only conflict left is
 `serve --new-episodes --faults`, which exits `2` on both transports:
 
 ```
@@ -188,11 +207,14 @@ mcp-cassette serve: --faults applies to replay only; --new-episodes records nove
 exchanges live
 ```
 
-Run the fault matrix against the finished cassette, in plain `serve`, once
-`new_episodes` has appended what it needed to.
+The reason is not tidiness: a fault changes the path the agent takes, so injecting under
+`new_episodes` would append a session that never happens without the fault. Run the matrix
+against the finished cassette, in plain `serve`, once `new_episodes` has appended what it
+needed to.
 
-## HT-04.7 Related
+## HT-04.5 Related
 
-- [HT-03. Use it as a library](HT-03-use-as-a-library.md)
-- [HT-05. Replay timing](HT-05-replay-timing.md) — pacing and faults compose
-- [OP-04. CLI reference](../operations/OP-04-cli-reference.md)
+- [HT-03. Use it as a library](HT-03-use-as-a-library.md) — the full `use_cassette` surface.
+- [HT-05. Replay timing](HT-05-replay-timing.md) — pacing and faults compose; order is
+  pace, then fault.
+- [OP-04. CLI reference](../operations/OP-04-cli-reference.md) — every flag.
