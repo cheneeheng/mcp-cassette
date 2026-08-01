@@ -754,3 +754,40 @@ codes are ever dropped, it should be one deliberate change with redirects, not a
 of a docs pass.
 
 **Outcome:** 14 files revised; all internal links and heading anchors validated green.
+
+### Entry 37
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-01T00:00:00Z
+**Task:** Audit docs/guide against the ceh-documentation:user-operator-guide skill, fix the
+findings, and drop the chapter code from getting started and troubleshooting.
+
+**Context:** Entry 36 kept the `GS-01-`/`TS-01-` prefixes and predicted that if the codes
+were ever dropped it should be "one deliberate change with redirects, not a side effect of a
+docs pass". The user has now explicitly asked to drop them for those two chapters only.
+
+**Decision:** Reversed Entry 36 for the two singleton chapters, not for the series.
+`GS-01-getting-started.md` -> `getting-started.md` and `TS-01-troubleshooting.md` ->
+`troubleshooting.md` via `git mv`, with all `## GS-01.N` / `## TS-01.N` heading prefixes
+stripped. `HT-` and `OP-` keep their codes: those are multi-chapter series where the code
+carries ordering and citation meaning, and README.md publishes absolute GitHub URLs into
+both. The two renamed chapters had exactly one inbound reference each (index.md), so the
+redirect concern in Entry 36 did not materialise. index.md's "Chapter codes" section now
+states the rule and why the two singletons are exempt.
+
+Also decided, within the same pass: converted how-to command examples from non-existent
+placeholder paths (`demo.mcp.json`, `old.json`/`new.json`, `team-rules.toml`) to the bundled
+`examples/cassettes/` fixtures, so every how-to command runs from a clone with no server and
+no network, and every quoted output is captured from a real run. Left OP-04's placeholders
+alone: it is a syntax reference, where a generic `demo.json` reads as the template it is.
+Moved HT-09.5's GitHub Actions job into OP-03.3.2 — YAML with credential handling is
+operator content and the skill forbids interleaving it into a test-author chapter.
+
+**Impact / Risk:** Any external deep link to `GS-01-getting-started.md` or
+`TS-01-troubleshooting.md` breaks; a repo-wide grep found none outside index.md. Section
+codes inside OP-03 shifted (Platform notes 3.6 -> 3.7, Escalation 3.7 -> 3.8) to make room
+for a Monitoring section; no external citation targeted either.
+
+**Outcome:** 12 files revised, 2 renamed. All internal links and heading anchors re-validated
+green; every newly documented command re-run and its output confirmed byte-exact.
