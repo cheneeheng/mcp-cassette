@@ -791,3 +791,35 @@ for a Monitoring section; no external citation targeted either.
 
 **Outcome:** 12 files revised, 2 renamed. All internal links and heading anchors re-validated
 green; every newly documented command re-run and its output confirmed byte-exact.
+
+### Entry 38
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-01T00:00:00Z
+**Task:** Run the release flow for v0.3.5.
+
+**Context:** The instruction was "v0.3.5. Everything is done except tag and
+release." The repo said otherwise: `main` was clean and PR #15 merged, but
+`pyproject.toml` and `__init__.py` both still read `0.3.4` and the changelog
+carried the guide overhaul under `[Unreleased]`. Only the *feature* work was
+done; the release flow's steps 3-9 (bump, changelog promotion, commit, PR,
+merge) had not happened. Tagging `v0.3.5` as instructed would have pointed the
+tag at a tree whose wheel builds as `0.3.4`.
+
+**Decision:** Ran the full flow rather than the tag-only path. Branched
+`chore/release-v0.3.5` from main, bumped both manifests, promoted
+`[Unreleased]` to `[0.3.5] - 2026-08-01`, and let the bump land through a PR —
+tag only after the merge, per the flow's hard rule. Bump level PATCH
+(0.3.4 -> 0.3.5): the range is documentation only, no runtime code, public API,
+flag, error string, or exit code changed. README and CLAUDE.md needed no edit:
+the guide-file renames in this range (`GS-01-getting-started.md` ->
+`getting-started.md`, `TS-01-troubleshooting.md` -> `troubleshooting.md`) were
+already propagated in PR #15 — grep finds no surviving reference — and CLAUDE.md
+was itself updated within the range.
+
+**Impact / Risk:** One extra PR and merge commit versus the tag-only path the
+instruction implied. The alternative — tagging 0.3.4 sources as v0.3.5 — would
+have published a PyPI artifact whose version disagreed with its tag.
+
+**Outcome:** `scripts/check_version.py` reports `version OK: 0.3.5`.
