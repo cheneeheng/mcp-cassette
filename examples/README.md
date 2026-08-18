@@ -266,6 +266,14 @@ there). Exit `0` means no error-severity findings — warnings (R003 duplicate t
 names, R004 instruction-shaped result text) alone don't fail the run. These are
 heuristic pattern rules, not a guarantee.
 
+Exit `0` can also mean there was nothing to scan. Lint reads tool descriptions from a
+`tools/list` response and text from `tools/call` results, and nothing else — so the
+[golden cassette](#the-golden-cassette), which holds two `tools/call`s and no
+`tools/list`, can never produce an R001 no matter what the server said. A clean lint
+means "nothing matched" or "nothing to match"; `mcp-cassette inspect <cassette>` tells
+you which of the two it was. The full ceiling is in
+[HT-08.4](../docs/guide/how-to/HT-08-lint-pattern-packs.md#ht-084-behaviour-shared-by-both-doors).
+
 To regenerate the trio: record `tools.mcp.json` with the pipe trick above (send
 `{"jsonrpc":"2.0","id":2,"method":"tools/list"}` as the third line), then copy it twice.
 `injected.mcp.json` plants something suspicious in `echo`'s `description`;
