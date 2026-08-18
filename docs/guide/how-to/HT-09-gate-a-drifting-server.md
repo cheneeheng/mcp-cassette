@@ -130,6 +130,11 @@ They fail for different reasons, and you want to know which one fired.
 A first recording of an already-hostile server has nothing to diff against; only `lint`
 catches it. A quiet parameter addition has nothing to smell; only `diff` catches it.
 
+Neither step replaces your test suite; they answer a different question. Replay-only tests
+prove your agent still works against the reviewed cassette. The drift gate proves the live
+server surface has not changed underneath that cassette. The replay-only half is walked
+through in [the golden cassette](../../../examples/README.md#the-golden-cassette).
+
 `lint --baseline` sits between the two — it enables `R002`, which reports drift as a lint
 finding rather than a separate exit code:
 

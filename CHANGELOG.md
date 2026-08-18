@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `HT-09.3`: a paragraph separating the two things a cassette gives you —
+  replay-only tests prove the agent still works against the reviewed cassette,
+  the drift gate proves the live surface has not moved underneath it — linking
+  back to the golden cassette section in `examples/README.md`.
+- `examples/README.md`: a note that exit `0` from `lint` can mean "nothing to
+  match" rather than "nothing matched", since the golden cassette records no
+  `tools/list` and so can never produce an `R001`. Points at
+  `mcp-cassette inspect` to tell the two apart.
+
 ## [0.3.5] - 2026-08-01
 
 Documentation only. No runtime code, public API, flag, error string, or exit
