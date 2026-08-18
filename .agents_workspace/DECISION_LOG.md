@@ -823,3 +823,35 @@ instruction implied. The alternative — tagging 0.3.4 sources as v0.3.5 — wou
 have published a PyPI artifact whose version disagreed with its tag.
 
 **Outcome:** `scripts/check_version.py` reports `version OK: 0.3.5`.
+
+### Entry 39
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-18T00:00:00Z
+**Task:** Capture everything shipped since the v0.3.0 tag (the v3 MVP) as plan-family
+patch notes.
+
+**Context:** The v3 family ended at `ITER_04_v3` (`mvp: true`), while five releases
+(0.3.1 - 0.3.5) had landed on top of it. The patch skill's routing gate asks whether the
+range is a patch or a feature iteration, and one item sat on the line: `PatternSet` was
+added to the top-level `__all__` in 0.3.3, and `__all__` is arguably the library's
+equivalent of the gate's "API surface" (section 02).
+
+**Decision:** Classified the whole range as one patch, `ITER_05_v3` with `patch: true`,
+`sections_changed: [03, 04, 05]`. `PatternSet` already existed and was already documented
+public in `mcp_cassette.lint`; exporting it corrects an omission rather than adding a
+surface, so section 02 does not move. The supporting evidence is mechanical:
+`git diff v0.3.0..HEAD -- src/mcp_cassette/cli.py` shows no `add_argument` change, so no
+flag or subcommand was added anywhere in the range. Section 03 is included because three
+pins moved (`anyio >= 4.2`, `hatchling >= 1.27`, `py.typed` in the wheel) - a version pin
+is section 03 content and is not a feature trigger.
+
+**Impact / Risk:** If a reader later treats the `PatternSet` export as a section 02 change,
+this artifact under-reports it; the reasoning is recorded here and restated in the
+artifact's section 02 pointer so the call is visible rather than silent. Writing the range
+as one artifact rather than five also means a future reader gets release-level granularity
+from `CHANGELOG.md`, not from the plan family.
+
+**Outcome:** `ITER_05_v3.md` written as a retroactive record. No code changed; the skill's
+implement step was a no-op because the work already shipped.
