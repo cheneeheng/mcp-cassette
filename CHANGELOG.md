@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-08-18
+
+Documentation only. No runtime code, public API, flag, error string, or exit
+code changed in this range.
+
 ### Added
 
 - `HT-09.3`: a paragraph separating the two things a cassette gives you —
@@ -522,7 +527,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.2...v0.3.3
