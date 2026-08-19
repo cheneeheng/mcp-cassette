@@ -855,3 +855,31 @@ from `CHANGELOG.md`, not from the plan family.
 
 **Outcome:** `ITER_05_v3.md` written as a retroactive record. No code changed; the skill's
 implement step was a no-op because the work already shipped.
+
+### Entry 40
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-19T00:00:00Z
+**Task:** Write a contributor-facing explainer of the lint module under `docs/internals/`.
+
+**Context:** Two forks the request left open. (1) `docs/internals/` did not exist; the repo
+had only `docs/guide/`, which is user- and operator-facing. (2) The explanation that
+prompted the doc surfaced two verified defects — `R002` going blind on a shadowed tool
+name, and the `note: ... selection wins` line misreporting the `--ignore`-only case. The
+request was to document, not to fix.
+
+**Decision:** Created `docs/internals/` as a new tree, distinct from `docs/guide/`, and
+wrote `docs/internals/lint.md` there. Documented both defects in a "Sharp edges" section
+marked as current, unfixed behavior rather than silently fixing them, because a fix is a
+behavior change on a security surface and was not requested. Kept the vocabulary section
+(rule vs pattern vs bundled vs pack) at the top, since that distinction was the thing that
+actually caused confusion. Used Mermaid rather than ASCII to match `docs/guide/index.md`.
+
+**Impact / Risk:** A new docs tree with no index entry and no link from `CLAUDE.md` or the
+guide — discoverable only by path until someone links it. The documented defects remain in
+the code; the doc now pins the current behavior, so fixing them later means updating this
+file too.
+
+**Outcome:** File written, all five cross-referenced paths verified to exist. No code
+changed.
