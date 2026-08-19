@@ -883,3 +883,23 @@ file too.
 
 **Outcome:** File written, all five cross-referenced paths verified to exist. No code
 changed.
+
+### Entry 41
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-20T00:00:00+08:00
+**Task:** Document the `record` module (docstring + `docs/internals/record.md`)
+
+**Context:** Writing up `record/` turned up two behaviours in `recorder.py` that read as
+latent defects rather than design: `_warned_raw` is a one-shot latch, so N unparseable
+lines produce one warning; and `_try_decode` returns `None` for valid-but-non-object JSON
+(an array, a bare number) with no warning at all. The task was documentation, not repair.
+**Decision:** Document both under "Sharp edges" with the reproduced output, and change no
+behaviour. Same treatment `docs/internals/lint.md` gives its own three sharp edges.
+Fixing warning semantics is user-visible (stderr text under `-W`) and belongs in its own
+change with its own test.
+**Impact / Risk:** The behaviours stay as-is; a reader counting warnings to count bad
+lines is now warned in prose instead of by the code. No follow-up is filed.
+**Outcome:** `docs/internals/record.md` written; `recorder.py` changed only by an
+expanded `on_message` docstring stating the classification rule.
