@@ -977,3 +977,49 @@ wrong thing. No code changed — the fix belongs to whoever picks up F2.
 
 **Outcome:** Register written; `cassette.md` corrected in two places; all links and the
 new anchor verified. Committed on `docs/internals-refactor-guide`.
+
+### Entry 44
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-23T00:00:00Z
+**Task:** Implement ITER_06_v3 — the two lint fail-open corrections (R002 occurrence
+comparison, select/ignore note).
+
+**Context:** ITER_06_v3 §04 says the fixed `rule_r002` treats a current occurrence as
+clean when it "matches any baseline occurrence", but the existing code compares
+`description` and `inputSchema` as two independent checks. Those two readings diverge
+whenever a baseline lists one tool name more than once with differing content and the
+current cassette recombines fields across those listings: per-field matching calls it
+clean (each value was seen), per-occurrence matching flags it (that pairing was never
+seen). The plan's own §04 argues both directions — it wants noisier-and-stricter, and it
+wants a re-listing baseline not to become a permanent false positive.
+
+**Decision:** Per-occurrence, confirmed with the user after presenting both readings. A
+current surface is clean only when some single baseline surface matches on both fields;
+the diff is then rendered against the last baseline occurrence, preserving the existing
+message wording and `(+N -M lines)` counts. Rationale: the module's stated tiebreaker is
+"on a security surface every ambiguity resolves toward noisier and stricter", and a
+benign description paired with a drifted schema is itself a rug-pull shape that the
+baseline never recorded. The false-positive guard the plan asks for is still delivered —
+scenario 2 (current matches an older baseline listing exactly) stays clean.
+
+Two smaller calls made in the same change:
+- `engine.latest_tools()`'s docstring opened "The dedup rule R002 uses", which the fix
+  makes false. The plan says the *function* is not touched; its docstring was corrected
+  in place rather than left stating the opposite of the code.
+- `docs/internals/lint.md` is git-ignored (commit `bfbd4dc` kept the internals
+  walkthroughs out of the repo) but §05 requires its *Sharp edges* section be rewritten
+  in the same change. Rewritten locally; it will not appear in a commit.
+
+**Impact / Risk:** Per-occurrence can print `description changed vs baseline` for a
+description that does exist in the baseline, just not beside that schema — recorded as
+the one residual sharp edge in `docs/internals/lint.md`. Only reachable when a baseline
+re-lists a tool with drift. No rule id, flag, exit code, or model field changed.
+
+**Outcome:** `rule_r002` and `run_with_notes` fixed; four regression tests added (three
+R002 occurrence cases, one ignore-without-select note case). ruff, ruff format, and mypy
+strict clean; 55 lint unit tests and 3 lint integration tests pass. The plan's fixture
+pair was confirmed in both directions: drift-then-revert was `clean`/exit 0 pre-fix and
+is now one R002 error pointing at the drifted listing; a current cassette matching the
+*older* of two baseline listings was a false positive pre-fix and is now clean.

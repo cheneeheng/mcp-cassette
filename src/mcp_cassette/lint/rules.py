@@ -107,16 +107,26 @@ def rule_r002(
 ) -> list[LintFinding]:
     """Tool description/schema drift vs a baseline cassette — the rug pull (error).
 
+    Every recorded occurrence is compared, not just the last one per name: a
+    server that drifts a tool, lets the agent use it, then re-lists the original
+    surface must not be able to hide the middle listing behind the reverted one.
+    A current occurrence is clean when *some* baseline occurrence of the same name
+    matches it on both fields, because a baseline that legitimately re-listed with
+    variations recorded all of those variations as trusted.
+
     New tools appearing relative to the baseline are not flagged (servers
     legitimately grow); only changed descriptions/schemas for the same name are.
     """
-    latest: dict[str, ToolSurface] = {t.name: t for t in tools}
-    baseline_latest: dict[str, ToolSurface] = {t.name: t for t in baseline_tools}
+    baseline_by_name: dict[str, list[ToolSurface]] = {}
+    for tool in baseline_tools:
+        baseline_by_name.setdefault(tool.name, []).append(tool)
     findings: list[LintFinding] = []
-    for name, current in latest.items():
-        old = baseline_latest.get(name)
-        if old is None:
+    for current in tools:
+        olds = baseline_by_name.get(current.name)
+        if not olds or any(_surface_equal(current, o) for o in olds):
             continue
+        name = current.name
+        old = olds[-1]  # render the diff against the newest trusted occurrence
         if (current.description or "") != (old.description or ""):
             diff = list(
                 difflib.unified_diff(
@@ -161,6 +171,12 @@ def rule_r002(
 
 def _schema_equal(a: Any, b: Any) -> bool:
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
+def _surface_equal(a: ToolSurface, b: ToolSurface) -> bool:
+    return (a.description or "") == (b.description or "") and _schema_equal(
+        a.input_schema, b.input_schema
+    )
 
 
 def rule_r003(tool_lists: list[list[ToolSurface]]) -> list[LintFinding]:

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `lint`: `R002` now compares every recorded occurrence of a tool instead of only
+  the last one per name. A server that drifted a tool, let the agent use it, then
+  re-listed the original surface used to report `clean: no findings` with exit
+  `0`; the drifted listing is now flagged with its own locator. The baseline side
+  is grouped rather than collapsed, so a baseline that legitimately re-listed a
+  tool does not become a permanent false positive. Affected cassettes move from
+  exit `0` to exit `4` — `--format json` gains entries but does not change shape.
+- `lint`: `--ignore <id>` without `--select` no longer prints
+  `note: rule <id> is both selected and ignored; selection wins`. Nothing was
+  selected on that path and ignore won, so the note stated the opposite of what
+  the run did. The note is unchanged for a real `--select X --ignore X` clash.
+
 ## [0.3.6] - 2026-08-18
 
 Documentation only. No runtime code, public API, flag, error string, or exit
