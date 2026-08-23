@@ -903,3 +903,77 @@ change with its own test.
 lines is now warned in prose instead of by the code. No follow-up is filed.
 **Outcome:** `docs/internals/record.md` written; `recorder.py` changed only by an
 expanded `on_message` docstring stating the classification rule.
+
+### Entry 42
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-23T00:00:00+08:00
+**Task:** Document the remaining top-level modules under `docs/internals/`
+
+**Context:** `docs/internals/` covered the four sub-packages (record, replay, lint,
+transports); the eleven files directly under `src/mcp_cassette/` had no page. Three forks
+the request left open. (1) How to slice eleven files — one page each would leave five
+near-empty stubs, one page for all of them would be twice the size of any sibling.
+(2) Where `matching.py` belongs, since `replay.md` already documents it in depth.
+(3) Whether to fix the defects the write-up turned up.
+
+**Decision:** Three module pages grouped by responsibility — `cassette.md` (the schema
+layer), `session.md` (`session.py` + `pytest_plugin.py` + `report.py`, the three front
+doors), `cli.md` (`cli.py` + `diffing.py`, the command surface) — plus an `index.md`
+carrying the map, the reading order, and the four files too small to justify a page
+(`_stdio.py`, `_signals.py`, `__init__.py`, `__main__.py`). Left `matching.py` in
+`replay.md` and said so in the index rather than duplicating or moving it. Changed no
+code: eleven behaviours are documented under "Sharp edges" as current, unfixed behaviour,
+matching the treatment `lint.md` and `record.md` give theirs. Used plain ASCII diagrams,
+following the three most recent siblings (`lint.md`'s single Mermaid block is the
+outlier) and the user's stated rendering constraint.
+
+**Impact / Risk:** Two findings are security-relevant and now documented rather than
+fixed: the default redaction globs do not match hyphenated key names (`X-API-Key`,
+`X-Auth-Token`), and `raw` payloads are never redacted, so a malformed server line
+carrying a secret is committed verbatim with `redacted: false`. Two are correctness
+smells: `resolve_mode` skips validating an invalid `mode=` whenever `MCP_CASSETTE_MODE`
+is set — so a typo is caught locally and swallowed in CI — and `server_command`'s HTTP
+guard is skipped under `mode=all`, the one action that overwrites the cassette. Each is a
+behaviour change on a security or record-path surface and belongs in its own change with
+its own test. No follow-ups are filed. `docs/internals/` still has no link from the
+README, `CLAUDE.md`, or the user guide; `index.md` makes the tree self-describing but
+does not make it discoverable.
+
+**Outcome:** Four files written. All 29 cross-document links and anchors verified to
+resolve; all `file.py:NNN` references verified against the source, and 11 stale ones
+corrected. No code changed.
+
+### Entry 43
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-23T00:00:00+08:00
+**Task:** Record the internals-pass findings that need fixing in `ITER_06_v3.md`
+
+**Context:** `ITER_06_v3` is scoped by its own frontmatter as a two-defect `lint` patch
+(`patch: true`, `sections_changed: [04, 05]`) and already defers a third lint defect under
+"Deliberately not in this patch". Folding six non-lint defects into §04 would have made
+the artifact contradict itself and would have silently widened a patch someone else may be
+mid-implementation on.
+
+**Decision:** Added a "Findings register" section after "Deliberately not in this patch",
+following that section's precedent: F1-F6 each with the reproduction, the failure class,
+and the fix shape, stated explicitly as recorded-not-implemented. Left §01-§05 and
+`sections_changed` untouched; appended one clause to `scope` so the frontmatter admits the
+register exists. Triaged out of the register the sharp edges that do not need a fix
+(v1-to-v2 upgrade on save, silent pointer miss, the `<response>` count bucket, no
+`--version`, the default report path, undetected concurrent sessions) — documenting them
+is the right resolution, and a register that lists everything ranks nothing.
+
+**Impact / Risk:** Verifying F2 turned up a route I had understated the day before:
+`SessionRecorder.on_message` falls through to `kind="raw"` for a *well-formed JSON object*
+carrying no `method` and no `id`, discarding the successful decode and storing the raw
+text, so redaction is skipped with no warning. `docs/internals/cassette.md` claimed `raw`
+meant "a line that would not parse at all"; corrected to the three actual routes with the
+verified transcript, since the narrower claim would have led a reader to grep for the
+wrong thing. No code changed — the fix belongs to whoever picks up F2.
+
+**Outcome:** Register written; `cassette.md` corrected in two places; all links and the
+new anchor verified. Committed on `docs/internals-refactor-guide`.

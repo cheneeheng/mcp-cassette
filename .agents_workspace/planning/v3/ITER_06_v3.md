@@ -2,7 +2,7 @@
 artifact: ITER_06_v3
 status: ready
 created: 2026-08-19
-scope: Two lint fail-open corrections — make R002 compare every recorded tool occurrence against the baseline instead of only the last, and stop the select/ignore conflict note firing (and misreporting) when the caller passed no --select. No rule id, flag, or subcommand added.
+scope: Two lint fail-open corrections — make R002 compare every recorded tool occurrence against the baseline instead of only the last, and stop the select/ignore conflict note firing (and misreporting) when the caller passed no --select. No rule id, flag, or subcommand added. Also carries a findings register (F1-F6) for defects outside lint/ that are recorded, not implemented here.
 patch: true
 sections_changed: [04, 05]
 sections_unchanged: [01, 02, 03]
@@ -144,6 +144,180 @@ validation tightening rather than a correction of wrong output. Track it separat
 Also out: extending `R003` to flag cross-listing name reuse, and a new rule for
 intra-session drift detected without a baseline. The second adds a rule id and is a feature
 iteration, not a patch.
+
+## Findings register — defects outside `lint/`, not in this patch
+
+Recorded here because they were found while writing `docs/internals/` and need an owner;
+**none of them is implemented by this artifact**, which stays the two-defect `lint` patch
+its frontmatter describes. Each needs its own iteration — F1 and F2 together, F3 and F4
+together, F5 and F6 together would be three sensible patches.
+
+They belong in the same register because four of the six are the same failure family this
+patch exists to correct: *a security or correctness check that resolves toward quieter and
+looser*. F1 and F2 are redaction fail-open; F3 and F4 are validation skipped on exactly
+the path where it matters.
+
+| id | Defect | Module | Class | Severity |
+|---|---|---|---|---|
+| F1 | default redaction globs miss hyphenated key names | `cassette.py` | fail-open | high |
+| F2 | any line the JSON-RPC classifier rejects bypasses redaction | `cassette.py` + `record/recorder.py` | fail-open | high |
+| F3 | `resolve_mode` skips validating `mode=` when the env var is set | `session.py` | fail-silent | medium |
+| F4 | `server_command`'s HTTP guard is skipped under `mode=all` | `session.py` | data loss | medium |
+| F5 | `diff --tools-only` claims "no structural differences" | `cli.py` | wrong output | low |
+| F6 | `inspect` output-mode flags silently shadow each other | `cli.py` | accepted-and-ignored | low |
+
+### F1 — default redaction globs miss hyphenated key names
+
+`default_redaction_rules()` ships `*apikey*` and `*api_key*`. Neither glob matches a
+hyphen, so the conventional HTTP spelling passes through untouched:
+
+```
+{'X-API-Key': 'k', 'ApiKey': 'k'}  ->  {'X-API-Key': 'k', 'ApiKey': 'REDACTED'}
+```
+
+`X-Auth-Token`, `Api-Key`, and `Access-Token` fall the same way. This bites payloads
+carrying a header dict — an agent passing credentials through `tools/call` arguments, or a
+recorded proxy configuration — and the result is a committed cassette holding a live
+credential while `redacted` reports the message was scrubbed.
+
+**Fix shape.** Add hyphen variants to the default set, or normalize separators before
+matching (`fnmatch` the key with `-` and `_` folded together). The second is fewer rules
+and covers spellings nobody enumerated, but it changes what an existing *custom* glob
+matches, so it needs its own regression test. Either way this is a widening of what gets
+scrubbed, which is the safe direction, but it is still a behavior change: a cassette
+re-recorded after the fix will differ from its committed predecessor.
+
+### F2 — any line the classifier rejects bypasses redaction
+
+`apply_redactions` returns a `str` payload untouched, because structural redaction needs
+keys. The trap is which lines arrive as strings. `SessionRecorder.on_message` stores the
+original **text** on three routes, discarding a successful decode where it had one
+(`record/recorder.py:100`, `:113`):
+
+| Route to `kind: "raw"` | Warning? |
+|---|---|
+| the line does not parse at all | once per session, latched |
+| valid JSON that is not an object (an array, a number) | none |
+| a valid JSON **object** with no `method` and no `id` | none |
+
+Verified end to end through `SessionRecorder` with the defaults on:
+
+```
+warnings: 1
+kind=raw   redacted=False  payload='["Bearer sk-live-42"]'
+kind=raw   redacted=False  payload='{"authorization": "sk-live-9", oops'
+kind=raw   redacted=False  payload='{"authorization": "sk-live-7"}'
+```
+
+The third line is the one that makes this more than a malformed-input edge case. It is
+well-formed JSON, it decoded cleanly, and its key matches the always-on `authorization`
+default — but the classifier could not call it a request, response, or notification, so it
+fell through to `raw` and the decoded object was thrown away. No warning fires on that
+route or the array route.
+
+`lint` is not a backstop: its four rules cover injection phrasing, description drift,
+duplicate names, and instruction-shaped results, and `engine.py:91` *skips* text already
+marked redacted rather than hunting for text that was not.
+
+**Fix shape.** Two independent halves, and the first is the cheap one.
+*(a)* Redact the decoded object on route 3 before falling back to raw — the recorder
+already holds `obj`, so this is passing it to `_append` instead of `text`, and it closes
+the widest route without touching the redaction engine.
+*(b)* Warn on routes 2 and 3, and drop the one-shot latch on route 1 (or count and report
+at finalize) so "how many lines did this affect" is answerable. Note that the latch is
+itself already documented as a sharp edge in `docs/internals/record.md`, so the two should
+be fixed together.
+Neither half redacts genuinely unparseable text; that is not solvable structurally and
+should stay a documented limitation with the `"kind": "raw"` grep as the mitigation.
+
+### F3 — `resolve_mode` skips validating `mode=` when the env var is set
+
+The env branch returns before `explicit` is ever checked (`session.py:64`):
+
+```
+no env   + mode=nope -> ValueError: invalid mcp_cassette mode 'nope' from mode= argument
+env=none + mode=nope -> 'none'   (no error raised)
+```
+
+The resolved value is always correct, so nothing runs wrong. What breaks is where the typo
+surfaces: caught on a developer's machine, where no env var is set, and swallowed in CI,
+where `MCP_CASSETTE_MODE=none` is the standing invariant. A test that meant to say
+something about its mode ships saying nothing, and the one environment that would have
+told you is the one that stays quiet.
+
+**Fix shape.** Validate `explicit` before consulting the environment, then apply the
+existing precedence. Two lines, and it cannot change any resolved mode — only which
+invalid inputs raise. Worth pairing with the `--select`/`--ignore` unknown-id defect
+deferred above: same "invalid input accepted silently" family, different module.
+
+### F4 — `server_command`'s HTTP guard is skipped under `mode=all`
+
+The guard reads `if action != "record" and self._peek_transport() == "http"`
+(`session.py:230`), so it is bypassed in exactly the action that overwrites the file.
+Verified against a real `transport: "http"` cassette:
+
+```
+mode=once -> CassetteError: cassette http_echo_and_add.mcp.json was recorded over
+             Streamable HTTP; use mcp_cassette.server_url(real_url) instead ...
+mode=all  -> -m mcp_cassette record --cassette http_echo_and_add.mcp.json ... -- python server.py
+```
+
+Under `once` the mistake is refused. Under `all` the same mistake returns a stdio
+recording command aimed at the HTTP cassette's path, and a successful run replaces a
+committed HTTP recording with a stdio one. `mode=all` is what a developer sets to
+re-record deliberately, so the destructive path is the one with no guard.
+
+**Fix shape.** Run the check unconditionally. `_peek_transport` (`session.py:436`) already
+returns `"stdio"` for a missing or unreadable cassette, so the no-cassette case the guard
+was avoiding is handled. `server_url` carries the mirror-image guard with the same shape
+and needs the same edit.
+
+### F5 — `diff --tools-only` claims "no structural differences"
+
+`_cmd_diff` blanks three collections and recomputes `identical` from `tools` alone
+(`cli.py:686`), then `_print_diff` renders the generic sentence:
+
+```
+$ mcp-cassette diff echo_and_add.mcp.json deterministic.mcp.json
+exit=5
+
+$ mcp-cassette diff echo_and_add.mcp.json deterministic.mcp.json --tools-only
+identical: no structural differences
+exit=0
+```
+
+The exit code is right — the flag asked about tools and the tools match. The sentence is
+not: it makes a claim about the whole cassette, and never mentions the flag that narrowed
+the question. A CI log carrying that line misleads whoever reads it later.
+
+**Fix shape.** Text only, no exit-code change: say `identical: no tool surface
+differences` when `--tools-only` is set. `--format json` is already unambiguous, since the
+empty `metadata`/`methods`/`sequence` arrays are visible in the document.
+
+### F6 — `inspect` output-mode flags silently shadow each other
+
+`_cmd_inspect` checks `--format json`, then `--timeline`, then `--tools`, returning at the
+first hit. `--tools --format json` ignores `--tools` (harmless — the JSON document always
+carries a `tools` array), but `--timeline --tools` drops `--tools` outright and the user
+does not get what they asked for. Nothing complains, because these are four independent
+flags rather than a mutually exclusive group.
+
+Adjacent, same command, worth deciding in one pass: `--method`/`--grep` filter the message
+list but not the tool list, and `timing span` is computed over the filtered messages
+(`cli.py:674`) under a label that does not say so.
+
+**Fix shape.** Put `--timeline` and `--tools` in an argparse mutually exclusive group so
+the combination is rejected rather than silently resolved. The filter/label asymmetry is a
+separate call — either label the span as filtered, or compute it over the whole cassette —
+and should not be bundled in without deciding which.
+
+### Documentation follow-through
+
+All six are documented as *current, unfixed* behavior in `docs/internals/`:
+F1, F2 in `cassette.md`; F3, F4 in `session.md`; F5, F6 in `cli.md`. F2's entry in
+`cassette.md` links back to this artifact. Each *Sharp edges* entry must be rewritten in
+the same change that implements its fix, or it goes stale in the same release — the same
+rule §05 states for `lint.md`.
 
 ## Verification
 
