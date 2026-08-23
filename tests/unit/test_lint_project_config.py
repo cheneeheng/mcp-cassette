@@ -143,6 +143,18 @@ def test_select_beats_ignore_and_prints_a_note(
     assert "note: rule P001 is both selected and ignored; selection wins" in out
 
 
+def test_ignore_without_select_prints_no_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # ITER_06_v3 §04 defect 2: nothing is selected here, so ignore wins and the
+    # "selection wins" note would have said the opposite of what the run did.
+    sub = _project(tmp_path, 'pattern_packs = ["packs/team.toml"]\n')
+    cassette = _cassette(sub / "c.mcp.json", [_tool("echo", PHRASE)])
+    monkeypatch.chdir(sub)
+    assert main(["lint", str(cassette), "--ignore", "P001"]) == 0
+    assert "both selected and ignored" not in capsys.readouterr().out
+
+
 def test_fail_on_warning_changes_the_exit_code_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

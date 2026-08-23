@@ -70,7 +70,21 @@ class SessionRecorder:
     ) -> None:
         """Classify and buffer one wire message given as decoded text.
 
-        Classification is identical for every transport — JSON-RPC shape only.
+        Classification is identical for every transport and reads JSON-RPC shape only.
+        Two booleans decide the ``kind`` — whether ``method`` is present, and whether
+        the key ``id`` is present:
+
+        - ``method`` and ``id`` -> ``request``
+        - ``method``, no ``id`` -> ``notification``
+        - ``id``, no ``method`` -> ``response``
+        - not a JSON object at all -> ``raw``, original text kept as the payload
+
+        The ``method`` string is copied verbatim and never interpreted, so no MCP
+        semantics (and no MCP SDK) enter here. That is also why a server-initiated
+        request needs no special case: it is a ``request`` whose ``sender`` is
+        ``"server"``. Downstream, :mod:`mcp_cassette.matching` rebuilds exchanges from
+        ``kind`` and ``sender`` alone, so a misclassification here is unrecoverable at
+        replay time.
 
         Args:
             sender: Which side emitted the message.

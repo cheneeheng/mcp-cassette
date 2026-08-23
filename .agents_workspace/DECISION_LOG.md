@@ -855,3 +855,171 @@ from `CHANGELOG.md`, not from the plan family.
 
 **Outcome:** `ITER_05_v3.md` written as a retroactive record. No code changed; the skill's
 implement step was a no-op because the work already shipped.
+
+### Entry 40
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-19T00:00:00Z
+**Task:** Write a contributor-facing explainer of the lint module under `docs/internals/`.
+
+**Context:** Two forks the request left open. (1) `docs/internals/` did not exist; the repo
+had only `docs/guide/`, which is user- and operator-facing. (2) The explanation that
+prompted the doc surfaced two verified defects — `R002` going blind on a shadowed tool
+name, and the `note: ... selection wins` line misreporting the `--ignore`-only case. The
+request was to document, not to fix.
+
+**Decision:** Created `docs/internals/` as a new tree, distinct from `docs/guide/`, and
+wrote `docs/internals/lint.md` there. Documented both defects in a "Sharp edges" section
+marked as current, unfixed behavior rather than silently fixing them, because a fix is a
+behavior change on a security surface and was not requested. Kept the vocabulary section
+(rule vs pattern vs bundled vs pack) at the top, since that distinction was the thing that
+actually caused confusion. Used Mermaid rather than ASCII to match `docs/guide/index.md`.
+
+**Impact / Risk:** A new docs tree with no index entry and no link from `CLAUDE.md` or the
+guide — discoverable only by path until someone links it. The documented defects remain in
+the code; the doc now pins the current behavior, so fixing them later means updating this
+file too.
+
+**Outcome:** File written, all five cross-referenced paths verified to exist. No code
+changed.
+
+### Entry 41
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-20T00:00:00+08:00
+**Task:** Document the `record` module (docstring + `docs/internals/record.md`)
+
+**Context:** Writing up `record/` turned up two behaviours in `recorder.py` that read as
+latent defects rather than design: `_warned_raw` is a one-shot latch, so N unparseable
+lines produce one warning; and `_try_decode` returns `None` for valid-but-non-object JSON
+(an array, a bare number) with no warning at all. The task was documentation, not repair.
+**Decision:** Document both under "Sharp edges" with the reproduced output, and change no
+behaviour. Same treatment `docs/internals/lint.md` gives its own three sharp edges.
+Fixing warning semantics is user-visible (stderr text under `-W`) and belongs in its own
+change with its own test.
+**Impact / Risk:** The behaviours stay as-is; a reader counting warnings to count bad
+lines is now warned in prose instead of by the code. No follow-up is filed.
+**Outcome:** `docs/internals/record.md` written; `recorder.py` changed only by an
+expanded `on_message` docstring stating the classification rule.
+
+### Entry 42
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-23T00:00:00+08:00
+**Task:** Document the remaining top-level modules under `docs/internals/`
+
+**Context:** `docs/internals/` covered the four sub-packages (record, replay, lint,
+transports); the eleven files directly under `src/mcp_cassette/` had no page. Three forks
+the request left open. (1) How to slice eleven files — one page each would leave five
+near-empty stubs, one page for all of them would be twice the size of any sibling.
+(2) Where `matching.py` belongs, since `replay.md` already documents it in depth.
+(3) Whether to fix the defects the write-up turned up.
+
+**Decision:** Three module pages grouped by responsibility — `cassette.md` (the schema
+layer), `session.md` (`session.py` + `pytest_plugin.py` + `report.py`, the three front
+doors), `cli.md` (`cli.py` + `diffing.py`, the command surface) — plus an `index.md`
+carrying the map, the reading order, and the four files too small to justify a page
+(`_stdio.py`, `_signals.py`, `__init__.py`, `__main__.py`). Left `matching.py` in
+`replay.md` and said so in the index rather than duplicating or moving it. Changed no
+code: eleven behaviours are documented under "Sharp edges" as current, unfixed behaviour,
+matching the treatment `lint.md` and `record.md` give theirs. Used plain ASCII diagrams,
+following the three most recent siblings (`lint.md`'s single Mermaid block is the
+outlier) and the user's stated rendering constraint.
+
+**Impact / Risk:** Two findings are security-relevant and now documented rather than
+fixed: the default redaction globs do not match hyphenated key names (`X-API-Key`,
+`X-Auth-Token`), and `raw` payloads are never redacted, so a malformed server line
+carrying a secret is committed verbatim with `redacted: false`. Two are correctness
+smells: `resolve_mode` skips validating an invalid `mode=` whenever `MCP_CASSETTE_MODE`
+is set — so a typo is caught locally and swallowed in CI — and `server_command`'s HTTP
+guard is skipped under `mode=all`, the one action that overwrites the cassette. Each is a
+behaviour change on a security or record-path surface and belongs in its own change with
+its own test. No follow-ups are filed. `docs/internals/` still has no link from the
+README, `CLAUDE.md`, or the user guide; `index.md` makes the tree self-describing but
+does not make it discoverable.
+
+**Outcome:** Four files written. All 29 cross-document links and anchors verified to
+resolve; all `file.py:NNN` references verified against the source, and 11 stale ones
+corrected. No code changed.
+
+### Entry 43
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-23T00:00:00+08:00
+**Task:** Record the internals-pass findings that need fixing in `ITER_06_v3.md`
+
+**Context:** `ITER_06_v3` is scoped by its own frontmatter as a two-defect `lint` patch
+(`patch: true`, `sections_changed: [04, 05]`) and already defers a third lint defect under
+"Deliberately not in this patch". Folding six non-lint defects into §04 would have made
+the artifact contradict itself and would have silently widened a patch someone else may be
+mid-implementation on.
+
+**Decision:** Added a "Findings register" section after "Deliberately not in this patch",
+following that section's precedent: F1-F6 each with the reproduction, the failure class,
+and the fix shape, stated explicitly as recorded-not-implemented. Left §01-§05 and
+`sections_changed` untouched; appended one clause to `scope` so the frontmatter admits the
+register exists. Triaged out of the register the sharp edges that do not need a fix
+(v1-to-v2 upgrade on save, silent pointer miss, the `<response>` count bucket, no
+`--version`, the default report path, undetected concurrent sessions) — documenting them
+is the right resolution, and a register that lists everything ranks nothing.
+
+**Impact / Risk:** Verifying F2 turned up a route I had understated the day before:
+`SessionRecorder.on_message` falls through to `kind="raw"` for a *well-formed JSON object*
+carrying no `method` and no `id`, discarding the successful decode and storing the raw
+text, so redaction is skipped with no warning. `docs/internals/cassette.md` claimed `raw`
+meant "a line that would not parse at all"; corrected to the three actual routes with the
+verified transcript, since the narrower claim would have led a reader to grep for the
+wrong thing. No code changed — the fix belongs to whoever picks up F2.
+
+**Outcome:** Register written; `cassette.md` corrected in two places; all links and the
+new anchor verified. Committed on `docs/internals-refactor-guide`.
+
+### Entry 44
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-23T00:00:00Z
+**Task:** Implement ITER_06_v3 — the two lint fail-open corrections (R002 occurrence
+comparison, select/ignore note).
+
+**Context:** ITER_06_v3 §04 says the fixed `rule_r002` treats a current occurrence as
+clean when it "matches any baseline occurrence", but the existing code compares
+`description` and `inputSchema` as two independent checks. Those two readings diverge
+whenever a baseline lists one tool name more than once with differing content and the
+current cassette recombines fields across those listings: per-field matching calls it
+clean (each value was seen), per-occurrence matching flags it (that pairing was never
+seen). The plan's own §04 argues both directions — it wants noisier-and-stricter, and it
+wants a re-listing baseline not to become a permanent false positive.
+
+**Decision:** Per-occurrence, confirmed with the user after presenting both readings. A
+current surface is clean only when some single baseline surface matches on both fields;
+the diff is then rendered against the last baseline occurrence, preserving the existing
+message wording and `(+N -M lines)` counts. Rationale: the module's stated tiebreaker is
+"on a security surface every ambiguity resolves toward noisier and stricter", and a
+benign description paired with a drifted schema is itself a rug-pull shape that the
+baseline never recorded. The false-positive guard the plan asks for is still delivered —
+scenario 2 (current matches an older baseline listing exactly) stays clean.
+
+Two smaller calls made in the same change:
+- `engine.latest_tools()`'s docstring opened "The dedup rule R002 uses", which the fix
+  makes false. The plan says the *function* is not touched; its docstring was corrected
+  in place rather than left stating the opposite of the code.
+- `docs/internals/lint.md` is git-ignored (commit `bfbd4dc` kept the internals
+  walkthroughs out of the repo) but §05 requires its *Sharp edges* section be rewritten
+  in the same change. Rewritten locally; it will not appear in a commit.
+
+**Impact / Risk:** Per-occurrence can print `description changed vs baseline` for a
+description that does exist in the baseline, just not beside that schema — recorded as
+the one residual sharp edge in `docs/internals/lint.md`. Only reachable when a baseline
+re-lists a tool with drift. No rule id, flag, exit code, or model field changed.
+
+**Outcome:** `rule_r002` and `run_with_notes` fixed; four regression tests added (three
+R002 occurrence cases, one ignore-without-select note case). ruff, ruff format, and mypy
+strict clean; 55 lint unit tests and 3 lint integration tests pass. The plan's fixture
+pair was confirmed in both directions: drift-then-revert was `clean`/exit 0 pre-fix and
+is now one R002 error pointing at the drifted listing; a current cassette matching the
+*older* of two baseline listings was a false positive pre-fix and is now clean.

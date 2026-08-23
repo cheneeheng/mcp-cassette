@@ -78,9 +78,12 @@ def run_with_notes(
     pattern_set = build_pattern_set(all_packs)
     selected = list(rules) if rules else [*RULE_IDS, *pattern_set.rule_ids]
     ignored = list(ignore or [])
+    # Read the caller's own selection, not `selected`: with no --select that is a
+    # synthesized "no filter" placeholder, and testing it made every --ignore'd id
+    # read as a conflict the run did not have (ignore wins on that branch).
     notes = [
         f"note: rule {rule_id} is both selected and ignored; selection wins"
-        for rule_id in selected
+        for rule_id in (rules or [])
         if rule_id in ignored
     ]
     enabled = selected if rules else [r for r in selected if r not in ignored]
@@ -181,8 +184,10 @@ def extract_surfaces(
 def latest_tools(cassette: Cassette) -> dict[str, ToolSurface]:
     """The cassette's tool surfaces by name, last seen winning.
 
-    The dedup rule R002 uses, shared with ``inspect --tools`` and ``diff`` so the
-    three surfaces can never disagree about what a tool surface is.
+    Shared by ``inspect --tools`` and ``diff`` so the two surfaces can never
+    disagree about what the agent ends up believing. ``rule_r002`` deliberately
+    does not use it: it must answer what the agent was *exposed to*, which means
+    every occurrence, not the last one per name.
 
     Args:
         cassette: The loaded cassette.

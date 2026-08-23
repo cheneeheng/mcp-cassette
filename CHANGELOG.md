@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-23
+
+Two `lint` fail-open corrections. Both defects made `lint` quieter and looser
+than its own rules require; neither adds a rule id, flag, exit code, or schema
+field. See `.agents_workspace/planning/v3/ITER_06_v3.md`.
+
+### Fixed
+
+- `lint`: `R002` now compares every recorded occurrence of a tool instead of only
+  the last one per name. A server that drifted a tool, let the agent use it, then
+  re-listed the original surface used to report `clean: no findings` with exit
+  `0`; the drifted listing is now flagged with its own locator. The baseline side
+  is grouped rather than collapsed, so a baseline that legitimately re-listed a
+  tool does not become a permanent false positive. Affected cassettes move from
+  exit `0` to exit `4` — `--format json` gains entries but does not change shape.
+- `lint`: `--ignore <id>` without `--select` no longer prints
+  `note: rule <id> is both selected and ignored; selection wins`. Nothing was
+  selected on that path and ignore won, so the note stated the opposite of what
+  the run did. The note is unchanged for a real `--select X --ignore X` clash.
+
 ## [0.3.6] - 2026-08-18
 
 Documentation only. No runtime code, public API, flag, error string, or exit
@@ -527,7 +547,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.3...v0.3.4

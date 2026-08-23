@@ -25,3 +25,6 @@ dist/
 # Recorded by examples/library_mode.py on its first run. The cassettes under
 # examples/cassettes/ are committed on purpose; this one is generated on purpose.
 examples/library_mode.mcp.json
+
+# Internal module walkthroughs: kept locally, deliberately out of the repo.
+docs/internals/

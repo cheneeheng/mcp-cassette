@@ -32,7 +32,7 @@ from .record.proxy import StdioRecordingProxy
 from .replay.server import ReplayServer
 from .session import CassetteError, CassetteSession, Mode, resolve_mode, use_cassette
 
-__version__ = "0.3.6"
+__version__ = "0.3.7"
 
 __all__ = [
     "Cassette",
