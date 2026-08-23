@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-23
+
+Two `lint` fail-open corrections. Both defects made `lint` quieter and looser
+than its own rules require; neither adds a rule id, flag, exit code, or schema
+field. See `.agents_workspace/planning/v3/ITER_06_v3.md`.
+
 ### Fixed
 
 - `lint`: `R002` now compares every recorded occurrence of a tool instead of only
@@ -541,7 +547,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.3...v0.3.4
