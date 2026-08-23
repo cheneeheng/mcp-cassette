@@ -220,13 +220,32 @@ duplicate names, and instruction-shaped results, and `engine.py:91` *skips* text
 marked redacted rather than hunting for text that was not.
 
 **Fix shape.** Two independent halves, and the first is the cheap one.
-*(a)* Redact the decoded object on route 3 before falling back to raw — the recorder
-already holds `obj`, so this is passing it to `_append` instead of `text`, and it closes
-the widest route without touching the redaction engine.
+
+*(a)* Redact the decoded object on **route 3** before falling back to raw. The recorder
+already holds `obj`, and `_append` calls `apply_redactions` on whatever payload it is
+handed (`record/recorder.py:159`), so this is passing `obj` instead of `text` — one
+argument, no change to the redaction engine, and it closes the widest route.
+
+Checked, because the obvious worry is that a `raw` message would then carry a `dict`
+payload where every reader expects a `str`: nothing downstream breaks. `Message.payload`
+is already typed `dict[str, Any] | str`; `matching.py` and `replay/server_requests.py`
+select strictly on `kind` being `request`/`response`/`notification`, so a `raw` message is
+never built into an exchange or emitted; and every payload read in `replay/server.py`
+(`:349`, `:372`, `:386`, `:402`) is guarded by `isinstance(..., dict)` already. The
+implementer should still decide whether `kind: "raw"` carrying a decoded object is the
+right label, or whether this case deserves its own kind — that is a format question, and
+adding a `MessageKind` value is a `FORMAT_VERSION` conversation.
+
+**Route 2 cannot take the same fix.** `_try_decode` discards a valid non-object decode, and
+the value it discarded is typically a `list`, which `Message.payload` does not admit. Cheap
+route-3 parity would require widening the payload type — schema change, not a patch. Leave
+route 2 to half (b).
+
 *(b)* Warn on routes 2 and 3, and drop the one-shot latch on route 1 (or count and report
-at finalize) so "how many lines did this affect" is answerable. Note that the latch is
-itself already documented as a sharp edge in `docs/internals/record.md`, so the two should
-be fixed together.
+at finalize) so "how many lines did this affect" is answerable. The latch is itself already
+documented as a sharp edge in `docs/internals/record.md`, so the two should be fixed
+together.
+
 Neither half redacts genuinely unparseable text; that is not solvable structurally and
 should stay a documented limitation with the `"kind": "raw"` grep as the mitigation.
 
@@ -290,9 +309,12 @@ The exit code is right — the flag asked about tools and the tools match. The s
 not: it makes a claim about the whole cassette, and never mentions the flag that narrowed
 the question. A CI log carrying that line misleads whoever reads it later.
 
-**Fix shape.** Text only, no exit-code change: say `identical: no tool surface
-differences` when `--tools-only` is set. `--format json` is already unambiguous, since the
-empty `metadata`/`methods`/`sequence` arrays are visible in the document.
+**Fix shape.** No exit-code change and no model change, but not quite text-only:
+`_print_diff(result: CassetteDiff)` (`cli.py:702`) does not receive `args`, so it cannot
+know the run was narrowed. Thread the flag in — a `tools_only: bool = False` parameter, or
+have `_cmd_diff` print the identical-line itself — then say `identical: no tool surface
+differences`. `--format json` is already unambiguous, since the empty
+`metadata`/`methods`/`sequence` arrays are visible in the document.
 
 ### F6 — `inspect` output-mode flags silently shadow each other
 
