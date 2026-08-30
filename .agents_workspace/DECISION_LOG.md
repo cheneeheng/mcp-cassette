@@ -1096,3 +1096,58 @@ walker followed README 1 literally first. UX-003 is superseded by it.
 
 **Outcome:** run-002 written to .agents_workspace/ux-audits/mcp-cassette/run-002/UX_AUDIT.md.
 Nine scratch worktrees created for isolation were removed and pruned.
+
+### Entry 47
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-30T18:15:00Z
+**Task:** Fix every open finding from UX audit runs 001 and 002, then re-run the audit.
+
+**Context:** The user asked for all findings fixed in one go, overriding the skill's
+"fix the top Blocker only, then re-walk the personas it blocked" loop discipline. Several
+choices were left unresolved by the findings themselves.
+
+**Decision:**
+- Fixed UX-001/UX-003/UX-007 as one install story rather than three edits. They are the
+  same wound: the docs carried a consumer-project install and no clone install, and the
+  consumer-project command is a hard error inside a clone. Every install surface now names
+  two paths (`uv add --dev` for your own project, `uv sync` for a clone) and states what
+  each writes and how to undo it, which is also what gate criterion 4 was failing on.
+- Put UX-004's fix in `Cassette.load`, not in `_cmd_serve`. One edit covers every door
+  (`serve`, `inspect`, `diff`, `lint`, and the library) and keeps the exception type
+  (`ValueError`, already in `_LOAD_ERRORS`) and exit code (`2`) unchanged.
+- Did **not** extend the same fix to `FaultOverlay.load`, which has the identical opaque
+  `JSONDecodeError` on `--faults <not-json>`. No walker hit it, so it is not a finding;
+  flagged to the user instead of fixed, per the no-drive-by-fixes rule.
+- Made UX-005 in-band rather than doc-only. `inspect` now prints `unanswered requests: N`,
+  so the artifact explains itself; the doc fix alone would have left a broken cassette
+  indistinguishable from a short one for anyone not reading that paragraph.
+- Kept the UX-008 overwrite warning advisory (stderr, recording proceeds) rather than a
+  prompt or a `--force` flag. `record` is driven by pipes and by the pytest fixture, both
+  non-interactive; a prompt would hang them and a required flag would be a breaking change
+  the finding (Friction) does not justify.
+- Used ASCII in both new CLI strings. The em dash rendered as U+FFFD on the cp1252 console
+  this was verified on, which would have been a new Small Screen finding.
+- Fixed two things not in any finding, both inside sections the findings forced me to edit:
+  `OP-01.3`'s "The CLI is on PATH" heading (it asserts the opposite of the UX-002 fix three
+  lines above it) and a stray paragraph in `OP-04.4` that split the flag table in two so
+  the rows after it did not render. Fixing the second was a precondition for adding a row.
+- Reflowed all `README.md` prose to 88 columns for UX-006, matching the existing wrap in
+  `docs/guide/`. Verified content-preserving by whitespace-normalized comparison. Table
+  cells that carried meaning past column 80 were shortened and their lost text moved into
+  prose beneath the table.
+- Wrote no tests, per the global "do not write tests unless asked" rule. Two new error-path
+  lines (`cassette.py` JSONDecodeError raise, `cli.py` overwrite warning) are uncovered;
+  the repo's `fail_under = 99` gate still passes at 99.76%. Surfaced to the user.
+
+**Impact / Risk:** `inspect --format json` gains an `unanswered_requests` key (additive).
+`record` writes one new stderr line when the target exists — checked against the one test
+that reads `record`'s first stderr line (`test_http_record.py`), which records to a fresh
+path and is unaffected. Full suite: 397 passed, 1 pre-existing flaky failure
+(`test_timeout_fault_spends_no_pacing_sleep`, a wall-clock comparison that passes in
+isolation and passes on stashed changes).
+
+**Outcome:** Also caught and reverted an unintended CRLF conversion: Python's `write_text`
+newline translation on Windows rewrote six doc files' line endings, turning small diffs into
+whole-file rewrites. Normalized back to LF before the re-audit.

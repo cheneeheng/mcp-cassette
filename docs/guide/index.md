@@ -35,8 +35,11 @@ three:
 | Door | You call | Use it when |
 |---|---|---|
 | pytest fixture | `mcp_cassette.server_command(...)` | your tests are a pytest suite |
-| library | `with use_cassette(...) as session:` | your harness is a notebook, a benchmark runner, or another test framework |
-| CLI | `mcp-cassette record` / `mcp-cassette serve` | you drive recording by hand or from a shell script |
+| library | `with use_cassette(...) as session:` | your harness is not pytest |
+| CLI | `mcp-cassette record` / `serve` | you drive recording by hand |
+
+The library door covers a notebook, a benchmark runner, or another test framework; the CLI
+door also covers a shell script and an agent configured outside Python.
 
 Under the hood it works at the transport level (newline-delimited JSON-RPC over stdio, or
 Streamable HTTP) and treats messages semi-opaquely, so it works with any MCP client

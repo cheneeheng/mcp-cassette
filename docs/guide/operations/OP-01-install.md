@@ -10,10 +10,15 @@ you just need it working.
 ```bash
 uv add --dev mcp-cassette                                # 1. install (core: stdio)
 uv add --dev "mcp-cassette[http]"                        # 2. only if you record remote HTTP servers
-uv run mcp-cassette --help                               # 3. CLI is on PATH
+uv run mcp-cassette --help                               # 3. CLI answers
 uv run pytest --fixtures -q | grep mcp_cassette          # 4. pytest plugin is loaded
 export MCP_CASSETTE_MODE=none                            # 5. in CI only — forbid recording
 ```
+
+This is the sequence for **your own project**. In a clone of the mcp-cassette repo,
+replace steps 1–2 with `uv sync` — `uv add mcp-cassette` there is a self-dependency error.
+See [OP-01.2](#op-012-install-the-package), which also states what each install writes and
+how to undo it.
 
 Steps 4 and 5 in PowerShell:
 
@@ -45,6 +50,12 @@ made to. It works at the transport level with any MCP client.
 
 ## OP-01.2 Install the package
 
+Which command you want depends on where you are standing.
+
+### Into your own project (the normal case)
+
+mcp-cassette is a test-only tool, so it belongs in the dev group:
+
 ```
 uv add --dev mcp-cassette              # core: stdio record/replay
 uv add --dev "mcp-cassette[http]"      # adds remote Streamable HTTP record/replay
@@ -60,9 +71,46 @@ pip install "mcp-cassette[http]"
 Install it into the **same environment pytest runs in**. The plugin is discovered via
 the `pytest11` entry point; a package installed elsewhere is invisible to pytest.
 
+### Into a clone of the mcp-cassette repo
+
+Contributing, or running `examples/` and the CLI walkthrough in
+[Getting started](../getting-started.md)? Those live in this repo, so the install is a
+sync, not an add:
+
+```
+uv sync
+```
+
+`uv add mcp-cassette` inside the clone is a hard error — uv exits `2` with
+`self-dependencies are not permitted`, because the requirement name matches the project
+name. `uv add --dev mcp-cassette` does not error, but it silently rebuilds the checkout
+as its own dependency, which is not what you meant either. Use `uv sync`.
+
+### OP-01.2.1 What each install writes, and how to undo it
+
+Neither command is destructive, but both write outside the virtualenv, so state it before
+you run it in someone else's checkout:
+
+| Command | Writes | Undo |
+|---|---|---|
+| `uv add --dev mcp-cassette` | `pyproject.toml` (a dev-group entry), `uv.lock`, `.venv/` | `uv remove --dev mcp-cassette` |
+| `pip install mcp-cassette` | the active environment only | `pip uninstall mcp-cassette` |
+| `uv sync` | `.venv/`, and `uv.lock` if it was stale | delete `.venv/` |
+
+Nothing here touches your cassettes, your tests, or your git history.
+
+One thing to expect if you undo the wrong install **inside a clone**: `uv remove --dev
+mcp-cassette` prints `~ mcp-cassette==0.3.8` and leaves the package importable. That is not a
+failed removal. It removed both things `uv add --dev` had written to `pyproject.toml` (the
+`dev` entry and a `[tool.uv.sources]` line) — `git diff pyproject.toml` comes back empty — and
+the line you see is uv reinstalling the *project itself*, which is always present in its own
+checkout's virtualenv.
+
 ## OP-01.3 Post-install health check
 
-1. The CLI is on PATH:
+1. The CLI answers. It is installed into the virtualenv and *not* placed on `PATH`, so
+   invoke it through `uv run` (or activate the venv first); a bare `mcp-cassette` is
+   `command not found`:
 
    ```
    uv run mcp-cassette --help

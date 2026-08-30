@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+First-run usability pass. Every item closes a finding from a cold-walkthrough audit
+of the install path and the CLI's failure surfaces
+(`.agents_workspace/ux-audits/mcp-cassette/`). No exit code, schema field, or public
+API changes; `inspect --format json` gains one key.
+
+### Added
+
+- `inspect`: a cassette holding client requests the recorded server never answered now
+  prints `unanswered requests: N`, and the JSON document carries the same number as
+  `unanswered_requests`. A recording against a server that failed to launch still
+  captures the opening request, so the message count alone could not distinguish a
+  broken recording from a short one — and the guide's own verification step pointed at
+  that count. The number is always taken over the whole cassette, never the
+  `--method`/`--grep` subset. (UX-005)
+- `record`: warns on stderr when `--cassette` already exists, before the session starts
+  — the finished session replaces the file wholesale and there is no undo. Advisory
+  only; the recording proceeds. (UX-008)
+
+### Changed
+
+- Loading a file that is not JSON now raises a `ValueError` naming the path, saying it
+  is not a cassette, and saying what writes one, instead of surfacing a bare
+  `Expecting value: line 1 column 1 (char 0)`. Affects every door that loads a
+  cassette (`serve`, `inspect`, `diff`, `lint`, and the library). The exception type
+  and the exit code (`2`) are unchanged. (UX-004)
+
+### Documentation
+
+- The install story now has two named paths: `uv add --dev mcp-cassette` for adding it
+  to your own project, and `uv sync` for a clone of this repo. `README.md` §1 used to
+  prescribe `uv add mcp-cassette`, which is a hard error inside a clone (uv rejects it
+  as a self-dependency, exit `2`), and no page gave the clone an install at all. Each
+  path now states what it writes and how to undo it. (UX-001, UX-003, UX-007)
+- The record-verification steps in `getting-started.md`, `HT-01`, and `OP-03` no longer
+  point at the message count alone; they name the exit code and the new
+  `unanswered requests:` line. (UX-005)
+- `OP-04.2` documents that `--cassette` is overwritten rather than appended to, and
+  that interrupting does not prevent it. (UX-008)
+- Five new rows in the troubleshooting symptom table: `command not found`, the
+  self-dependency error, the not-a-cassette error, `unanswered requests:`, and the
+  `[Errno 2] No such file or directory` a `serve` against an unrecorded cassette gives.
+- `README.md` §2.3 now says outright that its CLI listing is a map of the surface rather
+  than a runnable recipe — `tools/server.py` does not exist in the checkout — and points
+  at the two places that carry paste-as-is commands. (UX-009)
+- `OP-04.2` states what `record` writes and how to undo it as a table covering both the
+  new-file and the overwrite case, matching the framing the install section uses. The
+  overwrite's honest answer is "none — copy the file first". (UX-010)
+- `OP-01.2.1` explains why `uv remove --dev mcp-cassette` prints `~ mcp-cassette==0.3.8`
+  and leaves the package importable inside a clone: it is uv reinstalling the project
+  itself, not a failed removal. Verified — `git diff pyproject.toml` after the round trip
+  is empty. (UX-011)
+- Table cells that carried meaning past column 80 in `README.md` and
+  `docs/guide/index.md` were shortened or moved into prose, and `README.md`'s prose is
+  hard-wrapped to 88 columns like the rest of the guide. (UX-006)
+
 ## [0.3.8] - 2026-08-30
 
 Two `cli` output corrections. Each made a command's output state something the

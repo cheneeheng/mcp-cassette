@@ -18,14 +18,37 @@ operators (`OP`). The sections below summarize; each ends with a pointer to its 
 
 ## 1. Install
 
+Two situations, two different commands. Pick the one you are actually in.
+
+**Adding mcp-cassette to your own project** — the normal case. It is a test-only tool,
+so it goes in the dev group:
+
 ```
-uv add mcp-cassette              # or: pip install mcp-cassette
-uv add "mcp-cassette[http]"      # remote (Streamable HTTP) record/replay
+uv add --dev mcp-cassette              # or: pip install mcp-cassette
+uv add --dev "mcp-cassette[http]"      # remote (Streamable HTTP) record/replay
 ```
+
+*Writes* `pyproject.toml` and `uv.lock`, and installs into `.venv/`. *Undo:* `uv remove
+--dev mcp-cassette`.
+
+**Standing in a clone of this repo** — to run `examples/`, the CLI walkthrough, or the
+test suite:
+
+```
+uv sync                                # installs this checkout plus its dev group
+```
+
+*Writes* `.venv/` and (if it was stale) `uv.lock`; it does not touch `pyproject.toml`.
+*Undo:* delete `.venv/`.
+
+Do **not** run `uv add mcp-cassette` inside the clone — uv rejects it as a
+self-dependency and exits `2` (`self-dependencies are not permitted`), and the `--dev`
+form silently rebuilds the checkout as its own dependency instead of doing what you
+meant.
 
 Python ≥ 3.12. Linux, macOS, and Windows supported. The core install depends only on `anyio` and `pydantic`; the `[http]` extra adds `httpx` and `h11`.
 
-`uv add` installs the CLI into your project's virtualenv without putting it on `PATH`, so run it as **`uv run mcp-cassette ...`** (or activate the venv first). The `mcp-cassette ...` listings below drop the prefix for brevity; the step-by-step walkthroughs in the guide keep it.
+Either way the CLI lands inside a virtualenv and is *not* placed on `PATH`, so run it as **`uv run mcp-cassette ...`** (or activate the venv first). The `mcp-cassette ...` listings below drop the prefix for brevity; the step-by-step walkthroughs in the guide keep it.
 
 Full chapter: [OP-01. Installation](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-01-install.md).
 
@@ -77,6 +100,13 @@ Full chapter: [HT-03. Use it as a library](https://github.com/cheneeheng/mcp-cas
 
 ### 2.3 The CLI
 
+The listing below is a **map of the surface, not a runnable recipe** —
+`tools/server.py` is a stand-in for your own server, and `record` captures nothing
+unless a client drives it. For commands you can paste as-is against the bundled
+echo server, use
+[the CLI walkthrough](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/getting-started.md#first-run-with-the-cli)
+or [`examples/README.md`](https://github.com/cheneeheng/mcp-cassette/blob/main/examples/README.md).
+
 ```
 mcp-cassette record --cassette demo.json -- python tools/server.py   # wrap a real server
 mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp   # proxy a remote one
@@ -104,7 +134,10 @@ The mode decides, once per test run, whether that run records or replays; the re
 | `once` (default) | record | replay |
 | `none` | fail — recording is forbidden | replay |
 | `all` | record | re-record |
-| `new_episodes` | record | replay; misses fall through to the real server and are appended |
+| `new_episodes` | record | replay, then append misses |
+
+Under `new_episodes`, a request the cassette cannot answer falls through to the real
+server and the resulting exchange is appended to the cassette.
 
 How each door selects a mode, highest precedence first:
 

@@ -6,7 +6,8 @@ local command.
 the recording run only.
 
 ```
-uv add "mcp-cassette[http]"
+uv add --dev "mcp-cassette[http]"   # in your own project
+uv sync                            # in a clone of this repo: the dev group already has it
 ```
 
 The extra adds `httpx` and `h11`. Without it, `server_url()` raises `CassetteError`

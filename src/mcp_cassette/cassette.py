@@ -103,12 +103,22 @@ class Cassette(BaseModel):
         Raises:
             UnsupportedFormatVersion: If the file's ``format_version`` is newer than
                 this library understands.
-            ValueError: If the top level is not a JSON object, or ``format_version``
-                is not an integer. Both are read before validation, so they cannot be
-                left to pydantic.
+            ValueError: If the file is not JSON at all, if the top level is not a JSON
+                object, or if ``format_version`` is not an integer. All three are read
+                before validation, so they cannot be left to pydantic.
             pydantic.ValidationError: If the file does not match the schema.
         """
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            # A bare JSONDecodeError names neither the file nor what a cassette is,
+            # so pointing `serve` at any non-cassette read as "Expecting value:
+            # line 1 column 1".
+            raise ValueError(
+                f"{path} is not a cassette: expected JSON, but parsing failed at "
+                f"line {exc.lineno} column {exc.colno} ({exc.msg}). A cassette is "
+                f"the JSON file written by 'mcp-cassette record --cassette PATH'."
+            ) from exc
         if not isinstance(data, dict):
             raise ValueError(
                 f"{path}: cassette must be a JSON object, got {type(data).__name__}"

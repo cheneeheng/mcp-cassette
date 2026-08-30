@@ -43,7 +43,16 @@ No server, no network, no credentials. Under `none` a missing cassette fails the
 
 ## Run them
 
-From the repo root:
+Everything here lives in the repo, so it runs from a clone. Install the checkout first —
+`uv sync`, not `uv add` (inside the clone `uv add mcp-cassette` is a self-dependency
+error; see [OP-01.2](../docs/guide/operations/OP-01-install.md#op-012-install-the-package)):
+
+```
+uv sync
+```
+
+`uv sync` writes `.venv/` and, if the lock was stale, `uv.lock`. To undo it, delete
+`.venv/`. Then, from the repo root:
 
 ```
 uv run pytest examples/                        # replay the committed cassettes (offline, deterministic)
@@ -151,6 +160,37 @@ mcp-cassette inspect demo.mcp.json
 Piping closes stdin at EOF, which cleanly ends the session. In a real test the client is
 your agent, not `printf` — the fixture just hands it `mcp-cassette record ... -- <server>`
 (or `mcp-cassette serve <cassette>`) as the server command and the agent drives it.
+
+**In a narrow terminal, use this instead.** The JSON-RPC lines above run to 156
+characters, and they are one command joined by `\` continuations. At 80 columns
+they are cut mid-value — the trailing backslash included, so the command looks
+broken rather than continued. The bundled `mcp_client.py` builds the same three
+messages for you. Run it **from the `examples/` directory**, so the import
+resolves:
+
+```bash
+python -c "
+from mcp_client import initialize, tool_call, run
+cmd = ['uv', 'run', 'mcp-cassette', 'record',
+       '--cassette', 'demo.mcp.json',
+       '--', 'python', 'echo_server.py']
+for obj in run(cmd, [*initialize(), tool_call(2, 'add', {'a': 2, 'b': 3})]):
+    print(obj)
+"
+
+uv run mcp-cassette inspect demo.mcp.json
+
+# replay: same client, same messages, no server command to launch
+python -c "
+from mcp_client import initialize, tool_call, run
+cmd = ['uv', 'run', 'mcp-cassette', 'serve', 'demo.mcp.json']
+for obj in run(cmd, [*initialize(), tool_call(2, 'add', {'a': 2, 'b': 3})]):
+    print(obj)
+"
+```
+
+Every line above fits inside 80 columns, and it records the identical 5-message
+cassette. It is the same style the HTTP recipes below use.
 
 ### Over HTTP
 

@@ -26,6 +26,11 @@ Per door, one thing more:
 
 ## Install
 
+Two situations, two different commands. Pick the one you are actually in.
+
+**Adding mcp-cassette to your own project** — the normal case. It is a test-only tool,
+so it goes in the dev group:
+
 ```
 uv add --dev mcp-cassette
 ```
@@ -36,7 +41,24 @@ or, with pip:
 pip install mcp-cassette
 ```
 
-Either way the CLI lands inside your project's virtualenv and is *not* placed on `PATH`,
+This writes `pyproject.toml` and `uv.lock` and installs into `.venv/`. To undo it:
+`uv remove --dev mcp-cassette`.
+
+**Standing in a clone of the mcp-cassette repo** — which is what the CLI walkthrough
+below and everything under `examples/` assume, because they run the bundled echo server:
+
+```
+uv sync
+```
+
+This installs the checkout plus its dev group. It writes `.venv/` and, if the lock was
+stale, `uv.lock`; it does not touch `pyproject.toml`. To undo it: delete `.venv/`.
+
+Do **not** run `uv add mcp-cassette` inside the clone. uv rejects it as a self-dependency
+and exits `2`, and the `--dev` form silently rebuilds the checkout as its own dependency
+rather than doing what you meant. `uv sync` is the clone's install.
+
+Either way the CLI lands inside a virtualenv and is *not* placed on `PATH`,
 so invoke it as `uv run mcp-cassette ...` (or activate the venv first) — a bare
 `mcp-cassette` is `command not found`. Every command below carries the prefix.
 
@@ -109,8 +131,18 @@ messages: 8
 timing span: 62 ms
 ```
 
-A non-zero `messages` count is the thing to check. Then prove step 3 really ran offline by
-breaking the real command:
+Check two lines, not one. A non-zero `messages` count says the proxy was driven; **no
+`unanswered requests:` line** says the server actually answered. A recording against a
+server that failed to launch still captures the client's opening request, so it has a
+non-zero count and is still broken — `inspect` prints
+
+```
+unanswered requests: 1 (the server never responded to these; replay exits 3 on one of them)
+```
+
+for exactly that case. Re-record rather than committing it.
+
+Then prove step 3 really ran offline by breaking the real command:
 
 ```python
 cmd = mcp_cassette.server_command(["python", "does-not-exist.py"])
@@ -239,8 +271,12 @@ messages: 5
 timing span: 48 ms
 ```
 
-**If it fails:** `serve` exits `3` on any request the cassette cannot answer, naming the
-misses. A `messages: 0` count after step 1 means nothing ever drove the proxy.
+**If it fails:** the first signal is step 1's own exit code — `record` returns the wrapped
+server's exit code, so a non-zero one (`echo $?`, or `$LASTEXITCODE` in PowerShell) means
+the server never ran and the cassette it left behind is a failed recording, not a short
+one. `inspect` says the same thing in band with an `unanswered requests:` line. Beyond
+that: `serve` exits `3` on any request the cassette cannot answer, naming the misses, and
+a `messages: 0` count after step 1 means nothing ever drove the proxy.
 
 `printf` and `\` continuations are not native to PowerShell; the equivalent using a
 piped array, plus the HTTP version, is in
