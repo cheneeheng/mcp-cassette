@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `diff --tools-only`: the text report now says `identical: no tool surface
+  differences` instead of `identical: no structural differences`. The flag
+  narrows the comparison to tool surfaces, so the sentence may not claim the
+  whole cassette matched — two cassettes differing in metadata, methods, and
+  sequence used to produce that line. Exit codes and `--format json` are
+  unchanged. (ITER_06_v3 F5)
+- `inspect`: `--timeline` and `--tools` are now mutually exclusive. Each replaces
+  the whole text report, so passing both silently dropped `--tools`; it is a
+  usage error (exit `2`) now. `--tools --format json` is still accepted and still
+  redundant — the JSON document always carries a `tools` array. (ITER_06_v3 F6)
+
 ## [0.3.7] - 2026-08-23
 
 Two `lint` fail-open corrections. Both defects made `lint` quieter and looser

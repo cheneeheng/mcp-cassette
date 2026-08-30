@@ -6,7 +6,7 @@ this page mirrors it.
 ```
 mcp-cassette record  --cassette PATH [--url URL] [flags] [-- CMD ...]
 mcp-cassette serve   CASSETTE [flags] [-- CMD ...]
-mcp-cassette inspect CASSETTE [--method METHOD] [--grep PATTERN] [--timeline] [--tools] [--format text|json] [--faults PATH]
+mcp-cassette inspect CASSETTE [--method METHOD] [--grep PATTERN] [--timeline | --tools] [--format text|json] [--faults PATH]
 mcp-cassette diff    OLD NEW [--format text|json] [--tools-only]
 mcp-cassette lint    CASSETTE [--baseline PATH] [--format text|json] [--select RULE] [--ignore RULE] [--pattern-pack PATH] [--fail-on error|warning] [--no-config]
 ```
@@ -92,6 +92,8 @@ also prints the recorded server host and exchange count.
 | `--grep PATTERN` | Python regex matched against each message payload. Composes with `--method` (both must match). Invalid regex exits `2`. |
 | `--timeline` | One line per message: `seq`, `t_offset_ms`, direction, kind, method, id, payload bytes. HTTP cassettes add `exch` and `chan`. |
 | `--tools` | One line per recorded tool, deduplicated by name (last seen wins). |
+
+`--timeline` and `--tools` each replace the whole text report, so they are mutually exclusive: passing both is a usage error (exit `2`) rather than a silently dropped view.
 | `--format text\|json` | `json` emits one deterministic, byte-stable document; add `--timeline` to include the rows. |
 | `--faults PATH` | Dry-run an overlay: print which recorded requests it hits, and `WARNING` for faults that match nothing. |
 
@@ -111,7 +113,7 @@ re-stamped or clock-derived.
 | Flag | Default | Effect |
 |---|---|---|
 | `--format text\|json` | `text` | `json` is deterministic and diffable. |
-| `--tools-only` | off | Compare tool surfaces only — the common CI use. |
+| `--tools-only` | off | Compare tool surfaces only — the common CI use. When they match, the text report says `identical: no tool surface differences`, naming the narrowed question rather than claiming the whole cassette matched. |
 
 ```
 mcp-cassette diff old.json new.json
