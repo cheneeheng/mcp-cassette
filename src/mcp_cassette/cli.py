@@ -192,12 +192,15 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Output format (default: text; json is deterministic and diffable).",
     )
-    ins.add_argument(
+    # One view per run: --timeline and --tools each replace the whole text output,
+    # so combining them can only drop one silently. Rejected, not resolved.
+    view = ins.add_mutually_exclusive_group()
+    view.add_argument(
         "--timeline",
         action="store_true",
         help="One line per message: who sent what, when, with which id and size.",
     )
-    ins.add_argument(
+    view.add_argument(
         "--tools",
         action="store_true",
         help="One line per recorded tool (deduplicated by name, last seen wins).",
@@ -695,13 +698,16 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     if args.format == "json":
         print(result.model_dump_json(indent=2))
     else:
-        _print_diff(result)
+        _print_diff(result, tools_only=args.tools_only)
     return 0 if result.identical else 5
 
 
-def _print_diff(result: CassetteDiff) -> None:
+def _print_diff(result: CassetteDiff, *, tools_only: bool = False) -> None:
     if result.identical:
-        print("identical: no structural differences")
+        # --tools-only narrowed the question, so the answer must say so rather than
+        # claim the whole cassette matched.
+        scope = "tool surface" if tools_only else "structural"
+        print(f"identical: no {scope} differences")
         return
     if result.metadata:
         print("metadata:")

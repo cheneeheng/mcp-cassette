@@ -189,3 +189,14 @@ def test_json_output_for_http_and_empty_selection(
     empty = json.loads(capsys.readouterr().out)
     assert empty["messages"] == 0
     assert empty["timing_span_ms"] == 0
+
+
+def test_timeline_and_tools_together_are_a_usage_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ITER_06_v3 F6: the combination is rejected, not silently resolved."""
+    path = _cassette(tmp_path / "c.mcp.json")
+    with pytest.raises(SystemExit) as exit_info:
+        main(["inspect", str(path), "--timeline", "--tools"])
+    assert exit_info.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err

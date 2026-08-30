@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-08-30
+
+Two `cli` output corrections. Each made a command's output state something the
+run had not established: `diff --tools-only` answered a narrowed question with
+an unnarrowed sentence, and `inspect` accepted two view flags but honoured one.
+No exit code, JSON document, or schema field changes. See
+`.agents_workspace/planning/v3/ITER_06_v3.md` (findings F5 and F6).
+
+### Fixed
+
+- `diff --tools-only`: the text report now says `identical: no tool surface
+  differences` instead of `identical: no structural differences`. The flag
+  narrows the comparison to tool surfaces, so the sentence may not claim the
+  whole cassette matched — two cassettes differing in metadata, methods, and
+  sequence used to produce that line. Exit codes and `--format json` are
+  unchanged. (ITER_06_v3 F5)
+- `inspect`: `--timeline` and `--tools` are now mutually exclusive. Each replaces
+  the whole text report, so passing both silently dropped `--tools`; it is a
+  usage error (exit `2`) now. `--tools --format json` is still accepted and still
+  redundant — the JSON document always carries a `tools` array. (ITER_06_v3 F6)
+
 ## [0.3.7] - 2026-08-23
 
 Two `lint` fail-open corrections. Both defects made `lint` quieter and looser
@@ -547,7 +568,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.8...HEAD
+[0.3.8]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.4...v0.3.5

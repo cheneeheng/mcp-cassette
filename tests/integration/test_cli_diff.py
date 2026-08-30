@@ -72,7 +72,7 @@ def _with_changed_description(source: Path, target: Path) -> Path:
 def test_identical_files_exit_0(baseline: Path) -> None:
     result = _cli("diff", str(baseline), str(baseline))
     assert result.returncode == 0
-    assert "identical" in result.stdout
+    assert "identical: no structural differences" in result.stdout
 
 
 def test_changed_description_exits_5_and_names_the_tool(
@@ -105,6 +105,9 @@ def test_tools_only_ignores_a_sequence_difference(
     assert _cli("diff", str(baseline), str(target)).returncode == 5
     result = _cli("diff", str(baseline), str(target), "--tools-only")
     assert result.returncode == 0
+    # ITER_06_v3 F5: the same pair differs structurally, so the narrowed run may
+    # not claim otherwise.
+    assert "identical: no tool surface differences" in result.stdout
 
 
 def test_json_format_round_trips(baseline: Path, tmp_path: Path) -> None:

@@ -225,7 +225,9 @@ def test_tools_only_text_output_and_json(
         tmp_path / "new.json", tools=[_tool("search", BENIGN)], version="9.9.9"
     )
     assert main(["diff", str(old), str(new), "--tools-only"]) == 0
-    assert "identical" in capsys.readouterr().out
+    # ITER_06_v3 F5: the sentence names the narrowed question, because the
+    # cassettes do differ on metadata the flag told diff to ignore.
+    assert capsys.readouterr().out.strip() == "identical: no tool surface differences"
     assert main(["diff", str(old), str(new), "--tools-only", "--format", "json"]) == 0
     document = json.loads(capsys.readouterr().out)
     assert document["metadata"] == []

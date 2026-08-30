@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-cassette"
-version = "0.3.7"
+version = "0.3.8"
 description = "Record/replay testing for MCP (Model Context Protocol) agents: capture real sessions as cassettes, replay them as deterministic mock servers — vcrpy for MCP."
 readme = "README.md"
 requires-python = ">=3.12"
