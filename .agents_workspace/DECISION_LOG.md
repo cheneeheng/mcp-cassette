@@ -1023,3 +1023,76 @@ strict clean; 55 lint unit tests and 3 lint integration tests pass. The plan's f
 pair was confirmed in both directions: drift-then-revert was `clean`/exit 0 pre-fix and
 is now one R002 error pointing at the drifted listing; a current cassette matching the
 *older* of two baseline listings was a false positive pre-fix and is now clean.
+
+### Entry 45
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-30T00:00:00Z
+**Task:** first-run-walkthrough usability audit — scoping the walk (run-001)
+
+**Context:** The skill requires a frozen artifact set, an audience baseline, and an
+isolation decision before dispatching walkers. Three points were genuinely ambiguous:
+(1) whether a newcomer arrives via `pip install mcp-cassette` from PyPI or via a clone;
+(2) whether `examples/`, `pyproject.toml`, and `docs/internals/` are things a newcomer
+"actually has"; (3) whether to pre-select one of the three documented front doors or let
+each walker choose.
+
+**Decision:**
+- Walk from a fresh clone (one detached `git worktree` per persona under the scratchpad),
+  because that is what the docs' runnable examples assume ("This runs from a clone against
+  the bundled echo server") and it is what exists on this machine. Isolated copies also
+  satisfy the skill's isolation rule, since the walk runs `uv sync` and writes cassettes.
+- Frozen set = `README.md`, `docs/guide/**`, `examples/README.md` + the example files it
+  names, `CHANGELOG.md`, `LICENSE`, and `--help`. `examples/` is in because the README
+  explicitly points at it as runnable. `src/`, `tests/`, `pyproject.toml`, `uv.lock`,
+  `docs/internals/`, `CLAUDE.md`, `.github/`, `scripts/` and the public internet are out —
+  reading any of them is counted and reported as an external lookup rather than banned, so
+  the gap it papers over becomes a measurable finding.
+- Each walker picks its own door. The docs explicitly instruct the reader to choose, so
+  pre-selecting would audit a path the product does not actually present.
+
+**Impact / Risk:** Results are scoped to the clone-based entry path. The PyPI-install entry
+path (`uv add mcp-cassette` into a consumer project, with no bundled echo server) is NOT
+covered by this run and must be walked separately before claiming the install path is clean.
+Letting walkers choose their door means door coverage is uneven — a door nobody picked is
+unwalked, not passing.
+
+**Outcome:** Five walkers dispatched in parallel; results pending.
+
+### Entry 46
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-30T00:00:00Z
+**Task:** first-run-walkthrough run-002 — fixing UX-002 and scoping the fix
+
+**Context:** run-001 produced one Blocker (UX-001, no clone install path) and one Detour with
+much wider blast radius (UX-002, the documented bare `mcp-cassette` commands fail with exit
+127 after the documented install). The skill's loop prescribes fixing the top Blocker; the
+user chose UX-002 instead, on blast radius. Two sub-decisions were left open by that.
+
+**Decision:**
+- Fixed UX-002 by stating the invocation convention ONCE at each document's install point
+  (README.md 1, getting-started.md Install, examples/README.md) and prefixing `uv run` only
+  on getting-started's three pasteable CLI commands — rather than prefixing ~20 command
+  occurrences across three files. The defect was that the reader never learns the convention
+  before needing it; stating it at install closes that at a fraction of the diff.
+- Left `getting-started.md` step 3 unchanged. It describes the string that goes into an
+  agent's MCP server config, not a command the reader types. A CLI absent from PATH also
+  breaks that config, but that is a separate defect and widening scope mid-loop would make
+  the re-walk measure two changes at once.
+- Did not commit. The doc fix sits uncommitted on `chore/ux-audit-run-001` (branch created
+  only because the global branching rule refused the edit on main). Re-walk worktrees
+  received the three files by copy, so they tested the fix without an unrequested git write.
+- Required every re-walker to scrub the leaked host venv from PATH and prove it before its
+  first action, correcting run-001's instrument flaw.
+
+**Impact / Risk:** UX-002 is closed, confirmed by all three re-walkers on proven-clean
+environments. The gate did not move (1/5) because UX-002 was a Detour and the Blockers were
+untouched. The re-walk surfaced UX-007 — README's own first install command, `uv add
+mcp-cassette`, is a hard error (exit 2) inside a clone — which run-001 missed because no
+walker followed README 1 literally first. UX-003 is superseded by it.
+
+**Outcome:** run-002 written to .agents_workspace/ux-audits/mcp-cassette/run-002/UX_AUDIT.md.
+Nine scratch worktrees created for isolation were removed and pruned.

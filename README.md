@@ -25,6 +25,8 @@ uv add "mcp-cassette[http]"      # remote (Streamable HTTP) record/replay
 
 Python ≥ 3.12. Linux, macOS, and Windows supported. The core install depends only on `anyio` and `pydantic`; the `[http]` extra adds `httpx` and `h11`.
 
+`uv add` installs the CLI into your project's virtualenv without putting it on `PATH`, so run it as **`uv run mcp-cassette ...`** (or activate the venv first). The `mcp-cassette ...` listings below drop the prefix for brevity; the step-by-step walkthroughs in the guide keep it.
+
 Full chapter: [OP-01. Installation](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-01-install.md).
 
 ## 2. The three front doors

@@ -36,6 +36,10 @@ or, with pip:
 pip install mcp-cassette
 ```
 
+Either way the CLI lands inside your project's virtualenv and is *not* placed on `PATH`,
+so invoke it as `uv run mcp-cassette ...` (or activate the venv first) — a bare
+`mcp-cassette` is `command not found`. Every command below carries the prefix.
+
 The pytest plugin registers itself through the `pytest11` entry point — there is nothing
 to configure. If the `mcp_cassette` fixture turns up missing later, the package is
 installed in a different environment than the one pytest runs in; the health check in
@@ -184,7 +188,7 @@ to stand in for your agent.
      '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cli","version":"1.0"}}}' \
      '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
      '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":3}}}' \
-     | mcp-cassette record --cassette demo.mcp.json -- python examples/echo_server.py
+     | uv run mcp-cassette record --cassette demo.mcp.json -- python examples/echo_server.py
    ```
 
    The server's own answers come back on stdout as they are captured:
@@ -203,7 +207,7 @@ to stand in for your agent.
      '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cli","version":"1.0"}}}' \
      '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
      '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":3}}}' \
-     | mcp-cassette serve demo.mcp.json
+     | uv run mcp-cassette serve demo.mcp.json
    ```
 
 3. In a real setup, step 1 and step 2 are the *server command* in your agent's MCP
@@ -217,7 +221,7 @@ untouched while replay writes `\n`, so `diff` reports a difference where the mes
 in fact the same. Check the recording landed:
 
 ```
-mcp-cassette inspect demo.mcp.json
+uv run mcp-cassette inspect demo.mcp.json
 ```
 
 ```

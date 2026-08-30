@@ -100,6 +100,11 @@ pipe newline-delimited requests into the proxy's stdin:
 
 Replay is a server, not a player — it answers requests from the cassette but emits nothing on its own, so `serve` needs the same piped requests to have anything to respond to; the pipe stands in for the client.
 
+The commands below say `mcp-cassette` bare. From a clone, run them as `uv run
+mcp-cassette ...` — the CLI lives in the project virtualenv, not on `PATH`, and a bare
+`mcp-cassette` either fails with `command not found` or silently picks up a *different*
+mcp-cassette that happens to be on your `PATH`.
+
 ```bash
 # record a live session — pipe requests in so there is actually traffic to capture
 printf '%s\n' \
