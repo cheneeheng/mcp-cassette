@@ -139,9 +139,14 @@ is a scheduled job of its own, never the pull-request pipeline, which must stay 
   run: uv run mcp-cassette diff tests/cassettes/tools.mcp.json fresh.mcp.json --tools-only
 ```
 
-**Verify:** the record step writes `fresh.mcp.json` with a non-zero `messages` count
+**Verify:** the record step exits `0` and writes `fresh.mcp.json` with a non-zero
+`messages` count and no `unanswered requests:` line
 (`uv run mcp-cassette inspect fresh.mcp.json`). A zero count means the piped requests
 never reached the server, and both gates below it would then pass on an empty file.
+An `unanswered requests:` line means the server never answered — usually it failed to
+launch — and the gates would then pass on a broken file, which a message count alone
+cannot distinguish from a short one. `record` returns the wrapped server's own exit
+code, so a non-zero step is the earliest signal.
 
 **If it fails:** a red drift gate is a diff to read, not a failure to re-record away —
 [HT-09.5](../how-to/HT-09-gate-a-drifting-server.md#ht-095-when-the-gate-goes-red).

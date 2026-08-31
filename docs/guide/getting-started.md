@@ -16,6 +16,62 @@ Everyone needs:
 Recording contacts the real server, so you also need whatever that server needs —
 credentials, network access — but only on the first run.
 
+### No server to record against yet?
+
+The walkthroughs below name `examples/echo_server.py`, which exists **only in a clone
+of this repo** — installing from PyPI does not bring `examples/` with it. If you
+installed into your own project and want a real server to record right now, save this
+as `echo_server.py` next to your `pyproject.toml`. It is an MCP server in 30 lines of
+standard library, no `mcp` SDK, and it is enough to complete every step on this page:
+
+```python
+import json
+import secrets
+import sys
+
+
+def handle(request):
+    method = request.get("method")
+    msg_id = request.get("id")
+    if method == "initialize":
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "echo-example", "version": "1.0.0"}}}
+    if method == "notifications/initialized":
+        return None
+    if method == "tools/call":
+        params = request.get("params") or {}
+        args = params.get("arguments") or {}
+        if params.get("name") == "add":
+            text = str(int(args.get("a", 0)) + int(args.get("b", 0)))
+        else:
+            text = f"{args.get('text', '')} [{secrets.token_hex(4)}]"
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {
+            "content": [{"type": "text", "text": text}], "isError": False}}
+    return {"jsonrpc": "2.0", "id": msg_id,
+            "error": {"code": -32601, "message": f"method not found: {method}"}}
+
+
+for line in sys.stdin:
+    if line.strip():
+        response = handle(json.loads(line))
+        if response is not None:
+            sys.stdout.write(json.dumps(response) + "\n")
+            sys.stdout.flush()
+```
+
+It writes nothing and opens no socket — it reads JSON-RPC lines on stdin and answers on
+stdout, which is the whole transport mcp-cassette records. Two tools: `add` returns a
+sum, and anything else echoes your text with a **fresh random token per call**. That
+token is what makes replay visible: the real server mints a new one every time, and the
+cassette returns the recorded one forever.
+
+Wherever a command below says `python examples/echo_server.py`, use `python
+echo_server.py` instead. The CLI walkthrough is the one to follow — it drives the
+session with a shell pipe, so it needs no client of your own. The fixture and
+`use_cassette` doors put *your* agent where that pipe is.
+
 Per door, one thing more:
 
 | Door | Also needs |
@@ -26,6 +82,11 @@ Per door, one thing more:
 
 ## Install
 
+Two situations, two different commands. Pick the one you are actually in.
+
+**Adding mcp-cassette to your own project** — the normal case. It is a test-only tool,
+so it goes in the dev group:
+
 ```
 uv add --dev mcp-cassette
 ```
@@ -35,6 +96,31 @@ or, with pip:
 ```
 pip install mcp-cassette
 ```
+
+This writes `pyproject.toml` and `uv.lock` and installs into `.venv/`. To undo it:
+`uv remove --dev mcp-cassette`.
+
+This install brings the library and the CLI, and nothing else — `examples/` is not part
+of the package. To follow the walkthroughs below without cloning, paste the 30-line
+server from [No server to record against yet?](#no-server-to-record-against-yet).
+
+**Standing in a clone of the mcp-cassette repo** — which is what the CLI walkthrough
+below and everything under `examples/` assume, because they run the bundled echo server:
+
+```
+uv sync
+```
+
+This installs the checkout plus its dev group. It writes `.venv/` and, if the lock was
+stale, `uv.lock`; it does not touch `pyproject.toml`. To undo it: delete `.venv/`.
+
+Do **not** run `uv add mcp-cassette` inside the clone. uv rejects it as a self-dependency
+and exits `2`, and the `--dev` form silently rebuilds the checkout as its own dependency
+rather than doing what you meant. `uv sync` is the clone's install.
+
+Either way the CLI lands inside a virtualenv and is *not* placed on `PATH`,
+so invoke it as `uv run mcp-cassette ...` (or activate the venv first) — a bare
+`mcp-cassette` is `command not found`. Every command below carries the prefix.
 
 The pytest plugin registers itself through the `pytest11` entry point — there is nothing
 to configure. If the `mcp_cassette` fixture turns up missing later, the package is
@@ -69,6 +155,13 @@ server command goes. Nothing about your agent changes — it is never patched.
    ```
 
    `cmd` is a plain `list[str]`. Nothing else changes.
+
+   `run_my_agent` is a stand-in for *your* agent — nothing ships under that name. If you
+   do not have one to hand yet, [`examples/test_echo.py`](../../examples/test_echo.py) is
+   this same test with a minimal client in that slot, runnable from a clone with `uv run
+   pytest examples/test_echo.py`. That file is in the repo, not in the package, so from
+   your own project take [First run with the CLI](#first-run-with-the-cli) instead — it
+   proves the same record-then-replay loop with a shell pipe in the agent's place.
 
 2. Run the test. The default mode is `once`: no cassette exists yet, so this run launches
    the recording proxy in front of the real server and captures every JSON-RPC message in
@@ -105,8 +198,18 @@ messages: 8
 timing span: 62 ms
 ```
 
-A non-zero `messages` count is the thing to check. Then prove step 3 really ran offline by
-breaking the real command:
+Check two lines, not one. A non-zero `messages` count says the proxy was driven; **no
+`unanswered requests:` line** says the server actually answered. A recording against a
+server that failed to launch still captures the client's opening request, so it has a
+non-zero count and is still broken — `inspect` prints
+
+```
+unanswered requests: 1 (the server never responded to these; replay exits 3 on one of them)
+```
+
+for exactly that case. Re-record rather than committing it.
+
+Then prove step 3 really ran offline by breaking the real command:
 
 ```python
 cmd = mcp_cassette.server_command(["python", "does-not-exist.py"])
@@ -141,7 +244,8 @@ Full treatment — cassette paths, markers, re-recording — is in
 **Verify:** `cassettes/github.mcp.json` exists after step 2, and step 3 completes with the
 real server stopped.
 
-A runnable version ships with the repo, driving the bundled echo server. Run it twice:
+A runnable version ships with the repo — in the repo, not in the package, so this needs a
+clone. Driving the bundled echo server, run it twice:
 
 ```
 uv run python examples/library_mode.py
@@ -176,15 +280,23 @@ proxy that forwards its own stdin to the wrapped server, and `serve` answers fro
 cassette — both need a client to drive them, so the examples below pipe raw JSON-RPC in
 to stand in for your agent.
 
+What the two commands write, before you run them: `record` writes the cassette path you
+name (plus a `<cassette>.partial` sidecar while it runs, removed on a clean finish) and
+nothing else — to undo it, delete that file. If the cassette already exists, `record`
+says so and names the replacement *before* it touches anything, so you can copy the old
+one first. `serve` writes nothing at all: it only reads the cassette and answers on
+stdout. Full table in [OP-04.2](operations/OP-04-cli-reference.md#op-042-record).
+
 1. Record, wrapping the real server command after `--`. This runs from a clone against
-   the bundled echo server:
+   the bundled echo server; if you pasted the server into your own project instead, drop
+   the `examples/` and use `-- python echo_server.py`:
 
    ```bash
    printf '%s\n' \
      '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cli","version":"1.0"}}}' \
      '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
      '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":3}}}' \
-     | mcp-cassette record --cassette demo.mcp.json -- python examples/echo_server.py
+     | uv run mcp-cassette record --cassette demo.mcp.json -- python examples/echo_server.py
    ```
 
    The server's own answers come back on stdout as they are captured:
@@ -203,7 +315,7 @@ to stand in for your agent.
      '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cli","version":"1.0"}}}' \
      '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
      '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":3}}}' \
-     | mcp-cassette serve demo.mcp.json
+     | uv run mcp-cassette serve demo.mcp.json
    ```
 
 3. In a real setup, step 1 and step 2 are the *server command* in your agent's MCP
@@ -217,7 +329,7 @@ untouched while replay writes `\n`, so `diff` reports a difference where the mes
 in fact the same. Check the recording landed:
 
 ```
-mcp-cassette inspect demo.mcp.json
+uv run mcp-cassette inspect demo.mcp.json
 ```
 
 ```
@@ -235,8 +347,12 @@ messages: 5
 timing span: 48 ms
 ```
 
-**If it fails:** `serve` exits `3` on any request the cassette cannot answer, naming the
-misses. A `messages: 0` count after step 1 means nothing ever drove the proxy.
+**If it fails:** the first signal is step 1's own exit code — `record` returns the wrapped
+server's exit code, so a non-zero one (`echo $?`, or `$LASTEXITCODE` in PowerShell) means
+the server never ran and the cassette it left behind is a failed recording, not a short
+one. `inspect` says the same thing in band with an `unanswered requests:` line. Beyond
+that: `serve` exits `3` on any request the cassette cannot answer, naming the misses, and
+a `messages: 0` count after step 1 means nothing ever drove the proxy.
 
 `printf` and `\` continuations are not native to PowerShell; the equivalent using a
 piped array, plus the HTTP version, is in

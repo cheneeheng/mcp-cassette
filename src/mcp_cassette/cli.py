@@ -12,6 +12,7 @@ import json
 import re
 import sys
 from collections import Counter
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -350,6 +351,11 @@ def _cmd_record(args: argparse.Namespace) -> int:
             "after --\n"
         )
         return 2
+    if Path(args.cassette).exists():
+        sys.stderr.write(
+            f"mcp-cassette record: {args.cassette} already exists and will be "
+            "replaced when this session ends; copy it first to keep it\n"
+        )
     if args.url:
         try:
             from .transports.http import RecordingProxy
@@ -571,6 +577,14 @@ def _inspect_summary(
         print(f"  {name}: {count}")
     if messages:
         print(f"timing span: {_timing_span(messages)} ms")
+    unanswered = _unanswered_requests(cassette)
+    if unanswered:
+        # ASCII only: this line lands in whatever console the operator has, and a
+        # cp1252 terminal turns a typographic dash into a replacement character.
+        print(
+            f"unanswered requests: {unanswered}"
+            " (the server never responded to these; replay exits 3 on one of them)"
+        )
 
 
 def _inspect_timeline(cassette: Cassette, messages: list[Message]) -> None:
@@ -644,6 +658,7 @@ def _inspect_document(
             for name, tool in sorted(latest_tools(cassette).items())
         ],
         "transport": cassette.transport,
+        "unanswered_requests": _unanswered_requests(cassette),
     }
     if cassette.transport == "http":
         document["server_host"] = (
@@ -672,6 +687,26 @@ def _inspect_document(
 
 def _method_counts(messages: list[Message]) -> Counter[str]:
     return Counter(m.method or f"<{m.kind}>" for m in messages)
+
+
+def _unanswered_requests(cassette: Cassette) -> int:
+    """Count client requests the recorded server never answered.
+
+    Always computed over the whole cassette, never the ``--method``/``--grep``
+    subset: a filter that drops responses would otherwise invent unanswered
+    requests. A non-zero count is the in-band signal that a recording is broken
+    rather than merely short — the message count alone cannot tell them apart.
+    """
+    answered = {
+        m.msg_id
+        for m in cassette.messages
+        if m.sender == "server" and m.kind == "response" and m.msg_id is not None
+    }
+    return sum(
+        1
+        for m in cassette.messages
+        if m.sender == "client" and m.kind == "request" and m.msg_id not in answered
+    )
 
 
 def _timing_span(messages: list[Message]) -> int:

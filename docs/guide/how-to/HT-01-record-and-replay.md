@@ -12,8 +12,10 @@ other.
 | Door | Section | Read it if |
 |---|---|---|
 | pytest fixture | [HT-01.1](#ht-011-with-the-pytest-fixture) | your tests are a pytest suite |
-| library (`use_cassette`) | [HT-01.2](#ht-012-with-use_cassette) | your harness is a notebook, benchmark, or another test framework |
+| library (`use_cassette`) | [HT-01.2](#ht-012-with-use_cassette) | your harness is not pytest |
 | CLI | [HT-01.3](#ht-013-with-the-cli) | you record by hand or from a shell script |
+
+The library door covers a notebook, a benchmark runner, or another test framework.
 
 [HT-01.4](#ht-014-behaviour-shared-by-all-three-doors) holds what is identical everywhere:
 record modes, re-recording, matching, and what failure looks like.
@@ -31,6 +33,14 @@ record modes, re-recording, matching, and what failure looks like.
 
    `cmd` is a plain `list[str]`. The agent is never patched — it launches whatever you
    give it.
+
+   `run_my_agent` is a stand-in for *your* agent; nothing ships under that name. To run
+   this door before you have an agent, [`examples/test_echo.py`](../../../examples/test_echo.py)
+   is this same test with a minimal client in that slot — `uv run pytest
+   examples/test_echo.py` from a clone. `examples/` is in the repo, not in the package,
+   so from your own project use the
+   [CLI walkthrough](../getting-started.md#first-run-with-the-cli) instead: it proves the
+   same loop against a [paste-able server](../getting-started.md#no-server-to-record-against-yet).
 
 2. Run the test. No cassette exists, so this records.
 
@@ -119,8 +129,11 @@ There is no mode here — you choose by picking the subcommand.
 mcp-cassette inspect cassettes/github.mcp.json
 ```
 
-A non-zero `messages` count means the recording took. Replay answers requests but emits
-nothing on its own, so it also needs a client to drive it.
+A non-zero `messages` count means the proxy was driven; the absence of an
+`unanswered requests:` line means the server actually answered. Both matter — a
+recording against a server that failed to launch still captures the opening request,
+so a non-zero count on its own does not mean the recording is good. Replay answers
+requests but emits nothing on its own, so it also needs a client to drive it.
 
 Every flag is in [OP-04. CLI reference](../operations/OP-04-cli-reference.md).
 
@@ -198,17 +211,20 @@ compares `method` and `params`.
 
 | `ordering` | Behaviour |
 |---|---|
-| `per_method` (default) | Answer with the earliest unconsumed exchange whose match key is equal; mark it consumed. Repeat calls to the same method replay in recorded order. |
+| `per_method` (default) | Earliest unconsumed exchange with an equal key wins. |
 | `strict` | The next unconsumed exchange must match, or the request is a miss. |
 | `none` | Any matching exchange answers, unlimited times, in any order. |
+
+Under `per_method` the chosen exchange is marked consumed, so repeat calls to the same
+method replay in the order they were recorded.
 
 Same three settings, three spellings:
 
 | Setting | Fixture marker | Library | CLI |
 |---|---|---|---|
 | ordering | `ordering="strict"` | `MatchConfig(ordering="strict")` | `--ordering strict` |
-| ignore a volatile field | `ignore_params=["/params/arguments/requestId"]` | `MatchConfig(ignore_params=[...])` | `--ignore-param /params/...` |
-| accept the client's protocol version | `rewrite_protocol_version=True` | `MatchConfig(rewrite_protocol_version=True)` | `--rewrite-protocol-version` |
+| ignore a field | `ignore_params=[...]` | `MatchConfig(ignore_params=[...])` | `--ignore-param PTR` |
+| accept client protocol | `rewrite_protocol_version=True` | same keyword | `--rewrite-protocol-version` |
 
 `ignore_params` entries are JSON pointers into the request object.
 

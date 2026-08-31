@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+First-run usability pass. Every item closes a finding from a cold-walkthrough audit
+of the install path and the CLI's failure surfaces
+(`.agents_workspace/ux-audits/mcp-cassette/`). No exit code, schema field, or public
+API changes; `inspect --format json` gains one key.
+
+### Added
+
+- `inspect`: a cassette holding client requests the recorded server never answered now
+  prints `unanswered requests: N`, and the JSON document carries the same number as
+  `unanswered_requests`. A recording against a server that failed to launch still
+  captures the opening request, so the message count alone could not distinguish a
+  broken recording from a short one — and the guide's own verification step pointed at
+  that count. The number is always taken over the whole cassette, never the
+  `--method`/`--grep` subset. (UX-005)
+- `record`: warns on stderr when `--cassette` already exists, before the session starts
+  — the finished session replaces the file wholesale and there is no undo. Advisory
+  only; the recording proceeds. (UX-008)
+- `record`: warns on stderr when the session captured zero messages, naming the cassette
+  that was **not** written and why. The command returns the wrapped server's exit code, so
+  a server that starts and stops cleanly returns `0` — a mis-wired first run was
+  indistinguishable from a successful one, on stdout, on stderr, and in the exit code
+  alike. Not writing the file is unchanged and deliberate: an empty cassette would resolve
+  `once` to replay, so such a run could never re-record itself. The exit code is also
+  unchanged. The pytest fixture already raised `CassetteError` here; the CLI was the one
+  door with no signal. (UX-020)
+
+### Changed
+
+- Loading a file that is not JSON now raises a `ValueError` naming the path, saying it
+  is not a cassette, and saying what writes one, instead of surfacing a bare
+  `Expecting value: line 1 column 1 (char 0)`. Affects every door that loads a
+  cassette (`serve`, `inspect`, `diff`, `lint`, and the library). The exception type
+  and the exit code (`2`) are unchanged. (UX-004)
+
+### Documentation
+
+- The install story now has two named paths: `uv add --dev mcp-cassette` for adding it
+  to your own project, and `uv sync` for a clone of this repo. `README.md` §1 used to
+  prescribe `uv add mcp-cassette`, which is a hard error inside a clone (uv rejects it
+  as a self-dependency, exit `2`), and no page gave the clone an install at all. Each
+  path now states what it writes and how to undo it. (UX-001, UX-003, UX-007)
+- The record-verification steps in `getting-started.md`, `HT-01`, and `OP-03` no longer
+  point at the message count alone; they name the exit code and the new
+  `unanswered requests:` line. (UX-005)
+- `OP-04.2` documents that `--cassette` is overwritten rather than appended to, and
+  that interrupting does not prevent it. (UX-008)
+- Five new rows in the troubleshooting symptom table: `command not found`, the
+  self-dependency error, the not-a-cassette error, `unanswered requests:`, and the
+  `[Errno 2] No such file or directory` a `serve` against an unrecorded cassette gives.
+- `README.md` §2.3 now says outright that its CLI listing is a map of the surface rather
+  than a runnable recipe — `tools/server.py` does not exist in the checkout — and points
+  at the two places that carry paste-as-is commands. (UX-009)
+- `OP-04.2` states what `record` writes and how to undo it as a table covering both the
+  new-file and the overwrite case, matching the framing the install section uses. The
+  overwrite's honest answer is "none — copy the file first". (UX-010)
+- `OP-01.2.1` explains why `uv remove --dev mcp-cassette` prints `~ mcp-cassette==0.3.8`
+  and leaves the package importable inside a clone: it is uv reinstalling the project
+  itself, not a failed removal. Verified — `git diff pyproject.toml` after the round trip
+  is empty. (UX-011)
+- Table cells that carried meaning past column 80 in `README.md` and
+  `docs/guide/index.md` were shortened or moved into prose. `README.md` is only
+  partly hard-wrapped — 72 of its 288 lines still exceed 88 columns — so the rule is
+  applied where a line carries an instruction, not file-wide. (UX-006, UX-014)
+- The pytest fixture examples in `README.md` §2.1, `HT-01.1`, and `getting-started.md`
+  now say that `run_my_agent` is a stand-in for the reader's own agent, with nothing
+  shipping under that name, and point at `examples/test_echo.py` as the same test with
+  a minimal client in that slot. The fixture door is the one `README.md` calls the main
+  surface, and no page reachable from it resolved that line. (UX-013)
+- `README.md` §1's invocation rule now leads with `uv run mcp-cassette ...` instead of
+  ending on it. The sentence was 267 characters, so in an 80-column terminal it cut
+  immediately before the instruction it exists to deliver. (UX-014)
+- The CLI walkthrough in `getting-started.md` states what `record` writes and how to
+  undo it, and that `serve` writes nothing at all. Both facts were only in `OP-04.2`,
+  which is not where a reader following the walkthrough is. (UX-015)
+- `README.md` §1 names the undo inline in the paragraph warning against
+  `uv add mcp-cassette` in a clone, rather than only under the other install branch's
+  heading two paragraphs earlier. (UX-016)
+- `getting-started.md` carries a paste-able 30-line standard-library MCP server under
+  *No server to record against yet?*, so the walkthroughs run in a reader's own project and
+  not only in a clone. The wheel ships `src/mcp_cassette` alone, so `examples/` never
+  reaches anyone who installs from PyPI, yet every runnable recipe in the guide resolved to
+  `examples/...` — leaving a reader who followed the documented `uv add --dev mcp-cassette`
+  with no path to a first success. `README.md` §2.1 and §2.3, `HT-01.1`, and `OP-01.4` now
+  say `examples/` is in the repo rather than the package, and point at the paste-able
+  server.
+- `README.md`'s two pointers to the CLI walkthrough name the target file in the link text
+  (`docs/guide/getting-started.md`) instead of only inside the URL. The link text read "the
+  CLI walkthrough" and the filename lived past column 80, so a narrow-terminal reader saw
+  14 candidates under `docs/guide/` and no way to choose. (UX-017)
+- `examples/README.md`'s by-hand CLI section states what `record` writes and how to undo
+  it, and that `inspect` and `serve` write nothing, before the commands. `README.md` §2.3
+  offers that file as an equal alternative to the `getting-started.md` walkthrough, which
+  had gained the same statement in UX-015 while this one had not. (UX-018)
+- `HT-03.5.1` states what the `use_cassette` block writes on a recording run versus a
+  replaying run, and how to reset it. The write was documented; the undo appeared only for
+  the pytest-fixture door, in `examples/README.md`. (UX-019)
+
 ## [0.3.8] - 2026-08-30
 
 Two `cli` output corrections. Each made a command's output state something the

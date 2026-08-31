@@ -53,6 +53,28 @@ mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp --por
 wrapped server. Nothing is captured unless a client drives it. The real server's stderr
 is forwarded to yours, never swallowed.
 
+**What `record` writes, and how to undo it.**
+
+| Situation | Writes | Undo |
+|---|---|---|
+| `--cassette` path does not exist | the cassette, plus a `<cassette>.partial` sidecar while the session runs | delete the two files |
+| `--cassette` path already exists | replaces the cassette wholesale at session end | **none — copy the file first** |
+
+The overwrite has no undo because the recording unit is the whole session: there is no partial
+update to roll back to. `record` says so on stderr before it starts, while you can still act on
+it:
+
+```
+mcp-cassette record: demo.json already exists and will be replaced when this session ends; copy it first to keep it
+```
+
+The warning is advisory: the recording proceeds. Copy the file first, or record to a new
+path and `diff` the two, if the existing cassette still matters. Interrupting does not
+save you — `Ctrl+C` and `SIGTERM` both finalize the session before exiting, which is the
+same overwrite. The one session that leaves the old file untouched is one that captured
+zero messages, because that writes no file at all. The `<cassette>.partial` checkpoint
+sidecar is replaced the same way, throughout the run.
+
 ## OP-04.3 `serve`
 
 Stands up a replay server. The transport is inferred from the cassette.
@@ -92,10 +114,23 @@ also prints the recorded server host and exchange count.
 | `--grep PATTERN` | Python regex matched against each message payload. Composes with `--method` (both must match). Invalid regex exits `2`. |
 | `--timeline` | One line per message: `seq`, `t_offset_ms`, direction, kind, method, id, payload bytes. HTTP cassettes add `exch` and `chan`. |
 | `--tools` | One line per recorded tool, deduplicated by name (last seen wins). |
-
-`--timeline` and `--tools` each replace the whole text report, so they are mutually exclusive: passing both is a usage error (exit `2`) rather than a silently dropped view.
 | `--format text\|json` | `json` emits one deterministic, byte-stable document; add `--timeline` to include the rows. |
 | `--faults PATH` | Dry-run an overlay: print which recorded requests it hits, and `WARNING` for faults that match nothing. |
+
+`--timeline` and `--tools` each replace the whole text report, so they are mutually exclusive: passing both is a usage error (exit `2`) rather than a silently dropped view.
+
+**Broken recordings announce themselves.** When the cassette holds client requests the
+server never answered, the summary ends with an extra line, and the JSON document carries
+the same number as `unanswered_requests`:
+
+```
+unanswered requests: 1 (the server never responded to these; replay exits 3 on one of them)
+```
+
+That is the signal a recording *failed* rather than merely being short — a session against
+a server that never launched still captures the opening `initialize` request, so a
+non-zero `messages` count alone cannot tell the two apart. The count is always taken over
+the whole cassette, never the `--method`/`--grep` subset, so filtering cannot invent one.
 
 ```
 mcp-cassette inspect demo.json

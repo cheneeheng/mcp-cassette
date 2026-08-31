@@ -7,6 +7,11 @@ Symptom to fix, for test authors. Operators should also see the
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `mcp-cassette: command not found` (exit `127`) | The console script is installed inside the virtualenv, never on `PATH`. | Run it as `uv run mcp-cassette ...`, or activate the venv first. |
+| `error: Requirement name 'mcp-cassette' matches project name` (exit `2`) | You ran `uv add mcp-cassette` inside a clone of this repo, where it is a self-dependency. | In a clone the install is `uv sync`. `uv add --dev` is for adding it to *your own* project. See [OP-01.2](operations/OP-01-install.md#op-012-install-the-package). |
+| `<path> is not a cassette: expected JSON, but parsing failed at ...` | `serve`, `inspect`, `diff`, or `lint` was pointed at a file that is not a cassette. | Check the path. A cassette is the JSON file written by `mcp-cassette record --cassette PATH`. |
+| `[Errno 2] No such file or directory: '<path>'` (exit `2`) | The cassette does not exist yet — nothing has recorded it, or the path is wrong. | Record it first: `mcp-cassette record --cassette <path> -- <your server>`. Under the pytest fixture, default `once` mode records it on the first run. |
+| `inspect` prints `unanswered requests: N` | The recorded server never answered N client requests — usually because it failed to launch. This is a failed recording, not a short one. | Re-record. `record` returns the wrapped server's own exit code, so check it; the server's stderr is forwarded to yours and names the real cause. |
 | `fixture 'mcp_cassette' not found` | The package is not installed in the environment pytest runs in. | Install it there; verify with `uv run pytest --fixtures -q \| grep mcp_cassette` (PowerShell: `\| Select-String mcp_cassette`). |
 | `no cassette at <path> and recording is forbidden (mode=none)` | `MCP_CASSETTE_MODE=none` and no cassette exists. | Record one locally with `once` mode and commit it. |
 | `recording captured zero messages — agent never spoke to the proxied server` | The command from `server_command()` never reached the agent. | Print `cmd` and confirm the agent launches exactly that list. |
@@ -18,7 +23,7 @@ Symptom to fix, for test authors. Operators should also see the
 | `faults apply to replay only; with_faults cannot run under a recording mode` | `with_faults()` while the mode resolves to record (no cassette yet, or `MCP_CASSETTE_MODE=all`). | Record the cassette first, then run the fault test in replay. |
 | A fault seems to do nothing | Faults fire only *after* a request matches; the target method may not be in the cassette. | `mcp-cassette inspect <cassette> --faults <overlay>` — inert faults print a `WARNING`. |
 | `cassette format_version N is newer than supported M` | The cassette was written by a newer mcp-cassette. | Upgrade the package. |
-| `ImportError` mentioning `httpx` or `h11` when calling `server_url()` | The `[http]` extra is not installed. | `uv add "mcp-cassette[http]"`. |
+| `ImportError` mentioning `httpx` or `h11` when calling `server_url()` | The `[http]` extra is not installed. | `uv add --dev "mcp-cassette[http]"` in your own project; `uv sync` in a clone of this repo. |
 | HTTP replay answers `404` | The client is not echoing the `Mcp-Session-Id` header from the `initialize` response. | Capture that header and send it on every later request. |
 | `MCP_CASSETTE_MODE=all` turns tests red | Faults are replay-only and determinism assertions cannot hold while recording. | Refresh per file: delete the cassette and run in default `once` mode. |
 | A recording never ends | `record` finishes on client EOF or a signal, and nothing closed the stream. | Close the client's stdin, interrupt it, or pass `--max-idle SECONDS`. |
