@@ -44,11 +44,15 @@ uv sync                                # installs this checkout plus its dev gro
 Do **not** run `uv add mcp-cassette` inside the clone — uv rejects it as a
 self-dependency and exits `2` (`self-dependencies are not permitted`), and the `--dev`
 form silently rebuilds the checkout as its own dependency instead of doing what you
-meant.
+meant. If you ran the `--dev` form here by mistake, `uv remove --dev mcp-cassette`
+puts it back; `git diff pyproject.toml` is empty afterwards.
 
 Python ≥ 3.12. Linux, macOS, and Windows supported. The core install depends only on `anyio` and `pydantic`; the `[http]` extra adds `httpx` and `h11`.
 
-Either way the CLI lands inside a virtualenv and is *not* placed on `PATH`, so run it as **`uv run mcp-cassette ...`** (or activate the venv first). The `mcp-cassette ...` listings below drop the prefix for brevity; the step-by-step walkthroughs in the guide keep it.
+Run the CLI as **`uv run mcp-cassette ...`** (or activate the venv first) — either
+way it lands inside a virtualenv and is *not* placed on `PATH`, so a bare
+`mcp-cassette` is `command not found`. The `mcp-cassette ...` listings below drop the
+prefix for brevity; the step-by-step walkthroughs in the guide keep it.
 
 Full chapter: [OP-01. Installation](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-01-install.md).
 
@@ -66,6 +70,12 @@ def test_agent_summarizes_repo(mcp_cassette):
 ```
 
 First run records through the recording proxy; every run after replays offline, deterministic and fast. The fixture never monkeypatches your agent — it hands you a *command list* to plug into the agent's MCP server configuration.
+
+`run_my_agent` is a stand-in for *your* agent — there is nothing to install for it. If you
+have no agent yet and want to run this door now,
+[`examples/test_echo.py`](https://github.com/cheneeheng/mcp-cassette/blob/main/examples/test_echo.py)
+is the same test with a minimal client in that slot, runnable from a clone with
+`uv run pytest examples/test_echo.py`.
 
 For a remote server, `server_url` is the drop-in twin (needs the `[http]` extra):
 

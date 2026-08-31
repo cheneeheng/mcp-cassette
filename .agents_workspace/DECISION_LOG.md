@@ -1151,3 +1151,61 @@ isolation and passes on stashed changes).
 **Outcome:** Also caught and reverted an unintended CRLF conversion: Python's `write_text`
 newline translation on Windows rewrote six doc files' line endings, turning small diffs into
 whole-file rewrites. Normalized back to LF before the re-audit.
+
+### Entry 48
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-31T00:00:00Z
+**Task:** UX audit run-004 — revise the M1 action budget before re-walking
+
+**Context:** Run-003 scored gate criterion 5 FAIL on a single overrun: Blank Slate spent 5 actions
+against an M1 budget of 4, and the overrun had no finding behind it (the walker named no missing
+knowledge — it was two orientation `ls` calls). The skill treats an overrun with no finding as a
+criterion-5 failure by construction, so the budget itself was the defect. Run-003's own "Next
+iteration" recorded this and said to fix the instrument before run-004, not during it. The M1
+budget of 4 had never been derived from anything statable.
+
+**Decision:** M1 budget raised 4 -> 5, derived per the skill's stated fallback ("count the steps
+the documentation itself prescribes"): read the install section (1), choose between its two
+explicit branches (1) — `README.md` L20 says "Pick the one you are actually in" — `uv sync` (1),
+`uv run mcp-cassette --help` (1), plus **one entry-orientation action, M1 only**, because a
+newcomer standing in a bare checkout must look at the directory before any document can address
+them and no product change can remove that step. M2 (6) and M3 (5) are left unchanged: nothing
+indicated they were mis-set, and re-deriving every budget at once would make run-004
+non-comparable to run-003 on every axis.
+
+**Impact / Risk:** The revision retroactively makes run-003's Blank Slate result in-budget, which
+is exactly the shape the skill warns against ("a budget revised upward to fit the result measures
+nothing"). Mitigated by: the derivation is stated and holds independently of run-003's outcome;
+it was declared before dispatch, so for run-004 it is a prediction; and it is disclosed in the
+run-004 report rather than presented as unchanged. It remains the weakest point of the run.
+
+**Outcome:** Declared to all six walkers before their first action.
+
+### Entry 49
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-31T00:00:00Z
+**Task:** UX audit run-004 — add a sixth, door-constrained coverage walk
+
+**Context:** Across runs 001-003, all eleven door choices went to the CLI. The pytest fixture —
+which `README.md` §2.1 calls "the main surface" — and the `use_cassette` door have never been
+walked, and run-003 listed that as the top item under "Not covered" ("unwalked is not passing").
+A fourth free-choice run would have re-measured the door choice, which is already established,
+and left the main surface unwalked for a fourth time.
+
+**Decision:** Run the five personas free-choice as before (that is the comparable re-walk, and it
+is what verifies the run-003 fixes), and add one sixth walker: Blank Slate persona, constrained to
+the pytest-fixture door and forbidden to fall back to the CLI or `use_cassette`. Its findings are
+ranked normally, since a walker genuinely stalled; the run is reported as five personas plus one
+coverage walk, with the protocol deviation named.
+
+**Impact / Risk:** Deviates from the skill's one-agent-per-persona dispatch. The fixture door's
+documented example calls `run_my_agent(...)`, a stand-in the walker does not have, so a stall is
+plausible — that is the point of running it. Risk is that a constrained walk measures the
+constraint rather than the product; addressed by keeping its result separate from the five
+free-choice persona results rather than pooling them.
+
+**Outcome:** Dispatched with the other five.

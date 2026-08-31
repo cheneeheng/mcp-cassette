@@ -34,6 +34,11 @@ record modes, re-recording, matching, and what failure looks like.
    `cmd` is a plain `list[str]`. The agent is never patched — it launches whatever you
    give it.
 
+   `run_my_agent` is a stand-in for *your* agent; nothing ships under that name. To run
+   this door before you have an agent, [`examples/test_echo.py`](../../../examples/test_echo.py)
+   is this same test with a minimal client in that slot — `uv run pytest
+   examples/test_echo.py` from a clone.
+
 2. Run the test. No cassette exists, so this records.
 
    ```

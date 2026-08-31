@@ -96,6 +96,11 @@ server command goes. Nothing about your agent changes — it is never patched.
 
    `cmd` is a plain `list[str]`. Nothing else changes.
 
+   `run_my_agent` is a stand-in for *your* agent — nothing ships under that name. If you
+   do not have one to hand yet, [`examples/test_echo.py`](../../examples/test_echo.py) is
+   this same test with a minimal client in that slot, runnable from a clone with `uv run
+   pytest examples/test_echo.py`.
+
 2. Run the test. The default mode is `once`: no cassette exists yet, so this run launches
    the recording proxy in front of the real server and captures every JSON-RPC message in
    both directions — the whole session, from server launch to shutdown, not just the
@@ -211,6 +216,13 @@ There is no mode here: you choose by picking the subcommand. `record` is a trans
 proxy that forwards its own stdin to the wrapped server, and `serve` answers from the
 cassette — both need a client to drive them, so the examples below pipe raw JSON-RPC in
 to stand in for your agent.
+
+What the two commands write, before you run them: `record` writes the cassette path you
+name (plus a `<cassette>.partial` sidecar while it runs, removed on a clean finish) and
+nothing else — to undo it, delete that file. If the cassette already exists, `record`
+says so and names the replacement *before* it touches anything, so you can copy the old
+one first. `serve` writes nothing at all: it only reads the cassette and answers on
+stdout. Full table in [OP-04.2](operations/OP-04-cli-reference.md#op-042-record).
 
 1. Record, wrapping the real server command after `--`. This runs from a clone against
    the bundled echo server:

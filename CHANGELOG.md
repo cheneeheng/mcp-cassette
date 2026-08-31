@@ -59,8 +59,23 @@ API changes; `inspect --format json` gains one key.
   itself, not a failed removal. Verified — `git diff pyproject.toml` after the round trip
   is empty. (UX-011)
 - Table cells that carried meaning past column 80 in `README.md` and
-  `docs/guide/index.md` were shortened or moved into prose, and `README.md`'s prose is
-  hard-wrapped to 88 columns like the rest of the guide. (UX-006)
+  `docs/guide/index.md` were shortened or moved into prose. `README.md` is only
+  partly hard-wrapped — 72 of its 288 lines still exceed 88 columns — so the rule is
+  applied where a line carries an instruction, not file-wide. (UX-006, UX-014)
+- The pytest fixture examples in `README.md` §2.1, `HT-01.1`, and `getting-started.md`
+  now say that `run_my_agent` is a stand-in for the reader's own agent, with nothing
+  shipping under that name, and point at `examples/test_echo.py` as the same test with
+  a minimal client in that slot. The fixture door is the one `README.md` calls the main
+  surface, and no page reachable from it resolved that line. (UX-013)
+- `README.md` §1's invocation rule now leads with `uv run mcp-cassette ...` instead of
+  ending on it. The sentence was 267 characters, so in an 80-column terminal it cut
+  immediately before the instruction it exists to deliver. (UX-014)
+- The CLI walkthrough in `getting-started.md` states what `record` writes and how to
+  undo it, and that `serve` writes nothing at all. Both facts were only in `OP-04.2`,
+  which is not where a reader following the walkthrough is. (UX-015)
+- `README.md` §1 names the undo inline in the paragraph warning against
+  `uv add mcp-cassette` in a clone, rather than only under the other install branch's
+  heading two paragraphs earlier. (UX-016)
 
 ## [0.3.8] - 2026-08-30
 
