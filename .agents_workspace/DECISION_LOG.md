@@ -1267,3 +1267,29 @@ write failed, which is one more hop between the observation and the record. Miti
 the returned text verbatim, unedited.
 
 **Outcome:** Applied to all seven run-005 walkers.
+
+### Entry 52
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-31T00:00:00Z
+**Task:** Land `chore/ux-audit-run` — resolving the audit-evidence tracking question
+
+**Context:** The `[Unreleased]` changelog entry cites
+`.agents_workspace/ux-audits/mcp-cassette/` as the evidence trail for every UX finding it
+closes, but that directory is untracked while commit `2b952ed` states the evidence is
+deliberately not committed. `.agents_workspace/planning/` is tracked, so the citation reads
+as an in-repo path that does not resolve. Three consistent resolutions existed: gitignore
+the directory and drop the citation, commit its 36 files, or leave both as they are.
+
+**Decision:** The user chose to keep the citation and to leave the directory untracked
+*without* a `.gitignore` entry. Audit evidence therefore stays local to the machine that
+produced it, and the changelog path is an internal pointer rather than a repo path — unlike
+the `.agents_workspace/planning/` references beside it, which do resolve. No `.gitignore`
+rule was added, so the directory keeps appearing in `git status` as untracked.
+
+**Impact / Risk:** A future session will see the same untracked directory and the same
+unresolved-looking citation, and must not "fix" either by committing the evidence or by
+ignoring it. `git status` is permanently non-empty on any checkout holding an audit run.
+
+**Outcome:** Nothing under `.agents_workspace/ux-audits/` was staged, ignored, or removed.
