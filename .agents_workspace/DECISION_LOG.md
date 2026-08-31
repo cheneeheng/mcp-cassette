@@ -1209,3 +1209,61 @@ constraint rather than the product; addressed by keeping its result separate fro
 free-choice persona results rather than pooling them.
 
 **Outcome:** Dispatched with the other five.
+
+### Entry 50
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-31T09:00:00Z
+**Task:** UX audit run-005 — close the PyPI consumer gap before walking it, not after
+
+**Context:** The user asked to fix every outstanding finding in one pass and then re-run the
+audit once, as the last audit. Every finding from runs 001-004 (UX-001 through UX-016) was
+already fixed and committed at `ad2ee18` — verified against the working tree, not taken on the
+reports' word. So "fix the findings" left nothing to do, while run-004's own "Not covered"
+section named the gap that would predictably produce the next Blocker: the PyPI consumer path.
+`pyproject.toml` ships `packages = ["src/mcp_cassette"]`, so `examples/` is not in the wheel,
+yet every runnable recipe in the guide resolves to `examples/...`. A reader who ran the
+documented `uv add --dev mcp-cassette` had no path to a first success at all.
+
+**Decision:** Close that gap before dispatching run-005 rather than discovering it in the walk
+and needing a run-006. Added a 30-line standard-library MCP server, paste-able, to
+`getting-started.md` under "No server to record against yet?", and pointed the four places that
+dead-end a consumer at it (`README.md` §2.1/§2.3, `getting-started.md` install + fixture +
+library sections, `HT-01`, `OP-01.4`). Docs only, 85 insertions, no source or packaging change.
+Rejected shipping the echo server inside the wheel: it would add non-library surface to a
+package whose whole discipline is a minimal footprint.
+
+**Impact / Risk:** This is scope beyond the literal request ("fix the findings"), taken because
+the request's actual goal was a single terminal audit. The risk is the opposite of the usual one
+— fixing a gap *before* it is walked means the fix is validated by the walk that follows rather
+than reasoned, which is stronger, but it also means run-005 cannot report the pre-fix state as
+observed. Recorded here so the report can state it plainly rather than implying the consumer path
+was always sound. The snippet was proven by execution before it was written into the docs:
+recorded `hello [2be3df6e]` against it in a scratch consumer project holding only a
+`pyproject.toml`, then replayed the identical token offline.
+
+**Outcome:** Dispatched to run-005's consumer-path coverage walker for cold verification.
+
+### Entry 51
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-08-31T09:05:00Z
+**Task:** UX audit run-005 — walker transcripts returned in-message, not written by the walker
+
+**Context:** In runs 003 and 004, three walkers plus the coordinator hit `bash` heredoc parse
+failures while writing their own transcripts. That is instrument overhead in the audit harness,
+unrelated to the product, but it burns walker turns — and a run that ends because a walker
+exhausted its turns is not a result at all under the skill's own rule.
+
+**Decision:** Require each walker to return its full transcript in its final message, and to
+attempt the file write as a best-effort secondary with a quoted heredoc delimiter. The
+coordinator persists any transcript the walker could not write. Evidence is preserved either
+way; no walker spends turns fighting the harness.
+
+**Impact / Risk:** The transcript is now relayed through the coordinator for any walker whose
+write failed, which is one more hop between the observation and the record. Mitigated by writing
+the returned text verbatim, unedited.
+
+**Outcome:** Applied to all seven run-005 walkers.

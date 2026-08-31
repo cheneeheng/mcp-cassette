@@ -90,6 +90,20 @@ If the `with` body raises, the session is closed — no thread or socket leaks �
 exception propagates untouched. Report checks are skipped deliberately: a replay miss is
 usually a consequence of the real failure, and chaining it on top buries the cause.
 
+## HT-03.5.1 What the block writes, and how to undo it
+
+| When | Writes | Undo |
+|---|---|---|
+| the run that records (`once` with no cassette yet, or `all`) | the cassette path you passed to `use_cassette(...)`, plus a `<cassette>.partial` sidecar while the session runs, removed on a clean finish | delete the cassette file |
+| every run that replays | nothing — replay only reads the cassette | nothing to undo |
+
+Nothing else on disk changes: the session report goes to a temp directory that is removed
+on exit (HT-03.6), and faults never touch the recording (HT-03.7).
+
+To re-record, delete the cassette and run again — `once` records whenever the file is
+absent, so deleting it is the whole reset. Copy it first if you might want the old one
+back; nothing keeps a previous version for you.
+
 ## HT-03.6 The report sidecar goes to a temp directory
 
 Unlike the fixture (which passes pytest's `tmp_path`), `use_cassette` creates a

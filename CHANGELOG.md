@@ -24,6 +24,14 @@ API changes; `inspect --format json` gains one key.
 - `record`: warns on stderr when `--cassette` already exists, before the session starts
   — the finished session replaces the file wholesale and there is no undo. Advisory
   only; the recording proceeds. (UX-008)
+- `record`: warns on stderr when the session captured zero messages, naming the cassette
+  that was **not** written and why. The command returns the wrapped server's exit code, so
+  a server that starts and stops cleanly returns `0` — a mis-wired first run was
+  indistinguishable from a successful one, on stdout, on stderr, and in the exit code
+  alike. Not writing the file is unchanged and deliberate: an empty cassette would resolve
+  `once` to replay, so such a run could never re-record itself. The exit code is also
+  unchanged. The pytest fixture already raised `CassetteError` here; the CLI was the one
+  door with no signal. (UX-020)
 
 ### Changed
 
@@ -76,6 +84,25 @@ API changes; `inspect --format json` gains one key.
 - `README.md` §1 names the undo inline in the paragraph warning against
   `uv add mcp-cassette` in a clone, rather than only under the other install branch's
   heading two paragraphs earlier. (UX-016)
+- `getting-started.md` carries a paste-able 30-line standard-library MCP server under
+  *No server to record against yet?*, so the walkthroughs run in a reader's own project and
+  not only in a clone. The wheel ships `src/mcp_cassette` alone, so `examples/` never
+  reaches anyone who installs from PyPI, yet every runnable recipe in the guide resolved to
+  `examples/...` — leaving a reader who followed the documented `uv add --dev mcp-cassette`
+  with no path to a first success. `README.md` §2.1 and §2.3, `HT-01.1`, and `OP-01.4` now
+  say `examples/` is in the repo rather than the package, and point at the paste-able
+  server.
+- `README.md`'s two pointers to the CLI walkthrough name the target file in the link text
+  (`docs/guide/getting-started.md`) instead of only inside the URL. The link text read "the
+  CLI walkthrough" and the filename lived past column 80, so a narrow-terminal reader saw
+  14 candidates under `docs/guide/` and no way to choose. (UX-017)
+- `examples/README.md`'s by-hand CLI section states what `record` writes and how to undo
+  it, and that `inspect` and `serve` write nothing, before the commands. `README.md` §2.3
+  offers that file as an equal alternative to the `getting-started.md` walkthrough, which
+  had gained the same statement in UX-015 while this one had not. (UX-018)
+- `HT-03.5.1` states what the `use_cassette` block writes on a recording run versus a
+  replaying run, and how to reset it. The write was documented; the undo appeared only for
+  the pytest-fixture door, in `examples/README.md`. (UX-019)
 
 ## [0.3.8] - 2026-08-30
 

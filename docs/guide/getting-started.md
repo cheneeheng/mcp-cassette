@@ -16,6 +16,62 @@ Everyone needs:
 Recording contacts the real server, so you also need whatever that server needs —
 credentials, network access — but only on the first run.
 
+### No server to record against yet?
+
+The walkthroughs below name `examples/echo_server.py`, which exists **only in a clone
+of this repo** — installing from PyPI does not bring `examples/` with it. If you
+installed into your own project and want a real server to record right now, save this
+as `echo_server.py` next to your `pyproject.toml`. It is an MCP server in 30 lines of
+standard library, no `mcp` SDK, and it is enough to complete every step on this page:
+
+```python
+import json
+import secrets
+import sys
+
+
+def handle(request):
+    method = request.get("method")
+    msg_id = request.get("id")
+    if method == "initialize":
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "echo-example", "version": "1.0.0"}}}
+    if method == "notifications/initialized":
+        return None
+    if method == "tools/call":
+        params = request.get("params") or {}
+        args = params.get("arguments") or {}
+        if params.get("name") == "add":
+            text = str(int(args.get("a", 0)) + int(args.get("b", 0)))
+        else:
+            text = f"{args.get('text', '')} [{secrets.token_hex(4)}]"
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {
+            "content": [{"type": "text", "text": text}], "isError": False}}
+    return {"jsonrpc": "2.0", "id": msg_id,
+            "error": {"code": -32601, "message": f"method not found: {method}"}}
+
+
+for line in sys.stdin:
+    if line.strip():
+        response = handle(json.loads(line))
+        if response is not None:
+            sys.stdout.write(json.dumps(response) + "\n")
+            sys.stdout.flush()
+```
+
+It writes nothing and opens no socket — it reads JSON-RPC lines on stdin and answers on
+stdout, which is the whole transport mcp-cassette records. Two tools: `add` returns a
+sum, and anything else echoes your text with a **fresh random token per call**. That
+token is what makes replay visible: the real server mints a new one every time, and the
+cassette returns the recorded one forever.
+
+Wherever a command below says `python examples/echo_server.py`, use `python
+echo_server.py` instead. The CLI walkthrough is the one to follow — it drives the
+session with a shell pipe, so it needs no client of your own. The fixture and
+`use_cassette` doors put *your* agent where that pipe is.
+
 Per door, one thing more:
 
 | Door | Also needs |
@@ -43,6 +99,10 @@ pip install mcp-cassette
 
 This writes `pyproject.toml` and `uv.lock` and installs into `.venv/`. To undo it:
 `uv remove --dev mcp-cassette`.
+
+This install brings the library and the CLI, and nothing else — `examples/` is not part
+of the package. To follow the walkthroughs below without cloning, paste the 30-line
+server from [No server to record against yet?](#no-server-to-record-against-yet).
 
 **Standing in a clone of the mcp-cassette repo** — which is what the CLI walkthrough
 below and everything under `examples/` assume, because they run the bundled echo server:
@@ -99,7 +159,9 @@ server command goes. Nothing about your agent changes — it is never patched.
    `run_my_agent` is a stand-in for *your* agent — nothing ships under that name. If you
    do not have one to hand yet, [`examples/test_echo.py`](../../examples/test_echo.py) is
    this same test with a minimal client in that slot, runnable from a clone with `uv run
-   pytest examples/test_echo.py`.
+   pytest examples/test_echo.py`. That file is in the repo, not in the package, so from
+   your own project take [First run with the CLI](#first-run-with-the-cli) instead — it
+   proves the same record-then-replay loop with a shell pipe in the agent's place.
 
 2. Run the test. The default mode is `once`: no cassette exists yet, so this run launches
    the recording proxy in front of the real server and captures every JSON-RPC message in
@@ -182,7 +244,8 @@ Full treatment — cassette paths, markers, re-recording — is in
 **Verify:** `cassettes/github.mcp.json` exists after step 2, and step 3 completes with the
 real server stopped.
 
-A runnable version ships with the repo, driving the bundled echo server. Run it twice:
+A runnable version ships with the repo — in the repo, not in the package, so this needs a
+clone. Driving the bundled echo server, run it twice:
 
 ```
 uv run python examples/library_mode.py
@@ -225,7 +288,8 @@ one first. `serve` writes nothing at all: it only reads the cassette and answers
 stdout. Full table in [OP-04.2](operations/OP-04-cli-reference.md#op-042-record).
 
 1. Record, wrapping the real server command after `--`. This runs from a clone against
-   the bundled echo server:
+   the bundled echo server; if you pasted the server into your own project instead, drop
+   the `examples/` and use `-- python echo_server.py`:
 
    ```bash
    printf '%s\n' \

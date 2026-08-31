@@ -161,6 +161,11 @@ the interpreter pytest reports in its header.
   test environment.
 - pytest plugin `mcp_cassette` (fixture, marker, and two ini options).
 
+What it does **not** install is `examples/` — the sample servers, clients, and cassettes
+live in the repo, not in the wheel. Recipes naming `examples/...` need a clone; from your
+own project, [Getting started](../getting-started.md#no-server-to-record-against-yet)
+carries a paste-able 30-line server that stands in for them.
+
 ## OP-01.5 Next
 
 - [OP-02. Configuration](OP-02-configure.md) — modes, ini options, matching.

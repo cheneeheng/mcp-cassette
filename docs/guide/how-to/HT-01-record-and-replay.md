@@ -37,7 +37,10 @@ record modes, re-recording, matching, and what failure looks like.
    `run_my_agent` is a stand-in for *your* agent; nothing ships under that name. To run
    this door before you have an agent, [`examples/test_echo.py`](../../../examples/test_echo.py)
    is this same test with a minimal client in that slot — `uv run pytest
-   examples/test_echo.py` from a clone.
+   examples/test_echo.py` from a clone. `examples/` is in the repo, not in the package,
+   so from your own project use the
+   [CLI walkthrough](../getting-started.md#first-run-with-the-cli) instead: it proves the
+   same loop against a [paste-able server](../getting-started.md#no-server-to-record-against-yet).
 
 2. Run the test. No cassette exists, so this records.
 

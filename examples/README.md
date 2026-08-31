@@ -114,6 +114,14 @@ mcp-cassette ...` — the CLI lives in the project virtualenv, not on `PATH`, an
 `mcp-cassette` either fails with `command not found` or silently picks up a *different*
 mcp-cassette that happens to be on your `PATH`.
 
+**What these write, before you run them.** `record` writes the `--cassette` path you name
+(here `demo.mcp.json`) and a `<cassette>.partial` sidecar while it runs, removed on a clean
+finish — *undo:* delete that file. If the cassette already exists, `record` warns and names
+the replacement *before* touching it, so you can copy the old one first. `inspect` and
+`serve` write nothing at all; they only read. Nothing here touches the repo's committed
+cassettes under `cassettes/` unless you name one explicitly. Full table in
+[OP-04.2](../docs/guide/operations/OP-04-cli-reference.md#op-042-record).
+
 ```bash
 # record a live session — pipe requests in so there is actually traffic to capture
 printf '%s\n' \

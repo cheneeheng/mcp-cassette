@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import signal
+import sys
 from collections.abc import Callable
 from typing import NoReturn
 
@@ -234,6 +235,21 @@ class StdioRecordingProxy:
         cassette = self._snapshot()
         if cassette is not None:
             cassette.save(self.cassette_path)
+        else:
+            # Say it, or the CLI's most common first-run mistake is invisible:
+            # `record` returns the wrapped server's exit code, and a server that
+            # started and stopped cleanly returns 0, so a session nothing ever drove
+            # looks exactly like a successful one — right down to the absent file the
+            # user is not looking for yet. The fixture door already fails loudly here
+            # (`session.py` raises on an empty recording); this is the same fact on
+            # the door that has no test to fail.
+            sys.stderr.write(
+                "mcp-cassette record: captured zero messages, so no cassette was "
+                f"written to {self.cassette_path}. Nothing drove the proxy: its "
+                "stdin is the client's, so point your agent at this command, or "
+                "pipe JSON-RPC lines into it.\n"
+            )
+            sys.stderr.flush()
         checkpoint.discard(self.cassette_path)
         if self.report_path is not None:
             _write_report(self.report_path, {"messages": self._recorder.message_count})

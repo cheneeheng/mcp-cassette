@@ -75,7 +75,10 @@ First run records through the recording proxy; every run after replays offline, 
 have no agent yet and want to run this door now,
 [`examples/test_echo.py`](https://github.com/cheneeheng/mcp-cassette/blob/main/examples/test_echo.py)
 is the same test with a minimal client in that slot, runnable from a clone with
-`uv run pytest examples/test_echo.py`.
+`uv run pytest examples/test_echo.py`. `examples/` ships in the repo, not in the
+package — from your own project, the
+[CLI walkthrough in `docs/guide/getting-started.md`](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/getting-started.md#first-run-with-the-cli)
+proves the same loop with a paste-able server and no agent of your own.
 
 For a remote server, `server_url` is the drop-in twin (needs the `[http]` extra):
 
@@ -104,7 +107,7 @@ with use_cassette("cassettes/search.mcp.json", mode="once") as session:
 #               CassetteError raised on an empty recording or any replay miss
 ```
 
-The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable.
+The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable from a clone.
 
 Full chapter: [HT-03. Use it as a library](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-03-use-as-a-library.md).
 
@@ -112,10 +115,11 @@ Full chapter: [HT-03. Use it as a library](https://github.com/cheneeheng/mcp-cas
 
 The listing below is a **map of the surface, not a runnable recipe** —
 `tools/server.py` is a stand-in for your own server, and `record` captures nothing
-unless a client drives it. For commands you can paste as-is against the bundled
-echo server, use
-[the CLI walkthrough](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/getting-started.md#first-run-with-the-cli)
-or [`examples/README.md`](https://github.com/cheneeheng/mcp-cassette/blob/main/examples/README.md).
+unless a client drives it. For commands you can paste as-is, use
+[the CLI walkthrough in `docs/guide/getting-started.md`](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/getting-started.md#first-run-with-the-cli)
+— it carries a 30-line paste-able server, so it runs in your own project as well as in
+a clone — or [`examples/README.md`](https://github.com/cheneeheng/mcp-cassette/blob/main/examples/README.md),
+which needs a clone because it drives the bundled echo server.
 
 ```
 mcp-cassette record --cassette demo.json -- python tools/server.py   # wrap a real server
