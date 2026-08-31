@@ -100,7 +100,7 @@ you run it in someone else's checkout:
 Nothing here touches your cassettes, your tests, or your git history.
 
 One thing to expect if you undo the wrong install **inside a clone**: `uv remove --dev
-mcp-cassette` prints `~ mcp-cassette==0.3.8` and leaves the package importable. That is not a
+mcp-cassette` prints `~ mcp-cassette==0.4.0` and leaves the package importable. That is not a
 failed removal. It removed both things `uv add --dev` had written to `pyproject.toml` (the
 `dev` entry and a `[tool.uv.sources]` line) — `git diff pyproject.toml` comes back empty — and
 the line you see is uv reinstalling the *project itself*, which is always present in its own
