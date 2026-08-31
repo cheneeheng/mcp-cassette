@@ -7,6 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `mcp-cassette` is "vcrpy for MCP": record real MCP stdio sessions between an agent and an MCP server into cassettes (structured JSON), then replay them as deterministic mock servers so agent test suites stop hitting live servers. See `README.md` for the user-facing surface, and `docs/guide/` for the task-oriented user
 and operator guide (keep it in sync when flags, modes, error strings, or exit codes change).
 
+The planning artifacts, decision log, and audit evidence under `.agents_workspace/` are a nested
+repository of their own at that path, git-ignored here; a fresh clone of this repo does not contain
+them, so paths cited into that folder resolve only for someone who has it.
+
 ## Commands
 
 Tooling is `uv`. The `mcp` SDK is a dev-only dependency (used by the reference server in tests); it is NOT a runtime dependency and must never become one.

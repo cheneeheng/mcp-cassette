@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-08-31
+
 First-run usability pass. Every usability item closes a finding from a
 cold-walkthrough audit of the install path and the CLI's failure surfaces
 (`.agents_workspace/ux-audits/mcp-cassette/`). No exit code, schema field, or public
@@ -673,7 +675,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.8...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.5...v0.3.6
