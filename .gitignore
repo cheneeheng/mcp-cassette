@@ -28,3 +28,6 @@ examples/library_mode.mcp.json
 
 # Internal module walkthroughs: kept locally, deliberately out of the repo.
 docs/internals/
+
+# Agent workspace: its own nested git repo, deliberately out of this one.
+.agents_workspace/
