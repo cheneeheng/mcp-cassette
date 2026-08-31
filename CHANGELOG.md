@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-First-run usability pass. Every item closes a finding from a cold-walkthrough audit
-of the install path and the CLI's failure surfaces
+First-run usability pass. Every usability item closes a finding from a
+cold-walkthrough audit of the install path and the CLI's failure surfaces
 (`.agents_workspace/ux-audits/mcp-cassette/`). No exit code, schema field, or public
 API changes; `inspect --format json` gains one key.
 
@@ -40,6 +40,14 @@ API changes; `inspect --format json` gains one key.
   `Expecting value: line 1 column 1 (char 0)`. Affects every door that loads a
   cassette (`serve`, `inspect`, `diff`, `lint`, and the library). The exception type
   and the exit code (`2`) are unchanged. (UX-004)
+- `.agents_workspace/` is no longer tracked by this repository; it is a nested repo of
+  its own at the same path. The planning artifacts, decision log, and audit evidence
+  under it record how the library was built, not the library itself, and the two
+  histories were interleaving. Nothing shipped changes — the sdist and wheel already
+  excluded the folder — but a fresh clone no longer contains it, so the
+  `.agents_workspace/...` paths cited from this changelog resolve only for someone who
+  has that repo. This extends to the whole folder the choice already made for
+  `ux-audits/`.
 
 ### Documentation
 
