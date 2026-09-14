@@ -17,7 +17,8 @@ detail section it points at.
 | protocol rewrite | `rewrite_protocol_version=` | `MatchConfig(rewrite_protocol_version=)` | `--rewrite-protocol-version` | [OP-02.4](#op-024-matching) |
 | faults | `with_faults(...)` | `faults=` | `--faults PATH` | [HT-04](../how-to/HT-04-inject-faults.md) |
 | pacing | `pace=`, `pace_scale=`, `pace_cap_ms=` | `pace=PaceConfig(...)` | `--pace`, `--pace-scale`, `--pace-cap-ms` | [HT-05](../how-to/HT-05-replay-timing.md) |
-| redaction | **not available** | **not available** | `--redact`, `--no-default-redactions` | [OP-02.5](#op-025-redaction) |
+| structural redaction rules | **not available** | **not available** | `--redact`, `--no-default-redactions` | [OP-02.5](#op-025-redaction) |
+| redaction packs | `pii_packs=` | `pii_packs=` | `--pii-pack` | [OP-02.5](#op-025-redaction) |
 | checkpoint interval | not available | not available | `--checkpoint-interval` | [OP-02.6](#op-026-checkpointing) |
 
 Two rows are deliberately uneven. `MCP_CASSETTE_MODE` is the only genuinely cross-door
@@ -118,6 +119,7 @@ directory env var would reach exactly one door of three.
 | `ordering` | `per_method` | Match ordering discipline. |
 | `ignore_params` | `[]` | JSON pointers excluded from the match key. |
 | `rewrite_protocol_version` | `False` | Answer `initialize` with the client's requested `protocolVersion` instead of the recorded one. |
+| `pii_packs` | `[]` | Redaction pack files: applied when recording, and used to resolve the manifest's packs when replaying. |
 
 ## OP-02.4 Matching
 
@@ -144,11 +146,23 @@ Three ordering disciplines:
 Always-on default rules (key-globs, case-insensitive, replacement `REDACTED`):
 `*token*`, `*secret*`, `*password*`, `*apikey*`, `*api_key*`, `authorization`.
 
+`-` and `_` are folded together before a key-glob matches, so `*api_key*` also matches
+`X-API-Key`. The bundled `common` redaction pack (free-text PII) is on by default too.
+
 - Add rules: `--redact LOCATOR[=REPLACEMENT]`, repeatable. A locator starting with `/` is
   a JSON pointer; anything else is a key-glob.
-- Turn defaults off: `--no-default-redactions`.
+- Add packs: `--pii-pack PATH`, repeatable; `pii_packs=` from the marker and both library
+  doors.
+- Stamp a profile for `lint --require-redaction`: `--redact-profile NAME`.
+- Turn defaults off (structural rules and the bundled pack): `--no-default-redactions`.
 
-Details and limits: [HT-07. Redact secrets](../how-to/HT-07-redact-secrets.md).
+| Environment variable | Read when | Effect |
+|---|---|---|
+| `MCP_CASSETTE_REDACT_SALT` | only under `record --redact-salt-env` | Keys `hash` pseudonyms. Unset under that flag exits `2`. |
+
+Details and limits: [HT-07. Redact secrets](../how-to/HT-07-redact-secrets.md) for
+structural rules, [HT-10. Redact PII from free text](../how-to/HT-10-redact-pii.md) for
+packs and the salt.
 
 ## OP-02.6 Checkpointing
 

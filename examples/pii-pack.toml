@@ -1,0 +1,35 @@
+# A starter mcp-cassette redaction pack. Copy it, rename the ids, edit the regexes.
+#
+#   mcp-cassette record --cassette demo.mcp.json --pii-pack examples/pii-pack.toml \
+#     --redact-profile team-baseline -- python tools/server.py
+#
+# The bundled "common" pack (email, phone, IP, SSN, IBAN, card, AWS key id, private key,
+# JWT) runs beside this one by default; list only what is specific to your data.
+
+version = 1
+id = "team"
+
+# direction "both" (the default) also scrubs client requests, and replay re-applies it
+# to live requests. The default strategy for a both rule is "hash", which keeps two
+# distinct ids distinguishable so replay still matches the right request.
+[[rules]]
+id = "employee-id"
+label = "EMPLOYEE"
+regex = '\bEMP-\d{6}\b'
+flags = ["i"]
+
+# A server-only rule never touches what the agent sends, so "replace" is safe here.
+[[rules]]
+id = "internal-host"
+label = "HOST"
+regex = '\b[\w.-]+\.(?:internal|corp)\b'
+direction = "server"
+strategy = "replace"
+
+# "mask" keeps the last four characters as human-readable evidence.
+[[rules]]
+id = "account-number"
+label = "ACCOUNT"
+regex = '\bACCT-\d{8,12}\b'
+direction = "server"
+strategy = "mask"

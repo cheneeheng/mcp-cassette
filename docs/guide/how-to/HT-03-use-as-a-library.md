@@ -6,7 +6,8 @@ CLI of your own, or a different test framework.
 
 The pytest fixture and the CLI are two front doors onto the same machinery. `use_cassette`
 is the third: a context manager that hands you a `CassetteSession` with the same modes, the
-same fault matrix, and the same failure semantics.
+same fault matrix, and the same failure semantics. `use_cassette_async` is the fourth, its
+twin for async code ([HT-03.9](#ht-039-async-code-use_cassette_async)).
 
 This chapter is the **reference for that door**. Each task chapter already shows it
 alongside the other two — come here for the details they do not repeat.
@@ -130,14 +131,52 @@ with use_cassette(
 
 ## HT-03.8 Limits worth knowing
 
-- **Nesting is allowed, sharing is not.** Two blocks may be open at once for two
-  different cassettes (two MCP servers in one agent). Two sessions on the *same* cassette
-  path concurrently is unsupported and undetected — it surfaces immediately as a miss.
-- **No async entry point yet.** There is no `use_cassette_async`. The blocking portal
-  works from async callers as long as the block is entered from a thread that is not the
-  event loop.
+- **Nesting is allowed, and sharing is detected.** Two blocks may be open at once for two
+  different cassettes (two MCP servers in one agent). Two sessions *writing* the same
+  cassette path are detected rather than merely documented: the recording session holds a
+  claim, so the second waits under `once` and raises `CassetteError` under `all` or
+  `new_episodes`. Replaying one cassette from many sessions is always safe. See
+  [OP-06](../operations/OP-06-parallel-test-runs.md).
+- **The sync door refuses a running event loop.** Entering `use_cassette` on an event-loop
+  thread raises `RuntimeError` naming `use_cassette_async`, because its blocking portal
+  would deadlock there. From a worker thread it still works.
 
-## HT-03.9 Related
+## HT-03.9 Async code: `use_cassette_async`
+
+```python
+from mcp_cassette import use_cassette_async
+
+async def test_agent_reads_tracker():
+    async with use_cassette_async("cassettes/tracker.mcp.json") as session:
+        url = session.server_url("https://mcp.example.com/mcp")
+        result = await run_my_agent(mcp_servers={"tracker": {"url": url}})
+    assert "triaged" in result
+```
+
+It takes the same arguments as `use_cassette` and resolves modes the same way. What
+differs is where the HTTP server runs:
+
+- **No portal thread.** The sync door runs the server on a background thread. Here
+  `server_url` starts it as a task in the caller's own event loop, so there is no thread
+  hop in either direction, a debugger steps straight into the server, and shutdown joins
+  nothing. A second `server_url` call returns the same URL.
+- **asyncio and trio both work.** Everything underneath is anyio.
+- **Cleanup is shielded from cancellation.** If the task running the block is cancelled,
+  the server still stops and the write claim is still released, so the next run does not
+  find a stale claim. A claim wait uses `anyio.sleep`, never blocking your loop.
+- **Failures read the same.** A clean exit calls `afinalize()` and raises `CassetteError`
+  on an empty recording or a replay miss. A raising body calls `aclose()` and your
+  exception propagates unwrapped.
+- **stdio is unchanged.** `server_command` still returns a command list, for the reason in
+  [HT-03.3](#ht-033-the-one-asymmetry-stated-up-front): a stdio server is a program the
+  client launches. Async does not change that.
+
+`examples/library_mode_async.py` is runnable from a clone.
+
+**Verify:** run the example twice. The first run records, the second replays with the echo
+server stopped.
+
+## HT-03.10 Related
 
 - [HT-01. Record and replay a stdio server](HT-01-record-and-replay.md)
 - [HT-02. Record and replay a remote HTTP server](HT-02-remote-http.md)

@@ -29,16 +29,17 @@ The unit of recording is the **whole session** — every message from server lau
 shutdown, all tool calls included — never an individual tool call. Re-recording therefore
 rewrites the entire cassette file, not one entry inside it.
 
-Three front doors open the same machinery, and the picture above is identical for all
-three:
+Four front doors open the same machinery, and the picture above is identical for all
+four:
 
 | Door | You call | Use it when |
 |---|---|---|
 | pytest fixture | `mcp_cassette.server_command(...)` | your tests are a pytest suite |
 | library | `with use_cassette(...) as session:` | your harness is not pytest |
+| async library | `async with use_cassette_async(...) as session:` | your harness is async code |
 | CLI | `mcp-cassette record` / `serve` | you drive recording by hand |
 
-The library door covers a notebook, a benchmark runner, or another test framework; the CLI
+The library doors cover a notebook, a benchmark runner, or another test framework; the CLI
 door also covers a shell script and an agent configured outside Python.
 
 Under the hood it works at the transport level (newline-delimited JSON-RPC over stdio, or
@@ -63,8 +64,8 @@ The two audiences do not mix:
   core loop through all three doors, record modes, re-recording.
 - **HT-02** [Record and replay a remote HTTP server](how-to/HT-02-remote-http.md) —
   `server_url`, the `[http]` extra.
-- **HT-03** [Use it as a library](how-to/HT-03-use-as-a-library.md) — `use_cassette` for
-  harnesses that are not pytest suites.
+- **HT-03** [Use it as a library](how-to/HT-03-use-as-a-library.md) — `use_cassette` and
+  `use_cassette_async` for harnesses that are not pytest suites.
 - **HT-04** [Inject faults](how-to/HT-04-inject-faults.md) — drive a resilience matrix off
   one recording.
 - **HT-05** [Replay timing](how-to/HT-05-replay-timing.md) — replay recorded latency when
@@ -77,6 +78,10 @@ The two audiences do not mix:
   the bundled rules with project-specific regexes.
 - **HT-09** [Gate a drifting server surface](how-to/HT-09-gate-a-drifting-server.md) — fail
   the build when a third-party tool description or schema moves under you.
+- **HT-10** [Redact PII from free text](how-to/HT-10-redact-pii.md) — redaction packs,
+  strategies, the salt, and replay symmetry.
+- **HT-11** [Detect secrets that got through](how-to/HT-11-detect-secrets.md) — `R005`
+  entropy detection, and why it ships at warning.
 - [Troubleshooting](troubleshooting.md) — symptom to fix.
 
 ## Part II — Operators
@@ -91,6 +96,10 @@ The two audiences do not mix:
   codes.
 - **OP-05** [Runbook: replay misses and failed recordings](operations/OP-05-runbook-replay-misses.md)
   — the two incidents that actually happen.
+- **OP-06** [Parallel test runs](operations/OP-06-parallel-test-runs.md) — what is safe
+  under `pytest -n auto`, the write claim, and exit `6`.
+- **OP-07** [Pre-commit hooks](operations/OP-07-pre-commit.md) — refuse an unclean or
+  unscrubbed cassette before it is committed.
 
 ## Chapter codes
 
@@ -103,3 +112,10 @@ the same chapter.
 Getting started and troubleshooting carry no code. There is exactly one of each, so a
 number would only ever be `01`, and they are the two pages a reader arrives at by name
 rather than by citation.
+
+## Front doors in a chapter
+
+A how-to chapter shows its task through **every applicable front door**. The async door is
+shown where it differs from `use_cassette` and omitted where the two are identical.
+Chapters about CLI-only tasks (`lint`, `diff`, `inspect`) have no library door to show, so
+"applicable" is the standard rather than "all four".
