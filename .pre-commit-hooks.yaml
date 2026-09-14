@@ -1,0 +1,20 @@
+# Hooks this repository publishes for consumers (ITER_06_v4). Not to be confused with
+# .pre-commit-config.yaml, which configures this repository's own hooks and is kept
+# out of the sdist. Both hooks read local files only: no network, no MCP server.
+- id: mcp-cassette-lint
+  name: mcp-cassette lint
+  description: Refuse a cassette with lint findings at or above the fail-on severity.
+  entry: mcp-cassette lint
+  language: python
+  files: \.mcp\.json$
+  pass_filenames: true
+
+- id: mcp-cassette-redaction-check
+  name: mcp-cassette redaction check
+  description: >-
+    Refuse a cassette whose redaction manifest does not name the expected profile.
+    Pass the profile as the hook's only arg, e.g. args: [team-baseline].
+  entry: mcp-cassette lint --require-redaction
+  language: python
+  files: \.mcp\.json$
+  pass_filenames: true

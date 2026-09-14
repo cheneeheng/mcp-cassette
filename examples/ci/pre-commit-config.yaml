@@ -1,0 +1,9 @@
+# Copy into your repository's .pre-commit-config.yaml. Both hooks run on staged
+# *.mcp.json files only and read local files only: no network, no MCP server.
+repos:
+  - repo: https://github.com/cheneeheng/mcp-cassette
+    rev: v0.4.0
+    hooks:
+      - id: mcp-cassette-lint
+      - id: mcp-cassette-redaction-check
+        args: [team-baseline]

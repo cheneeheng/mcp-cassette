@@ -1,0 +1,96 @@
+name: mcp-cassette
+description: >-
+  Lint committed MCP cassettes against their merge-base counterparts and gate on
+  tool-surface drift (rug pulls), injection patterns, secrets, and missing redaction.
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  cassettes:
+    description: Glob of cassettes to check (bash globstar).
+    default: tests/cassettes/**/*.mcp.json
+  checks:
+    description: "lint, diff, or lint,diff."
+    default: lint
+  baseline-ref:
+    description: What R002 and diff compare against. Needs actions/checkout with fetch-depth 0.
+    default: ${{ github.event.pull_request.base.sha }}
+  pattern-packs:
+    description: Pattern pack paths passed to lint, one per line.
+    default: ""
+  require-redaction:
+    description: Redaction profile every cassette's manifest must name.
+    default: ""
+  fail-on:
+    description: Lowest severity that fails, passed to lint --fail-on.
+    default: error
+  version:
+    description: mcp-cassette version to install. Defaults to this action's own tag.
+    default: ""
+
+outputs:
+  findings:
+    description: Number of findings annotated.
+    value: ${{ steps.check.outputs.findings }}
+  report-path:
+    description: Directory holding the JSON lint reports and diff output.
+    value: ${{ steps.check.outputs.report-path }}
+  exit-code:
+    description: "0 clean, 2 usage or missing merge-base, 4 lint failed, 5 surfaces differ."
+    value: ${{ steps.check.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v5
+
+    # Pinned, never latest: a library release must not change a pipeline's verdict
+    # without a change to the repository. An isolated uv tool environment keeps the
+    # install away from the project's own pinned dependencies.
+    - name: Install mcp-cassette
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        version=${VERSION:-${ACTION_REF#v}}
+        if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          echo "::error::mcp-cassette: cannot infer a version from action ref '$ACTION_REF'; use a release tag (uses: ...@v0.4.0) or set the 'version' input"
+          exit 2
+        fi
+        uv tool install "mcp-cassette==$version"
+        uv tool dir --bin >>"$GITHUB_PATH"
+
+    - name: Check cassettes
+      id: check
+      shell: bash
+      env:
+        CASSETTES: ${{ inputs.cassettes }}
+        CHECKS: ${{ inputs.checks }}
+        BASELINE_REF: ${{ inputs.baseline-ref }}
+        PATTERN_PACKS: ${{ inputs.pattern-packs }}
+        REQUIRE_REDACTION: ${{ inputs.require-redaction }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        shopt -s globstar nullglob
+        # Word-splitting CASSETTES is the glob expansion itself.
+        # shellcheck disable=SC2206
+        files=($CASSETTES)
+        args=(--baseline-ref "$BASELINE_REF" --checks "$CHECKS" --fail-on "$FAIL_ON")
+        while IFS= read -r pack; do
+          [ -n "$pack" ] && args+=(--pattern-pack "$pack")
+        done <<<"$PATTERN_PACKS"
+        [ -n "$REQUIRE_REDACTION" ] && args+=(--require-redaction "$REQUIRE_REDACTION")
+        # A unique directory, so two matrix legs never overwrite each other's report.
+        report_dir=$(mktemp -d "$RUNNER_TEMP/mcp-cassette.XXXXXX")
+        echo "artifact-name=mcp-cassette-report-$(basename "$report_dir")" >>"$GITHUB_OUTPUT"
+        bash "$GITHUB_ACTION_PATH/scripts/ci_check.sh" "${args[@]}" \
+          --report-dir "$report_dir" -- ${files[@]+"${files[@]}"}
+
+    - name: Upload report
+      if: always() && steps.check.outputs.report-path != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.check.outputs.artifact-name }}
+        path: ${{ steps.check.outputs.report-path }}
