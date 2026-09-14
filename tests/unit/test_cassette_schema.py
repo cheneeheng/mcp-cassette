@@ -221,7 +221,7 @@ def test_save_always_writes_current_format_version(tmp_path: Path) -> None:
     cassette = _cassette().model_copy(update={"format_version": 1})
     cassette.save(path)
     on_disk = json.loads(path.read_text(encoding="utf-8"))
-    assert on_disk["format_version"] == 2
+    assert on_disk["format_version"] == 3
 
 
 def test_http_fields_round_trip(tmp_path: Path) -> None:

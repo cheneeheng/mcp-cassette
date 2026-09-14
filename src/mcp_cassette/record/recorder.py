@@ -22,8 +22,9 @@ from ..cassette import (
     Sender,
     ServerInfo,
     Transport,
-    apply_redactions,
 )
+from ..redaction.backends import STRUCTURAL
+from ..redaction.redactor import Redactor
 
 
 class SessionRecorder:
@@ -34,21 +35,34 @@ class SessionRecorder:
     explicit lock (a sync callback cannot be preempted mid-classification).
     """
 
-    def __init__(self, redaction_rules: list[RedactionRule] | None = None) -> None:
+    def __init__(
+        self,
+        redaction_rules: list[RedactionRule] | None = None,
+        *,
+        redactor: Redactor | None = None,
+    ) -> None:
         """Initialize the recorder.
 
         Args:
-            redaction_rules: Rules applied to each payload at capture time. Defaults to
-                an empty list (caller usually passes defaults + user rules).
+            redaction_rules: Structural rules applied to each payload at capture time.
+                Defaults to an empty list (caller usually passes defaults + user rules).
+                Ignored when ``redactor`` is given.
+            redactor: A full redactor (structural rules plus PII packs). When given,
+                its manifest is stamped on the built cassette; without one the
+                recording carries no manifest, exactly as before v4.
         """
-        self._rules = redaction_rules or []
+        self._redactor = redactor or Redactor(
+            redaction_rules or [], backends=(STRUCTURAL,)
+        )
+        self._stamp_manifest = redactor is not None
         self._messages: list[Message] = []
         self._seq = 0
         self._start = time.monotonic()
         self._initialize_request_id: str | int | None = None
         self._protocol_version: str | None = None
         self._server_info: ServerInfo | None = None
-        self._warned_raw = False
+        self._raw_count = 0
+        self._unclassified_count = 0
 
     def on_line(self, sender: Sender, line: bytes) -> None:
         """Classify and buffer one wire line.
@@ -77,6 +91,8 @@ class SessionRecorder:
         - ``method`` and ``id`` -> ``request``
         - ``method``, no ``id`` -> ``notification``
         - ``id``, no ``method`` -> ``response``
+        - a JSON object with neither -> ``unclassified``, the decoded object kept as
+          the payload so structural redaction still sees its keys
         - not a JSON object at all -> ``raw``, original text kept as the payload
 
         The ``method`` string is copied verbatim and never interpreted, so no MCP
@@ -97,6 +113,7 @@ class SessionRecorder:
             return
         obj = self._try_decode(text)
         if obj is None:
+            self._raw_count += 1
             self._append(sender, "raw", None, None, text, offset_ms, exchange, channel)
             return
 
@@ -110,7 +127,13 @@ class SessionRecorder:
         elif has_id:
             kind = "response"
         else:
-            self._append(sender, "raw", None, None, text, offset_ms, exchange, channel)
+            # Well-formed JSON the classifier cannot label. Keeping the decoded object
+            # (rather than the text, as `raw` does) is what lets a key like
+            # `authorization` be redacted: structural rules need keys.
+            self._unclassified_count += 1
+            self._append(
+                sender, "unclassified", None, None, obj, offset_ms, exchange, channel
+            )
             return
 
         self._watch_initialize(sender, kind, method, msg_id, obj)
@@ -137,6 +160,7 @@ class SessionRecorder:
             session_id=session_id,
             protocol_version=self._protocol_version,
             server_info=self._server_info,
+            redaction=self._redactor.manifest() if self._stamp_manifest else None,
             messages=list(self._messages),
         )
 
@@ -144,6 +168,21 @@ class SessionRecorder:
     def message_count(self) -> int:
         """Number of messages captured so far."""
         return len(self._messages)
+
+    def warn_unrecognized(self) -> None:
+        """Warn once, with counts, about messages that are not JSON-RPC.
+
+        Called at finalize. A count covers the whole session, where a warning latched on
+        the first such line said nothing about how many followed.
+        """
+        total = self._raw_count + self._unclassified_count
+        if total:
+            warnings.warn(
+                f"mcp-cassette: {total} wire message(s) were not JSON-RPC and are "
+                f"never replayed: {self._raw_count} recorded as kind='raw', "
+                f"{self._unclassified_count} as kind='unclassified'",
+                stacklevel=2,
+            )
 
     def _append(
         self,
@@ -156,7 +195,7 @@ class SessionRecorder:
         exchange: int | None = None,
         channel: Channel | None = None,
     ) -> None:
-        redacted_payload, changed = apply_redactions(payload, self._rules)
+        redacted_payload, changed = self._redactor.apply_to_payload(payload, sender)
         self._messages.append(
             Message(
                 seq=self._seq,
@@ -177,12 +216,6 @@ class SessionRecorder:
         try:
             decoded = json.loads(text)
         except json.JSONDecodeError:
-            if not self._warned_raw:
-                warnings.warn(
-                    "mcp-cassette: non-JSON line on the wire recorded as kind='raw'",
-                    stacklevel=2,
-                )
-                self._warned_raw = True
             return None
         if not isinstance(decoded, dict):
             return None

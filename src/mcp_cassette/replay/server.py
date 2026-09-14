@@ -21,6 +21,7 @@ from .._stdio import stdin_stream, stdout_stream
 from ..cassette import Cassette, FaultOverlay, MatchConfig, Message, PaceConfig
 from ..matching import Matcher
 from ..record.pump import buffered_lines
+from ..redaction.replay import RequestTransform
 from ..report import write_report
 from .faults import Injector, make_error_response, make_malformed_line
 from .pacing import Pacer
@@ -95,6 +96,7 @@ class ReplayServer:
         faults: FaultOverlay | None = None,
         report_path: str | None = None,
         pace: PaceConfig | None = None,
+        request_transform: RequestTransform | None = None,
     ) -> None:
         """Initialize the replay server.
 
@@ -106,10 +108,14 @@ class ReplayServer:
                 the pytest fixture to fail tests across processes.
             pace: Optional pacing configuration; off by default, in which case the
                 response path performs no sleep and reads no clock.
+            request_transform: Re-applies the recording's client-direction redaction
+                to each incoming request before matching (see
+                :func:`~mcp_cassette.redaction.replay_transform`).
         """
         self.report_path = report_path
         self.cassette = cassette
         self.config = match or MatchConfig()
+        self._transform = request_transform
         self._matcher = Matcher(cassette, self.config)
         self._injector = Injector(faults)
         self._pacer = Pacer(pace)
@@ -189,7 +195,7 @@ class ReplayServer:
             await self._handle_initialize(obj, out)
             return
 
-        exchange = self._matcher.find(obj)
+        exchange = self._matcher.find(self._transform(obj) if self._transform else obj)
         if exchange is None or exchange.response is None:
             if exchange is not None:
                 # The request matched a recorded one whose response was never

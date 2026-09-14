@@ -32,7 +32,10 @@ from ..matching import Matcher
 from ..record.proxy import exit_on_server_death
 from ..record.pump import buffered_lines, pump_lines
 from ..record.recorder import SessionRecorder
+from ..redaction.redactor import Redactor
+from ..redaction.replay import RequestTransform
 from ..report import write_report
+from ..session.claim import ClaimFile
 from .pacing import Pacer
 
 
@@ -49,6 +52,9 @@ class NewEpisodesProxy:
         include_default_redactions: bool = True,
         report_path: str | None = None,
         pace: PaceConfig | None = None,
+        request_transform: RequestTransform | None = None,
+        append_redactor: Redactor | None = None,
+        claim: ClaimFile | None = None,
     ) -> None:
         """Initialize the proxy.
 
@@ -63,20 +69,28 @@ class NewEpisodesProxy:
             pace: Optional pacing configuration. Applies to replayed hits only —
                 fall-through misses go to the real server and are inherently
                 live-timed.
+            request_transform: Re-applies the recording's client-direction redaction
+                to each incoming request before matching.
+            append_redactor: Scrubs appended exchanges the way the recording was
+                scrubbed; replaces ``redaction``/``include_default_redactions``.
+            claim: The single-writer claim held for ``cassette_path``, released at
+                the end of finalize (which the server-death hard exit also runs).
         """
         self.cassette = cassette
         self.cassette_path = cassette_path
         self.server_cmd = server_cmd
+        self.claim = claim
         self.config = match or MatchConfig()
         self.report_path = report_path
         self._matcher = Matcher(cassette, self.config)
         self._pacer = Pacer(pace)
+        self._transform = request_transform
         rules: list[RedactionRule] = []
         if include_default_redactions:
             rules.extend(default_redaction_rules())
         if redaction:
             rules.extend(redaction)
-        self._recorder = SessionRecorder(rules)
+        self._recorder = SessionRecorder(rules, redactor=append_redactor)
         self._client_eof = False
 
     def run(self) -> int:
@@ -117,7 +131,9 @@ class NewEpisodesProxy:
         async for line in buffered_lines(client_in):
             obj = _decode(line)
             if obj is not None and _is_replayable_request(obj):
-                exchange = self._matcher.find(obj)
+                exchange = self._matcher.find(
+                    self._transform(obj) if self._transform else obj
+                )
                 if exchange is not None and exchange.response is not None:
                     await self._replay(obj, exchange, client_out)
                     continue
@@ -172,6 +188,8 @@ class NewEpisodesProxy:
         result.save(self.cassette_path)
         if self.report_path is not None:
             write_report(self.report_path, {"messages": len(merged)})
+        if self.claim is not None:
+            self.claim.release()
 
 
 def _decode(line: bytes) -> dict[str, Any] | None:

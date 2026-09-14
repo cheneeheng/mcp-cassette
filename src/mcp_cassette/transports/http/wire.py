@@ -9,6 +9,7 @@ proxy and the replay server drive this loop directly.
 
 from __future__ import annotations
 
+import socket
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
@@ -301,6 +302,7 @@ async def serve_http(
     handler: Handler,
     *,
     port: int = 0,
+    sock: socket.socket | None = None,
     task_status: anyio.abc.TaskStatus[int] = anyio.TASK_STATUS_IGNORED,
 ) -> None:
     """Bind ``127.0.0.1`` and serve connections until cancelled.
@@ -308,9 +310,18 @@ async def serve_http(
     The bound port is reported via ``task_status.started`` (callers pass ``port=0``
     for an ephemeral port and read the real one back). Loopback-only by design: the
     local servers serve non-browser MCP clients, so no CORS and no external binds.
+    ``sock``, when given, is an already-bound listening socket served instead of
+    binding ``port``: the async library door binds it synchronously so that
+    ``server_url()`` can return before this task has run.
     """
-    listener = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=port)
-    bound_port: int = listener.listeners[0].extra(anyio.abc.SocketAttribute.local_port)
+    listener: anyio.abc.Listener[anyio.abc.SocketStream]
+    if sock is not None:
+        listener = await anyio.abc.SocketListener.from_socket(sock)
+        bound_port = int(sock.getsockname()[1])
+    else:
+        multi = await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=port)
+        bound_port = multi.listeners[0].extra(anyio.abc.SocketAttribute.local_port)
+        listener = multi
     task_status.started(bound_port)
     async with listener:
         await listener.serve(partial(serve_connection, handler=handler))

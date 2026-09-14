@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socket
 import sys
 from functools import partial
 from typing import Any
@@ -32,6 +33,8 @@ from ...cassette import (
 )
 from ...matching import Exchange, Matcher
 from ...record.recorder import SessionRecorder
+from ...redaction.redactor import Redactor
+from ...redaction.replay import RequestTransform
 from ...replay.faults import Injector, make_error_response
 from ...replay.pacing import Pacer
 from ...replay.server import (
@@ -45,6 +48,9 @@ from . import wire
 from .wire import HttpRequest, Responder, encode_sse_event
 
 _ACCEPT_BOTH = "application/json, text/event-stream"
+
+_NEVER_EMITTED = frozenset({"raw", "unclassified"})
+"""Kinds recorded as evidence but never replayed: they are not JSON-RPC messages."""
 
 
 class HttpReplayServer:
@@ -60,6 +66,8 @@ class HttpReplayServer:
         fallthrough_url: str | None = None,
         cassette_path: str | None = None,
         pace: PaceConfig | None = None,
+        request_transform: RequestTransform | None = None,
+        append_redactor: Redactor | None = None,
     ) -> None:
         """Initialize the replay server.
 
@@ -74,6 +82,10 @@ class HttpReplayServer:
             cassette_path: Where the merged cassette is saved (``new_episodes``).
             pace: Optional pacing configuration; off by default, in which case the
                 response path performs no sleep and reads no clock.
+            request_transform: Re-applies the recording's client-direction redaction
+                to each incoming request before matching.
+            append_redactor: Scrubs exchanges ``new_episodes`` appends the way the
+                recording was scrubbed (default: structural rules only).
 
         Raises:
             ValueError: If the cassette's transport is not ``http`` (a stdio
@@ -88,6 +100,7 @@ class HttpReplayServer:
         self.cassette = cassette
         self.config = match or MatchConfig()
         self.report_path = report_path
+        self._transform = request_transform
         self._port = port
         self._matcher = Matcher(cassette, self.config)
         self._injector = Injector(faults)
@@ -109,7 +122,7 @@ class HttpReplayServer:
                 m.sender == "server"
                 and m.channel == "post"
                 and m.exchange is not None
-                and m.kind != "raw"
+                and m.kind not in _NEVER_EMITTED
             ):
                 self._post_messages.setdefault(m.exchange, []).append(m)
 
@@ -117,7 +130,9 @@ class HttpReplayServer:
             m for m in cassette.messages if m.sender == "client" and m.kind == "request"
         ]
         self._get_plan = [
-            m for m in cassette.messages if m.channel == "get" and m.kind != "raw"
+            m
+            for m in cassette.messages
+            if m.channel == "get" and m.kind not in _NEVER_EMITTED
         ]
         self._get_anchor: dict[int, int | None] = {}
         for m in self._get_plan:
@@ -142,7 +157,7 @@ class HttpReplayServer:
         self._up_session: str | None = None
         self._up_lock = anyio.Lock()
         self._new_recorder = (
-            SessionRecorder(default_redaction_rules())
+            SessionRecorder(default_redaction_rules(), redactor=append_redactor)
             if fallthrough_url is not None
             else None
         )
@@ -184,14 +199,18 @@ class HttpReplayServer:
     async def serve(
         self,
         *,
+        sock: socket.socket | None = None,
         task_status: anyio.abc.TaskStatus[str] = anyio.TASK_STATUS_IGNORED,
     ) -> None:
-        """Serve until cancelled, reporting the bound URL via ``task_status``."""
+        """Serve until cancelled, reporting the bound URL via ``task_status``.
+
+        ``sock`` is an already-bound listening socket to serve instead of binding.
+        """
         try:
             async with anyio.create_task_group() as tg:
                 self._serve_scope = tg.cancel_scope
                 port = await tg.start(
-                    partial(wire.serve_http, self._handle, port=self._port)
+                    partial(wire.serve_http, self._handle, port=self._port, sock=sock)
                 )
                 self.bound_url = f"http://127.0.0.1:{port}/mcp"
                 task_status.started(self.bound_url)
@@ -294,7 +313,9 @@ class HttpReplayServer:
             await responder.send(404, b"", content_type="text/plain")
             return
         async with self._match_lock:
-            exchange = self._matcher.find(obj)
+            exchange = self._matcher.find(
+                self._transform(obj) if self._transform else obj
+            )
             fault = self._injector.consult(method) if exchange is not None else None
         if exchange is None or exchange.response is None:
             if self._fallthrough_url is not None:

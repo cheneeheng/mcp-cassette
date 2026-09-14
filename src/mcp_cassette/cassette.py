@@ -12,21 +12,25 @@ import copy
 import fnmatch
 import json
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 """Current on-disk cassette format version. Bumped only on breaking schema changes.
 
 Version 2 widens version 1 with optional-with-defaults fields only (HTTP transport
-metadata), so v1 cassettes load unchanged; new recordings always write 2.
+metadata). Version 3 adds the optional redaction manifest and the ``unclassified``
+message kind, which a v2 reader does not know — a forward-compatibility break only:
+v1 and v2 cassettes still load unchanged, and new recordings always write 3.
 """
 
 Sender = Literal["client", "server"]
-MessageKind = Literal["request", "response", "notification", "raw"]
+MessageKind = Literal["request", "response", "notification", "raw", "unclassified"]
+SaltMode = Literal["stable", "env"]
 Transport = Literal["stdio", "http"]
 Channel = Literal["post", "get"]
 Ordering = Literal["per_method", "strict", "none"]
@@ -52,7 +56,9 @@ class Message(BaseModel):
         method: The JSON-RPC ``method`` if present.
         msg_id: The JSON-RPC ``id`` if present.
         payload: Verbatim decoded JSON object, or the raw line (``str``) for
-            ``kind == "raw"``.
+            ``kind == "raw"``. An ``unclassified`` message decoded to an object
+            carrying neither ``method`` nor ``id`` and keeps that object, so
+            structural redaction still has keys to work with.
         redacted: Whether any redaction rule altered this message's payload.
         exchange: Groups messages that traveled in one HTTP request/response pair
             (``None`` for stdio).
@@ -72,6 +78,44 @@ class Message(BaseModel):
     channel: Channel | None = None
 
 
+class PackRef(BaseModel):
+    """A redaction pack named by a cassette's manifest.
+
+    Attributes:
+        id: The pack's declared id.
+        path: The path the pack was loaded from, as given — a human convenience that
+            may be stale or absent (``builtin:<id>`` for a bundled pack).
+        sha256: Content hash of the pack file; the identity replay resolves by, so a
+            moved pack still matches and a modified one deliberately does not.
+    """
+
+    id: str
+    path: str | None = None
+    sha256: str
+
+
+class RedactionManifest(BaseModel):
+    """Evidence of what scrubbed a recording — never the values found, never the salt.
+
+    Attributes:
+        profile: The team's name for this redaction setup (``--redact-profile``),
+            which ``lint --require-redaction`` gates on.
+        backends: Redactor backends that ran, e.g. ``["structural", "regex-pii"]``.
+        packs: The redaction packs applied.
+        rule_ids: Pack rule ids that were enabled, qualified as ``<pack>/<rule>``.
+        salt_mode: ``stable`` (diff-stable pseudonyms) or ``env`` (keyed by
+            ``MCP_CASSETTE_REDACT_SALT``).
+        applied_at: When the recording was scrubbed.
+    """
+
+    profile: str | None = None
+    backends: list[str] = Field(default_factory=list)
+    packs: list[PackRef] = Field(default_factory=list)
+    rule_ids: list[str] = Field(default_factory=list)
+    salt_mode: SaltMode = "stable"
+    applied_at: datetime
+
+
 class Cassette(BaseModel):
     """An ordered recording of one MCP session (stdio or Streamable HTTP).
 
@@ -79,6 +123,8 @@ class Cassette(BaseModel):
         server_url: The recorded remote server URL (http only; provenance).
         session_id: The server's recorded ``Mcp-Session-Id`` (http only). Evidence
             only — replay issues its own fresh id and never reuses this one.
+        redaction: What scrubbed this recording (``None`` for recordings made before
+            v4, whose replay skips the request transform entirely).
     """
 
     format_version: int = FORMAT_VERSION
@@ -88,6 +134,7 @@ class Cassette(BaseModel):
     session_id: str | None = None
     protocol_version: str | None = None
     server_info: ServerInfo | None = None
+    redaction: RedactionManifest | None = None
     messages: list[Message] = Field(default_factory=list)
 
     @classmethod
@@ -139,9 +186,12 @@ class Cassette(BaseModel):
     def save(self, path: str | os.PathLike[str]) -> None:
         """Atomically write the cassette to ``path``.
 
-        Writes to a sibling ``.tmp`` file then ``os.replace`` for atomicity. Uses
-        ``indent=2`` with pydantic field order (not ``sort_keys``) so diffs are stable
-        and readable.
+        Writes to a uniquely named temp file in the destination directory, then
+        ``os.replace`` for atomicity. The name is unique per writer because two writers
+        sharing one fixed ``.tmp`` name could splice their bytes and promote the
+        splice; the directory is the destination's so the rename stays on one
+        filesystem. Uses ``indent=2`` with pydantic field order (not ``sort_keys``) so
+        diffs are stable and readable.
 
         Args:
             path: Destination path.
@@ -150,12 +200,19 @@ class Cassette(BaseModel):
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = self.model_dump(mode="json", exclude_none=False)
         # Every write is the current format, even for a cassette loaded as v1
-        # (the v2 widening is optional-with-defaults, so the content round-trips).
+        # (every widening since is optional-with-defaults, so the content round-trips).
         payload["format_version"] = FORMAT_VERSION
         text = json.dumps(payload, indent=2, ensure_ascii=False)
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_text(text + "\n", encoding="utf-8")
-        os.replace(tmp, target)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(text + "\n")
+            os.replace(tmp_name, target)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
 
 
 class MatchConfig(BaseModel):
@@ -196,7 +253,8 @@ class RedactionRule(BaseModel):
 
     ``locator`` is either a key-glob (e.g. ``*token*``) matched case-insensitively
     against every dict key at any depth, or a JSON pointer (e.g.
-    ``/result/content/0/text``) addressing one location.
+    ``/result/content/0/text``) addressing one location. Key-globs fold ``-`` and
+    ``_`` together before matching, so ``*api_key*`` also catches ``X-API-Key``.
     """
 
     locator: str
@@ -271,11 +329,18 @@ def apply_redactions(
     return current, changed_any
 
 
+def _fold_key(text: str) -> str:
+    # Separator folding: `X-API-Key` and `x_api_key` are one spelling to a glob.
+    # Listing hyphen variants would miss every spelling nobody thought of, which on a
+    # fail-open surface is the whole problem.
+    return text.lower().replace("-", "_")
+
+
 def _redact_key_glob(value: Any, glob: str, replacement: str) -> bool:
     changed = False
     if isinstance(value, dict):
         for key in list(value.keys()):
-            if fnmatch.fnmatch(key.lower(), glob.lower()):
+            if fnmatch.fnmatch(_fold_key(key), _fold_key(glob)):
                 value[key] = replacement
                 changed = True
             else:

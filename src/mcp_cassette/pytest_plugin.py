@@ -51,7 +51,7 @@ def pytest_configure(config: Config) -> None:
     config.addinivalue_line(
         "markers",
         "mcp_cassette(mode=, cassette=, ordering=, ignore_params=, "
-        "rewrite_protocol_version=, pace=, pace_scale=, pace_cap_ms=): "
+        "rewrite_protocol_version=, pace=, pace_scale=, pace_cap_ms=, pii_packs=): "
         "configure the mcp_cassette fixture.",
     )
 
@@ -139,6 +139,8 @@ if pytest is not None:  # pragma: no branch — pytest is always present in the 
             match=_match_config(marker_kwargs),
             pace=_pace_config(marker_kwargs),
             report_path=report_path,
+            pii_packs=list(marker_kwargs.get("pii_packs", [])),
+            node_id=request.node.nodeid,
         )
         yield session
         if request.node.stash.get(_FAILED, False):
