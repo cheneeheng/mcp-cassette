@@ -317,10 +317,12 @@ def build_parser() -> argparse.ArgumentParser:
         "lint",
         help="Heuristic security scan of a cassette (CI-friendly; exit 4 on errors).",
         description=(
-            "Scan recorded tool descriptions and results for known smells: "
-            "injection phrasing (R001), description drift vs a baseline (R002), "
-            "duplicate tool names (R003), instruction-shaped results (R004), "
-            "high-entropy strings that look like secrets (R005). "
+            "Scan recorded tool definitions, results, and every other string for "
+            "known smells: injection phrasing (R001), description drift vs a "
+            "baseline (R002), duplicate tool names (R003), instruction-shaped "
+            "results (R004), high-entropy strings that look like secrets (R005), "
+            "injection phrasing in tool names or inputSchema text (R006), "
+            "non-ASCII or mixed-script tool names (R007). "
             "These are pattern rules, not a guarantee — a clean lint is absence "
             "of known smells, nothing more. Packs extend the bundled rules; they "
             "never replace them."
