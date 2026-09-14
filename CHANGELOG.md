@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Hardening for recording against production servers: free-text redaction stamped on the
+cassette, lint over every tool-definition surface plus entropy-detected secrets, safe
+parallel runs, an async library door, and packaged CI. Cassettes move to
+`format_version` 3; older cassettes load and replay unchanged.
+
+### Added
+
+- Redaction packs: declarative TOML rules that scrub free text at record time with a
+  `replace`, `hash`, or `mask` strategy. A bundled `common` pack (email, phone, IPv4/IPv6,
+  US SSN, IBAN, payment card, AWS access key id, PEM private key, JWT) is on by default.
+  `record --pii-pack`, `--redact-profile`, `--redact-salt-env`; `serve --pii-pack`;
+  `pii_packs=` on the marker, `use_cassette`, and `use_cassette_async`. See HT-10.
+- A redaction manifest on every recorded cassette (profile, backends, packs by sha256,
+  salt mode), exported as `RedactionManifest` and `PackRef`. Replay re-applies the
+  recorded packs to incoming requests so a scrubbed recording still matches, and exits
+  `2` naming the pack when one cannot be resolved.
+- `lint --require-redaction NAME` exits `4` unless every cassette was scrubbed with that
+  profile; also `require_redaction` in `[tool.mcp_cassette.lint]`.
+- `lint` accepts several cassettes in one call.
+- Lint rule `R005` (warning): high-entropy strings that look like secrets, anywhere in a
+  cassette, with shape exclusions for UUIDs, digests, timestamps, and integers. Messages
+  show at most six characters of the token. `--no-entropy`, `--entropy-min-bits`,
+  `--entropy-min-length`, `--entropy-allow`, and `[tool.mcp_cassette.lint.entropy]`.
+  See HT-11.
+- Lint rules `R006` (injection phrasing in tool names and `inputSchema` descriptions and
+  enum values) and `R007` (non-ASCII or mixed-script tool names), both warnings. Pattern
+  packs can target the new surfaces with `surfaces = ["name", "schema_description",
+  "schema_enum"]`.
+- A single-writer claim (`<cassette>.claim`) so parallel runs never lose or splice a
+  recording: `once` waits and then replays what the other writer recorded, `all` and
+  `new_episodes` fail fast. `record --force` and `--claim-wait`; exit code `6` for a
+  claim conflict. Under pytest-xdist the default report path gains the worker id. See
+  OP-06.
+- `use_cassette_async`, with `CassetteSession.aclose()` and `afinalize()`: the async
+  library door runs the HTTP server as a task in the caller's event loop, with no portal
+  thread, under asyncio or trio. Cleanup is shielded from cancellation. See HT-03.9.
+- `lint --annotate github` prints one GitHub Actions workflow command per finding,
+  alongside the chosen `--format`.
+- A composite GitHub Action (`action.yml`) that lints committed cassettes against their
+  merge-base counterparts and optionally diffs tool surfaces, with annotations, a job
+  summary, and a JSON report artifact. See OP-03.
+- Pre-commit hooks (`.pre-commit-hooks.yaml`): `mcp-cassette-lint` and
+  `mcp-cassette-redaction-check`. See OP-07.
+- `examples/pii-pack.toml`, `examples/library_mode_async.py`, and `examples/ci/`.
+
+### Changed
+
+- Lint output gains `R005`, `R006`, and `R007` warning lines on existing cassettes. Exit
+  codes are unchanged, because warnings do not gate under the default `fail_on`.
+- `use_cassette` now raises `RuntimeError` when entered from inside a running event loop.
+  Its blocking portal deadlocks there, so the call could never have worked; the error
+  names `use_cassette_async`. Calling it from a worker thread still works.
+- An unknown rule id in `--select` or `--ignore` (or the project config) now exits `2`.
+  It was silently accepted, so a typo left a rule running that the configuration meant to
+  skip, or skipped nothing.
+- Structural redaction folds `-` and `_` before matching key-globs, so `X-API-Key`,
+  `X-Auth-Token`, `Api-Key`, and `Access-Token` are now redacted by the defaults. They
+  previously passed through while the message was marked redacted. A custom glob's match
+  set widens the same way, so a re-recorded cassette can differ from its committed
+  predecessor.
+- `server_command` and `server_url` check the cassette's transport under every mode.
+  Under `mode="all"` they previously skipped the check and could return a command that
+  replaced a committed HTTP recording with a stdio one.
+- `resolve_mode` validates the `mode=` argument before reading `MCP_CASSETTE_MODE`, so a
+  typo raises in CI too instead of being hidden by the environment.
+- A recording `CassetteSession` now holds its write claim until it is finalized or closed.
+  A session constructed directly must be closed, or the next writer on that cassette
+  waits for the claim to go stale.
+- A JSON object on the wire that is not JSON-RPC is recorded as `kind: "unclassified"`
+  with its keys intact, so structural redaction applies to it; `raw` now means a line
+  that did not parse. The unrecognised-message warning reports a count at the end of the
+  session instead of firing once.
+- Cassette saves write through a uniquely named temp file, so two concurrent saves can
+  never splice.
+- The `anyio` floor moves from 4.2 to 4.11, for `anyio.lowlevel.current_token()`.
+
 ## [0.3.9] - 2026-08-31
 
 First-run usability pass. Every usability item closes a finding from a
