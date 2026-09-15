@@ -14,9 +14,16 @@ replays.
 | `mcp_client.py` | A tiny transport-level JSON-RPC stdio client, including answering server-initiated requests. |
 | `mcp_http_client.py` | Its Streamable HTTP twin: POSTs JSON-RPC, echoes the issued `Mcp-Session-Id`. |
 | `library_mode.py` | A runnable script using `use_cassette` — the third front door, no pytest involved. Records on the first run, replays on every run after. |
+| `library_mode_async.py` | The same script through `use_cassette_async`, the async door, over Streamable HTTP. |
 | `lint-pack.toml` | A starter lint pattern pack: copy it, rename the ids, edit the regexes. |
+| `pii-pack.toml` | A starter redaction pack: team-specific free-text rules beside the bundled `common` pack. |
+| `ci/` | Copy-in configs for the packaged GitHub Action (`cassettes.yml`) and pre-commit hooks (`pre-commit-config.yaml`). |
 | `test_echo.py` | Four pytest examples built on the `mcp_cassette` fixture (stdio). |
 | `test_echo_http.py` | One pytest example built on `mcp_cassette.server_url` (Streamable HTTP; needs the `[http]` extra — the repo's dev group has it). |
+| `test_redaction.py` | Free-text PII redaction: record with a pack, check the cassette holds pseudonyms and a manifest, replay the raw request. |
+| `test_lint_v4.py` | Rules R005 (secrets), R006 (schema text), R007 (lookalike names), `--annotate github`, and `--require-redaction`. |
+| `test_claims.py` | The single-writer claim: a second recorder is refused, readers share freely. |
+| `test_async_door.py` | `use_cassette_async` replaying in the caller's loop, under asyncio and trio. |
 | `cassettes/` | The committed cassettes those tests replay, plus three for the lint and drift demos: `tools.mcp.json` (a clean `tools/list` recording), `injected.mcp.json` (the same recording with a deliberately poisoned tool description), and `tools-v2.mcp.json` (the server one version later — poisoned description *and* a changed `inputSchema`). |
 
 ## The golden cassette
@@ -34,7 +41,7 @@ Prove replay-only mode against one file or the whole directory:
 
 ```bash
 MCP_CASSETTE_MODE=none uv run pytest examples/test_echo.py -q   # one file: 4 passed
-MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 5 passed
+MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 17 passed
 ```
 
 No server, no network, no credentials. Under `none` a missing cassette fails the run with
@@ -73,7 +80,8 @@ only holds on replay, `test_survives_injected_error` uses faults (replay-only), 
 Refresh cassettes per-file instead (delete + default `once` mode, as above).
 `fault.mcp.json` can't be regenerated through its own test at all; record it from a
 plain `echo` session — e.g. the CLI `record` command below. The lint-demo cassettes
-are also CLI-recorded, not test-recorded (see the lint section).
+are also CLI-recorded, not test-recorded (see the lint section). `surfaces.mcp.json` is hand-written, which is why
+it carries no redaction manifest.
 
 ## What each test shows
 
@@ -99,6 +107,49 @@ are also CLI-recorded, not test-recorded (see the lint section).
   the agent's config. First run it is a recording proxy in front of the real server;
   every run after it is a local mock server rebuilt from the cassette — the test then
   passes a *dead* URL to prove the remote is never contacted.
+
+The v4 tests below record into pytest's temporary directory or only read committed
+cassettes. `MCP_CASSETTE_MODE` outranks the library door's `mode=` argument, so the
+tests that record (`test_redaction.py`, and the writer test in `test_claims.py`) unset
+it first: they drive the bundled stdlib server, never a live one, so replay-only CI
+has nothing to protect there.
+
+- **`test_redaction.py`** — a request carrying `alice@example.com` and `EMP-123456` is
+  recorded with `pii_packs=[pii-pack.toml]`. The agent sees the live answer unaltered;
+  the cassette holds `<EMAIL>_<12 hex>` pseudonyms and a manifest naming the `common`
+  and `team` packs by sha256. Replay re-applies the same rules to the agent's raw
+  request, so it still matches. Pseudonyms are stable across re-recordings unless
+  `record --redact-salt-env` is set.
+- **`test_lint_v4.py`** — lints `cassettes/surfaces.mcp.json`, which hides injection
+  phrasing in a schema property description (R006), a tool named `еcho` with a
+  Cyrillic first letter (R007), and a deploy key in result text (R005, which prints six
+  characters of it at most). All three are warnings: exit 0, or exit 4 under
+  `--fail-on warning`. `--require-redaction team-baseline` exits 4 because the cassette
+  has no manifest.
+- **`test_claims.py`** — while one `mode="all"` session records, a second one on the
+  same path raises `CassetteError` naming the holder (the CLI exits `6`). Replay
+  sessions never claim, so two can share the golden cassette.
+- **`test_async_door.py`** — `use_cassette_async` serves the committed HTTP cassette as a
+  task in the caller's event loop, under both asyncio and trio. The sync door refuses
+  to run inside a loop and names the async one.
+
+## Gate cassettes in CI and at commit time
+
+`ci/cassettes.yml` is a workflow using the packaged Action: on each pull request it
+lints the changed cassettes against their merge-base copies and diffs tool surfaces.
+`ci/pre-commit-config.yaml` installs the `mcp-cassette-lint` and
+`mcp-cassette-redaction-check` hooks, which refuse a commit whose cassette lacks the
+named redaction profile. Record such a cassette with:
+
+```bash
+mcp-cassette record --cassette demo.mcp.json --pii-pack examples/pii-pack.toml \
+  --redact-profile team-baseline -- python examples/echo_server.py
+mcp-cassette lint demo.mcp.json --require-redaction team-baseline   # exit 0
+```
+
+Both files are templates to copy, not something this repo runs. The walkthroughs are
+[OP-03](../docs/guide/operations/OP-03-ci.md) and
+[OP-07](../docs/guide/operations/OP-07-pre-commit.md).
 
 ## Try it by hand (the CLI)
 
