@@ -57,3 +57,20 @@ def test_temp_file_lives_in_the_destination_directory(
     assert temp.parent == target.parent
     assert temp.name != target.name + ".tmp"
     assert not temp.exists()
+
+
+def test_failed_replace_removes_the_temp_file_and_keeps_the_old_cassette(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "c.mcp.json"
+    Cassette(recorded_at=RECORDED).save(target)
+    before = target.read_bytes()
+
+    def refuse(src: str, dst: object) -> None:
+        raise PermissionError("destination is locked")
+
+    monkeypatch.setattr("mcp_cassette.cassette.os.replace", refuse)
+    with pytest.raises(PermissionError, match="locked"):
+        Cassette(recorded_at=datetime(2027, 1, 1, tzinfo=UTC)).save(target)
+    assert [p.name for p in tmp_path.iterdir()] == ["c.mcp.json"]
+    assert target.read_bytes() == before

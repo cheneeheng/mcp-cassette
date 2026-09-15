@@ -61,7 +61,10 @@ def test_real_request_matches_its_scrubbed_recording(tmp_path: Path) -> None:
     assert replay.returncode == 0, replay.stderr
     response = replay.response_for(2)
     assert response is not None
-    assert "error" not in response
+    # The recorded answer, pseudonym and all: the scrubbed exchange is what matched.
+    text = response["result"]["content"][0]["text"]
+    assert text.startswith("write to <EMAIL>_")
+    assert "alice@example.com" not in text
 
 
 def test_missing_pack_exits_2_naming_it_and_is_fixable(tmp_path: Path) -> None:

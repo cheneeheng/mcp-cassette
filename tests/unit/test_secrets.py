@@ -9,6 +9,7 @@ import pytest
 
 from mcp_cassette.cassette import Cassette, Message
 from mcp_cassette.lint import run
+from mcp_cassette.lint.engine import run_with_notes
 from mcp_cassette.lint.packs import EntropyConfig
 from mcp_cassette.lint.secrets import MAX_CANDIDATES, EntropyDetector, shannon_bits
 
@@ -57,6 +58,16 @@ def test_allowlist_is_literal() -> None:
     assert _tokens(near_miss, config) == [near_miss]
 
 
+def test_token_with_a_non_encoding_character_is_not_a_candidate() -> None:
+    # "!" neither splits tokens nor belongs to any encoding alphabet.
+    assert _tokens(TOKEN + "!") == []
+    assert _tokens(TOKEN) == [TOKEN]
+
+
+def test_brace_prefixed_text_that_is_not_json_is_still_scanned() -> None:
+    assert _tokens("{ truncated log: " + TOKEN) == [TOKEN]
+
+
 def test_candidate_budget_truncates() -> None:
     many = " ".join(f"{i:04d}{TOKEN[4:]}" for i in range(MAX_CANDIDATES + 50))
     result = EntropyDetector(EntropyConfig()).scan(many)
@@ -91,3 +102,13 @@ def test_finding_never_contains_the_whole_token(tmp_path: Path) -> None:
     assert TOKEN not in finding.message
     assert f'"{TOKEN[:6]}…"' in finding.message
     assert "40 chars" in finding.message
+
+
+def test_capped_message_adds_one_note_naming_it(tmp_path: Path) -> None:
+    many = " ".join(f"{i:04d}{TOKEN[4:]}" for i in range(MAX_CANDIDATES + 50))
+    report, notes = run_with_notes(_cassette(tmp_path / "c.mcp.json", many))
+    assert len([f for f in report.findings if f.rule == "R005"]) == MAX_CANDIDATES
+    assert notes == [
+        f"note: R005 stopped after {MAX_CANDIDATES} candidate tokens in message 0; "
+        "review the rest of it by hand"
+    ]

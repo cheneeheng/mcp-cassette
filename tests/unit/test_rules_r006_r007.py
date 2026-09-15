@@ -57,6 +57,29 @@ def test_r007_is_silent_on_ascii(tmp_path: Path) -> None:
     assert _findings(tmp_path, "R007", {"name": "find_records"}) == []
 
 
+def test_r006_skips_a_redacted_surface_that_a_pack_would_match(
+    tmp_path: Path,
+) -> None:
+    pack = tmp_path / "pack.toml"
+    pack.write_text(
+        'version = 1\n[[patterns]]\nid = "P900"\nlabel = "redacted-word"\n'
+        'regex = "REDACTED"\nsurfaces = ["schema_description"]\n',
+        encoding="utf-8",
+    )
+
+    def hits(description: str) -> list[LintFinding]:
+        schema = {"properties": {"q": {"description": description}}}
+        path = tools_cassette(
+            tmp_path / "c.mcp.json", [{"name": "s", "inputSchema": schema}]
+        )
+        return [f for f in run(path, packs=[pack]).findings if f.rule == "P900"]
+
+    # Redaction must never manufacture findings: the bare marker is skipped...
+    assert hits("REDACTED") == []
+    # ...while the same pattern inside real text still fires.
+    assert len(hits("was REDACTED here")) == 1
+
+
 def test_all_cyrillic_name_takes_the_non_ascii_branch(tmp_path: Path) -> None:
     (finding,) = _findings(tmp_path, "R007", {"name": "поиск"})
     assert "non-ASCII tool name" in finding.message

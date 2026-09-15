@@ -80,3 +80,14 @@ def test_newer_format_is_rejected(tmp_path: Path) -> None:
 def test_save_leaves_no_temp_file_behind(tmp_path: Path) -> None:
     Cassette(recorded_at=RECORDED).save(tmp_path / "c.mcp.json")
     assert sorted(p.name for p in tmp_path.iterdir()) == ["c.mcp.json"]
+
+
+def test_non_json_file_names_itself_and_what_a_cassette_is(tmp_path: Path) -> None:
+    path = tmp_path / "notes.txt"
+    path.write_text("hello\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="is not a cassette") as excinfo:
+        Cassette.load(path)
+    message = str(excinfo.value)
+    assert str(path) in message
+    assert "line 1 column 1" in message
+    assert "mcp-cassette record --cassette" in message

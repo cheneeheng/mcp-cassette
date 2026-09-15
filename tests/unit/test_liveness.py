@@ -9,11 +9,33 @@ import time
 
 import pytest
 
+from mcp_cassette.session import claim
 from mcp_cassette.session.claim import pid_alive
 
 
 def test_current_process_is_alive() -> None:
     assert pid_alive(os.getpid())
+
+
+@pytest.mark.parametrize(
+    ("outcome", "alive"),
+    [(None, True), (ProcessLookupError(), False), (PermissionError(), True)],
+)
+def test_posix_probe_reads_signal_zero_outcomes(
+    monkeypatch: pytest.MonkeyPatch, outcome: BaseException | None, alive: bool
+) -> None:
+    # os.kill is mocked, so the POSIX branch runs safely on every OS, Windows included.
+    calls: list[tuple[int, int]] = []
+
+    def fake_kill(pid: int, sig: int) -> None:
+        calls.append((pid, sig))
+        if outcome is not None:
+            raise outcome
+
+    monkeypatch.setattr(claim.sys, "platform", "linux")
+    monkeypatch.setattr(claim.os, "kill", fake_kill)
+    assert pid_alive(4242) is alive
+    assert calls == [(4242, 0)]
 
 
 def test_reaped_child_is_not_alive() -> None:

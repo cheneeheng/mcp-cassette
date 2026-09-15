@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from mcp_cassette.redaction import build_redactor, bundled_packs, load_pack
+from mcp_cassette.redaction.packs import luhn_valid, mod97_valid
 
 PLANTED = {
     "email": ("contact alice@example.com today", "contact alice@example today"),
@@ -91,6 +92,38 @@ def test_malformed_pack_names_file_and_key(
     with pytest.raises(ValueError, match=needle) as excinfo:
         load_pack(path)
     assert str(path) in str(excinfo.value)
+
+
+def test_flag_letters_apply_to_the_compiled_regex(tmp_path: Path) -> None:
+    body = '[[rules]]\nid = "emp"\nlabel = "EMP"\nregex = "emp-\\\\d+"\n'
+    body += 'direction = "server"\nstrategy = "replace"\n'
+    sensitive = build_redactor(
+        include_defaults=False, pii_packs=[_pack(tmp_path, body)]
+    )
+    folded_dir = tmp_path / "folded"
+    folded_dir.mkdir()
+    folded = build_redactor(
+        include_defaults=False,
+        pii_packs=[_pack(folded_dir, body + 'flags = ["i"]\n')],
+    )
+    payload = {"text": "EMP-42"}
+    assert sensitive.apply_to_payload(payload, "server") == (payload, False)
+    assert folded.apply_to_payload(payload, "server") == ({"text": "<EMP>"}, True)
+
+
+@pytest.mark.parametrize(
+    "digits",
+    ["4111 1111 111", "4111 1111 1111 1111 1111 1"],  # 11 and 21 digits
+)
+def test_luhn_rejects_lengths_outside_card_range(digits: str) -> None:
+    # Both strings pass the Luhn sum itself; only the length guard refuses them.
+    assert not luhn_valid(digits)
+
+
+@pytest.mark.parametrize("text", ["DE89 3704", "DE89-3704-0044-0532-0130-00"])
+def test_mod97_rejects_non_iban_shapes(text: str) -> None:
+    assert not mod97_valid(text)
+    assert mod97_valid("DE89 3704 0044 0532 0130 00")
 
 
 def test_duplicate_pack_id_is_rejected(tmp_path: Path) -> None:

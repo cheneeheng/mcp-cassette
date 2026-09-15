@@ -13,6 +13,7 @@ from mcp_cassette.cassette import Fault, MatchConfig
 from mcp_cassette.pytest_plugin import _cassette_path, _resolve_mode
 from mcp_cassette.report import write_report
 from mcp_cassette.session import CassetteError, CassetteSession
+from mcp_cassette.session.claim import claim_path
 
 
 def _session(mode: str, cassette: Path, tmp: Path) -> CassetteSession:
@@ -58,6 +59,41 @@ def test_with_faults_under_recording_fails_fast(tmp_path: Path) -> None:
     faulted = session.with_faults(Fault.timeout("tools/call"))
     with pytest.raises(CassetteError, match="replay only"):
         faulted.server_command(["python", "server.py"])
+
+
+def test_repeated_fault_commands_share_one_overlay_file(tmp_path: Path) -> None:
+    cassette = tmp_path / "c.mcp.json"
+    cassette.write_text("{}", encoding="utf-8")
+    faulted = _session("none", cassette, tmp_path).with_faults(
+        Fault.timeout("tools/call")
+    )
+    first = faulted.server_command(["python", "server.py"])
+    second = faulted.server_command(["python", "server.py"])
+    overlay = Path(first[first.index("--faults") + 1])
+    assert Path(second[second.index("--faults") + 1]) == overlay
+    assert overlay.is_file()
+    faulted.close()
+    assert not overlay.exists()
+
+
+def test_http_record_with_a_malformed_pack_is_a_cassette_error(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("httpx")
+    bad = tmp_path / "bad.toml"
+    bad.write_text("not = [valid", encoding="utf-8")
+    cassette = tmp_path / "c.mcp.json"
+    session = CassetteSession(
+        mode="all",
+        cassette_path=cassette,
+        report_path=tmp_path / "report.json",
+        pii_packs=[bad],
+    )
+    with pytest.raises(CassetteError, match="redaction pack"):
+        session.server_url("http://127.0.0.1:9/mcp")
+    assert claim_path(cassette).exists()  # still held until the session closes
+    session.close()
+    assert not claim_path(cassette).exists()
 
 
 def test_with_faults_under_replay_writes_sidecar(tmp_path: Path) -> None:

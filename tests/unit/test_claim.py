@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import anyio
 import pytest
 
 from mcp_cassette.session.claim import (
@@ -160,3 +161,65 @@ def test_unreadable_claim_blocks_briefly_then_is_reclaimed(tmp_path: Path) -> No
     with pytest.warns(UserWarning, match="unreadable"):
         claim.acquire()
     claim.release()
+
+
+def test_async_waiter_acquires_once_the_holder_releases(tmp_path: Path) -> None:
+    cassette = tmp_path / "c.mcp.json"
+    holder = ClaimFile(cassette, "once")
+    holder.acquire()
+    waiter = ClaimFile(cassette, "once", wait=10)
+
+    async def main() -> float:
+        async def release_later() -> None:
+            await anyio.sleep(0.3)
+            holder.release()
+
+        started = time.monotonic()
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(release_later)
+            await waiter.aacquire()
+        return time.monotonic() - started
+
+    assert anyio.run(main) >= 0.25
+    assert waiter.held
+    waiter.release()
+
+
+def test_async_waiter_times_out_with_a_conflict(tmp_path: Path) -> None:
+    cassette = tmp_path / "c.mcp.json"
+    holder = ClaimFile(cassette, "once")
+    holder.acquire()
+    try:
+        with pytest.raises(ClaimConflict, match="waited 0.2s"):
+            anyio.run(ClaimFile(cassette, "once", wait=0.2).aacquire)
+    finally:
+        holder.release()
+
+
+def test_claim_vanishing_mid_round_is_retried_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    claim = ClaimFile(tmp_path / "c.mcp.json", "all", wait=0)
+    creates = iter([False, True])  # lost the race, then the file was gone
+    monkeypatch.setattr(claim, "_create", lambda: next(creates))
+    monkeypatch.setattr(claim, "_current_holder", lambda: None)
+    claim.acquire()  # no conflict: an absent holder is not a live one
+    assert next(creates, "exhausted") == "exhausted"
+
+
+def test_reclaim_that_keeps_losing_the_race_ends_in_a_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cassette = tmp_path / "c.mcp.json"
+    stale = ClaimRecord(pid=1, host="another-host", mode="all", created_at=OLD)
+    claim = ClaimFile(cassette, "all", wait=0)
+    monkeypatch.setattr(claim, "_create", lambda: False)  # a rival wins every create
+    monkeypatch.setattr(claim, "_current_holder", lambda: stale)
+    with pytest.warns(UserWarning, match="TTL") as record:
+        with pytest.raises(ClaimConflict, match="another-host"):
+            claim.acquire()
+    assert len(record) == 3  # bounded: three reclaim rounds, never a spin
+
+
+def test_no_claim_file_means_no_holder(tmp_path: Path) -> None:
+    assert ClaimFile(tmp_path / "c.mcp.json", "all")._current_holder() is None  # noqa: SLF001
