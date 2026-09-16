@@ -83,6 +83,13 @@ parallel runs, an async library door, and packaged CI. Cassettes move to
   never splice.
 - The `anyio` floor moves from 4.2 to 4.11, for `anyio.lowlevel.current_token()`.
 
+### Fixed
+
+- The CLI writes its output as UTF-8 on every platform. A finding that quotes non-ASCII
+  cassette text — an `R007` mixed-script tool name, a `mask` run — previously killed
+  `lint` with a `UnicodeEncodeError` and exit 1 on a console whose encoding was not UTF-8,
+  Windows' default.
+
 ## [0.3.9] - 2026-08-31
 
 First-run usability pass. Every usability item closes a finding from a

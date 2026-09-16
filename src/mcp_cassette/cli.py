@@ -8,6 +8,7 @@ the MVP.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import sys
@@ -438,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
+    _force_utf8_output()
     raw = list(sys.argv[1:] if argv is None else argv)
     front, server_cmd = _split_server_cmd(raw)
     parser = build_parser()
@@ -455,6 +457,21 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_lint(args)
     parser.error(f"unknown command {args.command}")  # pragma: no cover
     return 2  # pragma: no cover — required subparsers reject unknown commands
+
+
+def _force_utf8_output() -> None:
+    """Make the text streams encode any cassette content, on every platform.
+
+    Findings quote recorded text verbatim — a Cyrillic tool name (R007), a ``mask``
+    run of U+2022 — and the default console encoding on Windows is cp1252, which
+    cannot encode either. Without this the CLI dies with ``UnicodeEncodeError`` and
+    exit 1, losing the exit-code contract on the rules whose whole point is a
+    non-ASCII character. The JSON-RPC paths write bytes through :mod:`._stdio` and
+    are unaffected.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def _split_server_cmd(argv: list[str]) -> tuple[list[str], list[str]]:
