@@ -18,6 +18,7 @@ nothing here touches the committed cassettes.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -152,6 +153,35 @@ def test_env_salt_makes_pseudonyms_project_specific(
 
     assert "alice@example.com" not in "".join(pseudonyms)
     assert pseudonyms[0] != pseudonyms[1]
+
+
+def test_a_profiled_recording_passes_the_redaction_gate(tmp_path: Path) -> None:
+    """``--redact-profile`` is what the commit and CI gates actually check.
+
+    The manifest records *that* scrubbing ran; the profile names *which* scrubbing,
+    so a repository can demand its own. ``lint --require-redaction`` is exactly what
+    the packaged ``mcp-cassette-redaction-check`` pre-commit hook runs on every staged
+    cassette — the positive half of the refusal in ``test_lint_v4.py``.
+    """
+    cassette = tmp_path / "profiled.mcp.json"
+    record = [
+        sys.executable, "-m", "mcp_cassette", "record",
+        "--cassette", str(cassette), "--pii-pack", str(TEAM_PACK),
+        "--redact-profile", "team-baseline", "--", *ECHO_SERVER,
+    ]  # fmt: skip
+    run(record, [*initialize(), tool_call(2, "echo", {"text": SECRET_TEXT})])
+
+    manifest = mcc.Cassette.load(cassette).redaction
+    assert manifest is not None
+    assert manifest.profile == "team-baseline"
+
+    gate = subprocess.run(
+        [sys.executable, "-m", "mcp_cassette", "lint", str(cassette),
+         "--require-redaction", "team-baseline"],
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+    )  # fmt: skip
+    assert gate.returncode == 0
+    assert "alice@example.com" not in cassette.read_text(encoding="utf-8")
 
 
 def test_hyphenated_key_names_are_redacted(tmp_path: Path) -> None:

@@ -191,7 +191,7 @@ Three steps, and the third is the one that has to be enforced:
 
 ```bash
 MCP_CASSETTE_MODE=none uv run pytest examples/test_echo.py -q   # one file: 4 passed
-MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 5 passed
+MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 28 passed
 ```
 
 Both run with no server, no network, and no credentials. Under `none`, a deleted or unmerged cassette fails with `no cassette at <path> and recording is forbidden` — delete one on a scratch branch to see it.

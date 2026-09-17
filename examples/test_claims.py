@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import pytest
 from mcp_client import initialize, run, tool_call
@@ -48,6 +50,38 @@ def test_second_writer_is_refused_while_the_first_records(
 
     assert not claim.exists()  # released on close
     assert cassette.exists()
+
+
+def test_a_once_session_waits_and_then_replays_what_the_writer_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``pytest -n auto`` case: one worker records, the rest replay that file.
+
+    Two workers running the same test against one cassette path is the ordinary
+    consequence of ``-n auto``, and "one records, the rest replay" is what ``once``
+    means. So a ``once`` session that finds a live claim waits for it instead of
+    failing, then resolves again — and by then the cassette exists, so it replays
+    the recording the other worker just made rather than racing it.
+    """
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+    cassette = tmp_path / "shared.mcp.json"
+    messages = [*initialize(), tool_call(2, "add", {"a": 1, "b": 2})]
+
+    def waiter() -> list[dict[str, Any]]:
+        with mcc.use_cassette(cassette, mode="once") as session:
+            command = session.server_command(ECHO_SERVER)
+            assert command[3] == "serve"  # it waited, it did not record
+            return run(command, messages)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with mcc.use_cassette(cassette, mode="all") as writer:
+            command = writer.server_command(ECHO_SERVER)  # takes the claim
+            waiting = pool.submit(waiter)  # blocks until the claim is released
+            assert not waiting.done()
+            run(command, messages)
+        replayed = waiting.result(timeout=60)
+
+    assert any(obj.get("id") == 2 for obj in replayed)  # answered from the cassette
 
 
 def test_readers_share_a_cassette_without_claiming() -> None:
