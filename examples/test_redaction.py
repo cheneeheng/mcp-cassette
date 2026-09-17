@@ -91,3 +91,149 @@ def test_hash_pseudonyms_are_stable_across_recordings(tmp_path: Path) -> None:
         )
         pseudonyms.append(json.dumps(request.payload["params"]))
     assert pseudonyms[0] == pseudonyms[1]
+
+
+def test_server_only_rules_replace_and_mask(tmp_path: Path) -> None:
+    """The other two strategies, on the rules ``pii-pack.toml`` marks ``server``.
+
+    ``replace`` collapses every match to ``<LABEL>``; ``mask`` keeps the last four
+    characters as human-readable evidence. Both rules are ``direction = "server"``,
+    so they scrub what the server says and deliberately leave the agent's own request
+    alone — a server-only rule cannot cause the request-matching collision that
+    ``replace`` risks when it runs in both directions.
+    """
+    cassette = tmp_path / "strategies.mcp.json"
+    text = "deploy to api.internal for ACCT-123456789"
+
+    with mcc.use_cassette(cassette, mode="all", pii_packs=[TEAM_PACK]) as session:
+        run(
+            session.server_command(ECHO_SERVER),
+            [*initialize(), tool_call(2, "echo", {"text": text})],
+        )
+
+    messages = mcc.Cassette.load(cassette).messages
+    echoed = next(m for m in messages if m.kind == "response" and m.msg_id == 2)
+    scrubbed = echoed.payload["result"]["content"][0]["text"]  # type: ignore[index]
+    assert "<HOST>" in scrubbed  # replace: the hostname is gone entirely
+    assert "•" * 10 + "6789" in scrubbed  # mask: only the last four survive
+    assert "api.internal" not in scrubbed and "ACCT-12345" not in scrubbed
+
+    # The request still carries both, because a server rule never reads it.
+    sent = next(m for m in messages if m.method == "tools/call")
+    assert "api.internal" in json.dumps(sent.payload)
+
+
+def test_env_salt_makes_pseudonyms_project_specific(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``record --redact-salt-env`` keys the pseudonyms with your own secret.
+
+    The default stable salt is dictionary-attackable for a low-entropy value such as
+    an email address: anyone with the package can hash a guess and compare. An env
+    salt removes that, and the price is stated here rather than discovered — two
+    recordings of the same session under different salts differ byte for byte, so a
+    re-record shows up as a diff.
+    """
+    pseudonyms = []
+    for name, salt in (("x.mcp.json", "project-x"), ("y.mcp.json", "project-y")):
+        monkeypatch.setenv("MCP_CASSETTE_REDACT_SALT", salt)
+        cassette = tmp_path / name
+        record = [
+            sys.executable, "-m", "mcp_cassette", "record",
+            "--cassette", str(cassette), "--redact-salt-env", "--", *ECHO_SERVER,
+        ]  # fmt: skip
+        run(record, [*initialize(), tool_call(2, "echo", {"text": SECRET_TEXT})])
+
+        loaded = mcc.Cassette.load(cassette)
+        assert loaded.redaction is not None
+        assert loaded.redaction.salt_mode == "env"
+        sent = next(m for m in loaded.messages if m.method == "tools/call")
+        pseudonyms.append(json.dumps(sent.payload["params"]))
+
+    assert "alice@example.com" not in "".join(pseudonyms)
+    assert pseudonyms[0] != pseudonyms[1]
+
+
+def test_hyphenated_key_names_are_redacted(tmp_path: Path) -> None:
+    """Structural globs fold ``-`` and ``_``, so ``X-API-Key`` no longer slips through.
+
+    Before 0.4.0 the shipped globs were ``*apikey*`` and ``*api_key*``, neither of
+    which matches a hyphen — so a header-style key passed through in the clear while
+    the message was still marked ``redacted``. The fold is a widening, so a custom
+    glob of ``*api_key*`` now also fires on ``api-key``.
+    """
+    cassette = tmp_path / "keys.mcp.json"
+    arguments = {"text": "hello", "X-API-Key": "live-abcdef123456"}
+
+    with mcc.use_cassette(cassette, mode="all") as session:
+        run(
+            session.server_command(ECHO_SERVER),
+            [*initialize(), tool_call(2, "echo", arguments)],
+        )
+
+    sent = next(
+        m for m in mcc.Cassette.load(cassette).messages if m.method == "tools/call"
+    )
+    assert sent.payload["params"]["arguments"]["X-API-Key"] == "REDACTED"
+    assert "live-abcdef123456" not in cassette.read_text(encoding="utf-8")
+
+
+_NOISY_SERVER = '''
+import json, sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" not in message:
+        continue
+    # A stray diagnostic object: well-formed JSON, but carrying neither "method" nor
+    # "id", so it is not a request, a response, or a notification.
+    print(json.dumps({"level": "info", "authorization": "Bearer live-key-42"}))
+    print(json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": {}}))
+    sys.stdout.flush()
+'''
+
+
+def test_a_non_jsonrpc_object_still_gets_redacted(tmp_path: Path) -> None:
+    """A line that is JSON but not JSON-RPC keeps its keys, so key rules still apply.
+
+    Until 0.4.0 the recorder kept such a line as plain text, and structural rules
+    need keys to match — so a credential in a stray diagnostic object landed on disk
+    in the clear, on a message flagged ``redacted``. It is now recorded as
+    ``kind: "unclassified"`` with the decoded object intact. Replay ignores these
+    exactly as it ignored ``raw``; they are evidence, never something to match.
+    """
+    server = tmp_path / "noisy_server.py"
+    server.write_text(_NOISY_SERVER, encoding="utf-8")
+    cassette = tmp_path / "noisy.mcp.json"
+
+    with mcc.use_cassette(cassette, mode="all") as session:
+        run(session.server_command([sys.executable, str(server)]), initialize())
+
+    stray = next(
+        m for m in mcc.Cassette.load(cassette).messages if m.kind == "unclassified"
+    )
+    assert stray.payload["authorization"] == "REDACTED"  # type: ignore[index] — dict
+    assert stray.redacted is True
+    assert "live-key-42" not in cassette.read_text(encoding="utf-8")
+
+
+@pytest.mark.mcp_cassette(
+    cassette=Path(__file__).parent / "cassettes" / "pii.mcp.json",
+    pii_packs=[TEAM_PACK],
+)
+def test_the_fixture_door_resolves_packs_too(
+    mcp_cassette: mcc.CassetteSession,
+) -> None:
+    """``pii_packs=`` is on all four doors, because an unresolved pack is fatal.
+
+    Replay resolves a manifest's packs by sha256 and fails loudly when it cannot, so
+    every door needs a way to supply them: a stale recorded path is exactly what the
+    hash identity exists to survive. Here the committed cassette holds pseudonyms,
+    the agent sends the real address, and the two still match.
+    """
+    replayed = run(
+        mcp_cassette.server_command(ECHO_SERVER),
+        [*initialize(), tool_call(2, "echo", {"text": SECRET_TEXT})],
+    )
+    assert "<EMAIL>_" in _echo_text(replayed)
+    assert "alice@example.com" not in _echo_text(replayed)

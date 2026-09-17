@@ -13,6 +13,7 @@ write silently erased the other recording. A recording session now holds a
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -59,3 +60,36 @@ def test_readers_share_a_cassette_without_claiming() -> None:
         assert a.server_command(ECHO_SERVER)[3] == "serve"
         assert b.server_command(ECHO_SERVER)[3] == "serve"
         assert not claim.exists()
+
+
+def test_the_cli_exits_6_and_force_breaks_the_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exit ``6`` is its own code because it is the one failure worth retrying.
+
+    A usage error (``2``) never succeeds on a second attempt; a claim conflict
+    usually does, because the other writer finishes. ``--claim-wait SECONDS`` waits
+    for that instead of failing, and ``--force`` takes the claim away from a writer
+    that is still running — loudly, since it is someone else's recording.
+    """
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+    cassette = tmp_path / "contested.mcp.json"
+
+    def record(*extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "mcp_cassette", "record",
+             "--cassette", str(cassette), *extra, "--", *ECHO_SERVER],
+            capture_output=True, text=True, encoding="utf-8", input="", timeout=60,
+        )  # fmt: skip
+
+    with mcc.use_cassette(cassette, mode="all") as holder:
+        holder.server_command(ECHO_SERVER)  # the library session now holds the claim
+
+        refused = record()
+        assert refused.returncode == 6
+        assert "held for writing" in refused.stderr
+        assert "--force to break the claim" in refused.stderr  # the fix is named
+
+        forced = record("--force")
+        assert forced.returncode != 6
+        assert "--force breaks the live claim" in forced.stderr

@@ -20,11 +20,11 @@ replays.
 | `ci/` | Copy-in configs for the packaged GitHub Action (`cassettes.yml`) and pre-commit hooks (`pre-commit-config.yaml`). |
 | `test_echo.py` | Four pytest examples built on the `mcp_cassette` fixture (stdio). |
 | `test_echo_http.py` | One pytest example built on `mcp_cassette.server_url` (Streamable HTTP; needs the `[http]` extra — the repo's dev group has it). |
-| `test_redaction.py` | Free-text PII redaction: record with a pack, check the cassette holds pseudonyms and a manifest, replay the raw request. |
-| `test_lint_v4.py` | Rules R005 (secrets), R006 (schema text), R007 (lookalike names), `--annotate github`, and `--require-redaction`. |
-| `test_claims.py` | The single-writer claim: a second recorder is refused, readers share freely. |
+| `test_redaction.py` | Free-text PII redaction: the three strategies, the stable and env salts, separator-folded key globs, a non-JSON-RPC object, and `pii_packs=` on the fixture door. |
+| `test_lint_v4.py` | Rules R005 (secrets), R006 (schema text), R007 (lookalike names), `--annotate github`, `--require-redaction`, a pack targeting the `name` surface, unknown rule ids, and multi-cassette arity. |
+| `test_claims.py` | The single-writer claim: a second recorder is refused, the CLI exits `6`, `--force` breaks it, readers share freely. |
 | `test_async_door.py` | `use_cassette_async` replaying in the caller's loop, under asyncio and trio. |
-| `cassettes/` | The committed cassettes those tests replay, plus three for the lint and drift demos: `tools.mcp.json` (a clean `tools/list` recording), `injected.mcp.json` (the same recording with a deliberately poisoned tool description), and `tools-v2.mcp.json` (the server one version later — poisoned description *and* a changed `inputSchema`). |
+| `cassettes/` | The committed cassettes those tests replay, plus `pii.mcp.json` (recorded with a redaction pack under the `team-baseline` profile) and three for the lint and drift demos: `tools.mcp.json` (a clean `tools/list` recording), `injected.mcp.json` (the same recording with a deliberately poisoned tool description), and `tools-v2.mcp.json` (the server one version later — poisoned description *and* a changed `inputSchema`). |
 
 ## The golden cassette
 
@@ -41,7 +41,7 @@ Prove replay-only mode against one file or the whole directory:
 
 ```bash
 MCP_CASSETTE_MODE=none uv run pytest examples/test_echo.py -q   # one file: 4 passed
-MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 17 passed
+MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 26 passed
 ```
 
 No server, no network, no credentials. Under `none` a missing cassette fails the run with
@@ -118,17 +118,23 @@ has nothing to protect there.
   recorded with `pii_packs=[pii-pack.toml]`. The agent sees the live answer unaltered;
   the cassette holds `<EMAIL>_<12 hex>` pseudonyms and a manifest naming the `common`
   and `team` packs by sha256. Replay re-applies the same rules to the agent's raw
-  request, so it still matches. Pseudonyms are stable across re-recordings unless
-  `record --redact-salt-env` is set.
+  request, so it still matches. The rest of the file covers the other two strategies
+  (`replace` collapses a value, `mask` keeps its last four characters),
+  `--redact-salt-env` and what it costs, the folded key glob that now catches
+  `X-API-Key`, a stray non-JSON-RPC object whose credential is redacted because its
+  keys survive, and the same pack supplied through the pytest marker.
 - **`test_lint_v4.py`** — lints `cassettes/surfaces.mcp.json`, which hides injection
   phrasing in a schema property description (R006), a tool named `еcho` with a
   Cyrillic first letter (R007), and a deploy key in result text (R005, which prints six
   characters of it at most). All three are warnings: exit 0, or exit 4 under
   `--fail-on warning`. `--require-redaction team-baseline` exits 4 because the cassette
-  has no manifest.
+  has no manifest. A pack can also aim at the surfaces v4 opened — `surfaces = ["name"]`
+  finds the lookalike where the default pair never looks — and a typo in
+  `--select`/`--ignore` now exits 2 instead of quietly selecting nothing.
 - **`test_claims.py`** — while one `mode="all"` session records, a second one on the
-  same path raises `CassetteError` naming the holder (the CLI exits `6`). Replay
-  sessions never claim, so two can share the golden cassette.
+  same path raises `CassetteError` naming the holder, and the CLI exits `6` with the
+  same message; `--force` takes the claim with a warning. Replay sessions never claim,
+  so two can share the golden cassette.
 - **`test_async_door.py`** — `use_cassette_async` serves the committed HTTP cassette as a
   task in the caller's event loop, under both asyncio and trio. The sync door refuses
   to run inside a loop and names the async one.
