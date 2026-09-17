@@ -43,7 +43,7 @@ to [OP-01.3](#op-013-post-install-health-check).
 |---|---|
 | Python | >= 3.12 (classifiers cover 3.12 and 3.13) |
 | OS | Linux, macOS, Windows |
-| Runtime deps | `anyio>=4.2`, `pydantic>=2.0` — that is all |
+| Runtime deps | `anyio>=4.11`, `pydantic>=2.0` — that is all |
 | Optional `[http]` | `httpx>=0.27`, `h11>=0.14` |
 | Optional `[test]` | `pytest>=8.0` |
 

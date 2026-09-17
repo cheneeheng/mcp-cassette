@@ -59,11 +59,11 @@ The two audiences do not mix:
 ## Part I — Test authors
 
 - [Getting started](getting-started.md) — install, then one record-and-replay through
-  whichever of the three doors fits your setup.
+  whichever of the four doors fits your setup.
 - **HT-01** [Record and replay a stdio server](how-to/HT-01-record-and-replay.md) — the
   core loop through all three doors, record modes, re-recording.
 - **HT-02** [Record and replay a remote HTTP server](how-to/HT-02-remote-http.md) —
-  `server_url`, the `[http]` extra.
+  `server_url`, the `[http]` extra, and the async door where it differs.
 - **HT-03** [Use it as a library](how-to/HT-03-use-as-a-library.md) — `use_cassette` and
   `use_cassette_async` for harnesses that are not pytest suites.
 - **HT-04** [Inject faults](how-to/HT-04-inject-faults.md) — drive a resilience matrix off

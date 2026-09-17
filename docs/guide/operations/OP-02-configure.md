@@ -7,10 +7,11 @@ and its effect.
 
 ## OP-02.0 One setting, three spellings
 
-Most settings exist on all three doors under different names. Find the row, then read the
-detail section it points at.
+Most settings exist on every door under different names. Find the row, then read the
+detail section it points at. `use_cassette_async` takes the same keywords as
+`use_cassette`, so the two share a column.
 
-| Setting | pytest marker / ini | `use_cassette` | CLI | Detail |
+| Setting | pytest marker / ini | `use_cassette`, `use_cassette_async` | CLI | Detail |
 |---|---|---|---|---|
 | record mode | `mode=` / `mcp_cassette_mode` | `mode=` | pick `record` or `serve` | [OP-02.1](#op-021-record-mode) |
 | cassette path | `cassette=` / `mcp_cassette_dir` | `cassette` argument | `--cassette PATH` / positional | [OP-02.2](#op-022-ini-options) |
@@ -24,7 +25,7 @@ detail section it points at.
 | checkpoint interval | not available | not available | `--checkpoint-interval` | [OP-02.6](#op-026-checkpointing) |
 
 Two rows are deliberately uneven. `MCP_CASSETTE_MODE` is the only genuinely cross-door
-*environment* setting — all three doors delegate to `resolve_mode`, which is what makes the
+*environment* setting — every door delegates to `resolve_mode`, which is what makes the
 CI `none` invariant hold everywhere. Redaction and checkpointing are record-time proxy
 settings and are reachable only from the CLI or from `StdioRecordingProxy` directly; see
 [HT-07.3](../how-to/HT-07-redact-secrets.md#ht-073-the-gap-in-the-fixture-and-use_cassette)
@@ -82,13 +83,13 @@ invocation — pytest's own mechanism, no mcp-cassette flag involved.
 **`mcp_cassette_dir` is fixture-only, and there is no `MCP_CASSETTE_DIR` env var.** The
 fixture is the one door that *derives* a cassette path, because a test node name is the
 only thing that can name a cassette automatically; the base directory exists solely to be
-joined onto that derivation. The other two doors take the full path from you:
+joined onto that derivation. Every other door takes the full path from you:
 
 | Door | Cassette named by |
 |---|---|
 | pytest fixture | derived — `<mcp_cassette_dir>/<module>/<node name>.mcp.json` |
 | `mcp-cassette record` / `serve` | `--cassette PATH` / positional `PATH` |
-| `use_cassette(...)` | the `cassette` argument |
+| `use_cassette(...)` / `use_cassette_async(...)` | the `cassette` argument |
 
 So configure the directory where it belongs — in the path you pass:
 
@@ -99,8 +100,8 @@ with use_cassette(CASSETTES / "search.mcp.json") as session:
 ```
 
 This is the opposite of `MCP_CASSETTE_MODE`, which is genuinely cross-door: `resolve_mode`
-reads it and all three doors delegate there, so the `none` invariant holds everywhere. A
-directory env var would reach exactly one door of three.
+reads it and every door delegates there, so the `none` invariant holds everywhere. A
+directory env var would reach exactly one door of four.
 
 ## OP-02.3 Marker options
 
