@@ -1,8 +1,10 @@
 # HT-04. Inject faults
 
-**When:** you want to test how your agent behaves when the MCP server is slow, errors,
-returns garbage, or dies — without breaking a real server.
-**Prerequisites:** a recorded cassette for the test. Faults are **replay-only**.
+[← Guide index](../index.md)
+
+- **When:** you want to test how your agent behaves when the MCP server is slow, errors,
+  returns garbage, or dies — without breaking a real server.
+- **Prerequisites:** a recorded cassette for the test. Faults are **replay-only**.
 
 One recorded cassette drives a whole resilience matrix. The cassette is never mutated:
 faults live in a separate `FaultOverlay`, either built in test code or loaded from a
@@ -218,3 +220,7 @@ needed to.
 - [HT-05. Replay timing](HT-05-replay-timing.md) — pacing and faults compose; order is
   pace, then fault.
 - [OP-04. CLI reference](../operations/OP-04-cli-reference.md) — every flag.
+
+---
+
+[← HT-03 Use it as a library](HT-03-use-as-a-library.md) · [Guide index](../index.md) · [HT-05 Replay recorded timing →](HT-05-replay-timing.md)

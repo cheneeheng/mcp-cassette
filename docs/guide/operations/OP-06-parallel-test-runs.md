@@ -1,8 +1,10 @@
 # OP-06. Parallel test runs
 
-**Audience:** operators who run the suite with `pytest -n auto` (pytest-xdist) or open
-several sessions at once.
-**Goal:** parallelism never silently loses or splices a recording.
+[← Guide index](../index.md)
+
+- **Audience:** operators who run the suite with `pytest -n auto` (pytest-xdist) or open
+  several sessions at once.
+- **Goal:** parallelism never silently loses or splices a recording.
 
 ## OP-06.1 What is safe to share
 
@@ -105,3 +107,7 @@ creates is out of scope for a testing library.
 - [OP-03. CI pipeline](OP-03-ci.md)
 - [OP-04.1 Exit codes](OP-04-cli-reference.md#op-041-exit-codes)
 - [HT-03.8 Limits worth knowing](../how-to/HT-03-use-as-a-library.md#ht-038-limits-worth-knowing)
+
+---
+
+[← OP-05 Runbook: replay misses and failed recordings](OP-05-runbook-replay-misses.md) · [Guide index](../index.md) · [OP-07 Pre-commit hooks →](OP-07-pre-commit.md)

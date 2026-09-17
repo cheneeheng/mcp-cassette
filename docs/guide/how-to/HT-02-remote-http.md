@@ -1,9 +1,11 @@
 # HT-02. Record and replay a remote HTTP server
 
-**When:** the MCP server your agent talks to is a remote Streamable HTTP endpoint, not a
-local command.
-**Prerequisites:** the `[http]` extra installed; network access to the real endpoint on
-the recording run only.
+[← Guide index](../index.md)
+
+- **When:** the MCP server your agent talks to is a remote Streamable HTTP endpoint, not a
+  local command.
+- **Prerequisites:** the `[http]` extra installed; network access to the real endpoint on
+  the recording run only.
 
 ```
 uv add --dev "mcp-cassette[http]"   # in your own project
@@ -158,3 +160,7 @@ Anything driving the replay server must behave like a Streamable HTTP MCP client
 - [HT-05. Replay timing](HT-05-replay-timing.md) — SSE inter-event spacing is the
   highest-fidelity thing pacing buys, and it is HTTP-only.
 - [OP-04. CLI reference](../operations/OP-04-cli-reference.md) — every flag.
+
+---
+
+[← HT-01 Record and replay a stdio server](HT-01-record-and-replay.md) · [Guide index](../index.md) · [HT-03 Use it as a library →](HT-03-use-as-a-library.md)

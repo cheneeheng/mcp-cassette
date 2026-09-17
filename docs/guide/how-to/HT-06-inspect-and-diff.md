@@ -1,11 +1,13 @@
 # HT-06. Inspect and diff cassettes
 
-**When:** a replay missed and you need to see what was actually recorded, or you
-re-recorded after a server upgrade and need the delta.
-**Prerequisites:** a cassette file. Everything here is read-only — a cassette is never
-mutated or annotated. Every command below runs against the cassettes in
-`examples/cassettes/`, so it works from a clone with no server and no network; swap in
-your own path when you are done reading.
+[← Guide index](../index.md)
+
+- **When:** a replay missed and you need to see what was actually recorded, or you
+  re-recorded after a server upgrade and need the delta.
+- **Prerequisites:** a cassette file. Everything here is read-only — a cassette is never
+  mutated or annotated. Every command below runs against the cassettes in
+  `examples/cassettes/`, so it works from a clone with no server and no network; swap in
+  your own path when you are done reading.
 
 This task has **two doors, not three**. Inspecting and diffing are operations on a
 cassette *file*, so there is no pytest fixture surface: the fixture hands you a running
@@ -220,3 +222,7 @@ dependencies would be the wrong trade.
   wired into a CI gate.
 - [OP-05. Runbook: replay misses and failed recordings](../operations/OP-05-runbook-replay-misses.md)
 - [OP-04. CLI reference](../operations/OP-04-cli-reference.md)
+
+---
+
+[← HT-05 Replay recorded timing](HT-05-replay-timing.md) · [Guide index](../index.md) · [HT-07 Redact secrets from cassettes →](HT-07-redact-secrets.md)

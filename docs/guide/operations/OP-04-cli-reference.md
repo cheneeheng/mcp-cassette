@@ -1,5 +1,7 @@
 # OP-04. CLI reference
 
+[← Guide index](../index.md)
+
 **Audience:** operators. The authoritative surface is `mcp-cassette <command> --help`;
 this page mirrors it.
 
@@ -229,3 +231,7 @@ default), `4` otherwise. Every finding carries a JSON-pointer locator into the c
 
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known*
 > smells, nothing more.
+
+---
+
+[← OP-03 CI pipeline](OP-03-ci.md) · [Guide index](../index.md) · [OP-05 Runbook: replay misses and failed recordings →](OP-05-runbook-replay-misses.md)

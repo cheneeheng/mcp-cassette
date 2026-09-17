@@ -1,5 +1,7 @@
 # Getting started
 
+[← Guide index](index.md)
+
 Goal: go from nothing to a session that records against a real MCP server once and then
 replays it offline, forever.
 

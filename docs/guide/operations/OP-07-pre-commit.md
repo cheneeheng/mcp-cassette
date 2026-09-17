@@ -1,7 +1,9 @@
 # OP-07. Pre-commit hooks
 
-**Audience:** operators and maintainers of a repository that commits cassettes.
-**Goal:** an unscrubbed or unclean cassette is refused before it is ever committed.
+[← Guide index](../index.md)
+
+- **Audience:** operators and maintainers of a repository that commits cassettes.
+- **Goal:** an unscrubbed or unclean cassette is refused before it is ever committed.
 
 mcp-cassette publishes two [pre-commit](https://pre-commit.com) hooks from its repository
 root. Both run only on staged `*.mcp.json` files.
@@ -78,3 +80,7 @@ the merge-base for you ([OP-03](OP-03-ci.md)).
 - [OP-03. CI pipeline](OP-03-ci.md) — the same checks at merge time.
 - [HT-10. Redact PII from free text](../how-to/HT-10-redact-pii.md) — producing a cassette the
   redaction check accepts.
+
+---
+
+[← OP-06 Parallel test runs](OP-06-parallel-test-runs.md) · [Guide index](../index.md)

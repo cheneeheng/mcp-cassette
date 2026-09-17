@@ -1,9 +1,11 @@
 # HT-08. Lint with your own pattern packs
 
-**When:** the bundled rules catch generic smells, but you need to catch *yours* — a vendor
-name that must never appear in a tool description, an internal hostname that signals a
-misconfigured staging server, domain-specific exfiltration phrasing.
-**Prerequisites:** a cassette and a TOML file you control.
+[← Guide index](../index.md)
+
+- **When:** the bundled rules catch generic smells, but you need to catch *yours* — a vendor
+  name that must never appear in a tool description, an internal hostname that signals a
+  misconfigured staging server, domain-specific exfiltration phrasing.
+- **Prerequisites:** a cassette and a TOML file you control.
 
 **There is no Python rule-plugin API, and that is deliberate.** A `Rule` protocol and
 `register_rule()` would be a public contract to keep semver-stable forever, and would make
@@ -215,3 +217,7 @@ All exit `2`, all naming the file and the offending key:
   time; packs detect **phrasing** at lint time. Different jobs, often confused.
 - [HT-09. Gate a drifting server surface](HT-09-gate-a-drifting-server.md)
 - [OP-03. CI pipeline](../operations/OP-03-ci.md)
+
+---
+
+[← HT-07 Redact secrets from cassettes](HT-07-redact-secrets.md) · [Guide index](../index.md) · [HT-09 Gate a drifting server surface →](HT-09-gate-a-drifting-server.md)

@@ -1,5 +1,7 @@
 # OP-05. Runbook: replay misses and failed recordings
 
+[← Guide index](../index.md)
+
 **Audience:** operators. The two incidents that actually happen.
 
 ## OP-05.1 Incident 1 — replay had unmatched requests
@@ -161,3 +163,7 @@ a cassette that previously loaded, or you hit
 Upgrade mcp-cassette first; if it persists, file the cassette, the command, and the exact
 error at
 [github.com/cheneeheng/mcp-cassette](https://github.com/cheneeheng/mcp-cassette).
+
+---
+
+[← OP-04 CLI reference](OP-04-cli-reference.md) · [Guide index](../index.md) · [OP-06 Parallel test runs →](OP-06-parallel-test-runs.md)

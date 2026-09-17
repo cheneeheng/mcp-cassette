@@ -1,8 +1,10 @@
 # HT-11. Detect secrets that got through
 
-**When:** before you commit or merge a cassette, to catch a credential that no redaction
-rule matched.
-**Prerequisites:** a cassette. Detection reads the file and needs no server.
+[← Guide index](../index.md)
+
+- **When:** before you commit or merge a cassette, to catch a credential that no redaction
+  rule matched.
+- **Prerequisites:** a cassette. Detection reads the file and needs no server.
 
 Lint rule **R005** walks every string value in a cassette and reports tokens that look like
 encoded secrets. It is on by default at **warning** severity.
@@ -85,3 +87,7 @@ a schema description is R005's; injection phrasing in the same description is R0
 - [HT-07. Redact secrets](HT-07-redact-secrets.md) — named fields, at record time.
 - [HT-10. Redact PII from free text](HT-10-redact-pii.md) — free text, at record time.
 - [OP-04.6 `lint`](../operations/OP-04-cli-reference.md#op-046-lint) — every flag and rule.
+
+---
+
+[← HT-10 Redact PII from free text](HT-10-redact-pii.md) · [Guide index](../index.md)

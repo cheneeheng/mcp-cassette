@@ -1,5 +1,7 @@
 # OP-01. Installation
 
+[← Guide index](../index.md)
+
 **Audience:** operators standing up mcp-cassette in a project or pipeline.
 
 ## OP-01.0 The whole setup, in five commands
@@ -170,3 +172,7 @@ carries a paste-able 30-line server that stands in for them.
 
 - [OP-02. Configuration](OP-02-configure.md) — modes, ini options, matching.
 - [OP-03. CI pipeline](OP-03-ci.md) — the settings a pipeline must have.
+
+---
+
+[Guide index](../index.md) · [OP-02 Configuration →](OP-02-configure.md)

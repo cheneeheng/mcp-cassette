@@ -1,9 +1,11 @@
 # HT-07. Redact secrets from cassettes
 
-**When:** before you commit a cassette recorded against a real server. Cassettes are
-verbatim transcripts; anything the server said is in the file.
-**Prerequisites:** a recording run. Redaction happens at capture time and cannot be applied
-retroactively.
+[← Guide index](../index.md)
+
+- **When:** before you commit a cassette recorded against a real server. Cassettes are
+  verbatim transcripts; anything the server said is in the file.
+- **Prerequisites:** a recording run. Redaction happens at capture time and cannot be applied
+  retroactively.
 
 Redaction is applied to a **deep copy** at capture time. The bytes in flight are never
 altered, so the agent under test sees the real values while the cassette gets the scrubbed
@@ -146,3 +148,7 @@ time. Different jobs.
 - [HT-11. Detect secrets that got through](HT-11-detect-secrets.md) — R005 reports what both missed.
 - [HT-08. Lint with your own pattern packs](HT-08-lint-pattern-packs.md)
 - [OP-03. CI pipeline](../operations/OP-03-ci.md#op-033-lint-cassettes-before-they-reach-a-model)
+
+---
+
+[← HT-06 Inspect and diff cassettes](HT-06-inspect-and-diff.md) · [Guide index](../index.md) · [HT-08 Lint with your own pattern packs →](HT-08-lint-pattern-packs.md)

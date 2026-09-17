@@ -1,9 +1,11 @@
 # OP-03. CI pipeline
 
-**Audience:** operators who own the pipeline.
-**Goal:** cassette-backed tests run offline and deterministically, no pipeline can
-silently record against a live server, and every committed cassette is linted and
-drift-checked against its base branch.
+[← Guide index](../index.md)
+
+- **Audience:** operators who own the pipeline.
+- **Goal:** cassette-backed tests run offline and deterministically, no pipeline can
+  silently record against a live server, and every committed cassette is linted and
+  drift-checked against its base branch.
 
 ## OP-03.0 The whole pipeline
 
@@ -258,3 +260,7 @@ diff, `serve` exits `2` on a cassette that previously loaded, or `format_version
 newer than the installed library understands. Those are library-level issues — capture
 the cassette, the failing command, and the exact error, and file them at
 [github.com/cheneeheng/mcp-cassette](https://github.com/cheneeheng/mcp-cassette).
+
+---
+
+[← OP-02 Configuration](OP-02-configure.md) · [Guide index](../index.md) · [OP-04 CLI reference →](OP-04-cli-reference.md)

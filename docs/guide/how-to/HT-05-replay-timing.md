@@ -1,8 +1,10 @@
 # HT-05. Replay recorded timing
 
-**When:** your agent's behavior depends on *how long* the server takes — timeout handling,
-progress-notification UX, concurrency assumptions, retry/backoff logic.
-**Prerequisites:** a recorded cassette. Pacing is replay-only.
+[← Guide index](../index.md)
+
+- **When:** your agent's behavior depends on *how long* the server takes — timeout handling,
+  progress-notification UX, concurrency assumptions, retry/backoff logic.
+- **Prerequisites:** a recorded cassette. Pacing is replay-only.
 
 Every recorded message carries `t_offset_ms`, milliseconds from proxy start on a monotonic
 clock. Replay ignores it by default: responses come back instantly. That is the right
@@ -123,3 +125,7 @@ determinism for recorded-latency fidelity, by design.
 - [HT-04. Inject faults](HT-04-inject-faults.md) — pathological latency, and the
   composition rules above.
 - [OP-04. CLI reference](../operations/OP-04-cli-reference.md) — every flag.
+
+---
+
+[← HT-04 Inject faults](HT-04-inject-faults.md) · [Guide index](../index.md) · [HT-06 Inspect and diff cassettes →](HT-06-inspect-and-diff.md)

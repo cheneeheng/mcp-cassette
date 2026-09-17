@@ -1,8 +1,10 @@
 # HT-03. Use it as a library
 
-**When:** your agent harness is not a pytest suite — a notebook, a benchmark runner, a
-CLI of your own, or a different test framework.
-**Prerequisites:** `mcp-cassette` installed (plus the `[http]` extra for HTTP servers).
+[← Guide index](../index.md)
+
+- **When:** your agent harness is not a pytest suite — a notebook, a benchmark runner, a
+  CLI of your own, or a different test framework.
+- **Prerequisites:** `mcp-cassette` installed (plus the `[http]` extra for HTTP servers).
 
 The pytest fixture and the CLI are two front doors onto the same machinery. `use_cassette`
 is the third: a context manager that hands you a `CassetteSession` with the same modes, the
@@ -181,3 +183,7 @@ server stopped.
 - [HT-01. Record and replay a stdio server](HT-01-record-and-replay.md)
 - [HT-02. Record and replay a remote HTTP server](HT-02-remote-http.md)
 - [HT-05. Replay timing](HT-05-replay-timing.md)
+
+---
+
+[← HT-02 Record and replay a remote HTTP server](HT-02-remote-http.md) · [Guide index](../index.md) · [HT-04 Inject faults →](HT-04-inject-faults.md)

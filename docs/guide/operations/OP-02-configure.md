@@ -1,5 +1,7 @@
 # OP-02. Configuration
 
+[← Guide index](../index.md)
+
 **Audience:** operators. Every setting that changes record/replay behaviour, its default,
 and its effect.
 
@@ -195,3 +197,7 @@ exit `130`. SIGTERM has no graceful-finalize semantics on Windows.
 
 Off the main thread, where no signal handler can be installed, shutdown degrades to
 EOF-driven: close the client's stdin to end the session.
+
+---
+
+[← OP-01 Installation](OP-01-install.md) · [Guide index](../index.md) · [OP-03 CI pipeline →](OP-03-ci.md)

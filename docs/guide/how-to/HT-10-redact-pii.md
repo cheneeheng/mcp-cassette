@@ -1,8 +1,10 @@
 # HT-10. Redact PII from free text
 
-**When:** the server you record puts personal data or credentials *inside text* — an email
-in a search result, a phone number in a ticket body, a customer address in a tool argument.
-**Prerequisites:** a recording run. Like every redaction, this happens at capture time.
+[← Guide index](../index.md)
+
+- **When:** the server you record puts personal data or credentials *inside text* — an email
+  in a search result, a phone number in a ticket body, a customer address in a tool argument.
+- **Prerequisites:** a recording run. Like every redaction, this happens at capture time.
 
 [HT-07](HT-07-redact-secrets.md) structural rules hide **named fields**: they need a JSON key
 such as `authorization`. A value inside a sentence has no key of its own, so structural
@@ -192,3 +194,7 @@ because they can compute the same pseudonym. When that matters, record with
   and the combination table.
 - [OP-07. Pre-commit hooks](../operations/OP-07-pre-commit.md) — refuse an unscrubbed
   cassette before it is committed.
+
+---
+
+[← HT-09 Gate a drifting server surface](HT-09-gate-a-drifting-server.md) · [Guide index](../index.md) · [HT-11 Detect secrets that got through →](HT-11-detect-secrets.md)

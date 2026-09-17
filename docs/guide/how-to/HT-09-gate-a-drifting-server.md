@@ -1,11 +1,13 @@
 # HT-09. Gate a drifting server surface
 
-**When:** you depend on an MCP server someone else ships, and you want a build to fail the
-day its tool surface changes underneath you — whether the change is hostile or just a
-release you were not told about.
-**Prerequisites:** a recorded cassette you have reviewed and committed. The worked example
-below uses the ones in `examples/cassettes/`, so it runs from a clone with no server and no
-network.
+[← Guide index](../index.md)
+
+- **When:** you depend on an MCP server someone else ships, and you want a build to fail the
+  day its tool surface changes underneath you — whether the change is hostile or just a
+  release you were not told about.
+- **Prerequisites:** a recorded cassette you have reviewed and committed. The worked example
+  below uses the ones in `examples/cassettes/`, so it runs from a clone with no server and no
+  network.
 
 A replayed cassette hides upstream drift — that is the point, and also the risk. Your tests
 keep passing against last month's recording while the live server ships a new tool
@@ -211,3 +213,7 @@ pipeline are in
 - [HT-06. Inspect and diff cassettes](HT-06-inspect-and-diff.md) — the full `diff` and
   `inspect` surface.
 - [OP-03. CI pipeline](../operations/OP-03-ci.md) — the pipeline settings this gate sits in.
+
+---
+
+[← HT-08 Lint with your own pattern packs](HT-08-lint-pattern-packs.md) · [Guide index](../index.md) · [HT-10 Redact PII from free text →](HT-10-redact-pii.md)

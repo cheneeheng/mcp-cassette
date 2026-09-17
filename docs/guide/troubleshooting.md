@@ -1,5 +1,7 @@
 # Troubleshooting
 
+[← Guide index](index.md)
+
 Symptom to fix, for test authors. Operators should also see the
 [runbook](operations/OP-05-runbook-replay-misses.md).
 
