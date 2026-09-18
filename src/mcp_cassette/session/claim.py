@@ -229,7 +229,14 @@ class ClaimFile:
                 f"mcp-cassette: reclaiming the claim on {self.cassette_path}: {reason}",
                 stacklevel=4,
             )
-            self.path.unlink(missing_ok=True)
+            try:
+                self.path.unlink(missing_ok=True)
+            except PermissionError:
+                # Same Windows rule from the other side: a peer reading the claim
+                # blocks the unlink. Leave it for the next round rather than failing
+                # the run — the holder we just judged stale is still stale.
+                if sys.platform != "win32":  # pragma: no cover — POSIX passthrough
+                    raise
         return holder or self._current_holder() or self._placeholder(time.time())
 
     def _create(self) -> bool:
@@ -246,6 +253,15 @@ class ClaimFile:
         try:
             fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
+            return False
+        except PermissionError:
+            # Windows reports a *contended* claim file as ERROR_ACCESS_DENIED rather
+            # than EEXIST: a peer holds it open, or a concurrent reclaim left it
+            # delete-pending. We did not create it either way, so report that and let
+            # the retry loop in _attempt re-read the holder. On POSIX this is a real
+            # permission problem on the directory and must surface.
+            if sys.platform != "win32":  # pragma: no cover — POSIX passthrough
+                raise
             return False
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(record.model_dump_json())
