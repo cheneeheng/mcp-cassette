@@ -65,7 +65,13 @@ def test_planted_pii_never_reaches_disk(tmp_path: Path) -> None:
     assert manifest.profile == "team"
     assert manifest.backends == ["structural", "regex-pii"]
     assert [ref.id for ref in manifest.packs] == ["common", "team"]
-    assert manifest.packs[1].sha256 == hashlib.sha256(pack.read_bytes()).hexdigest()
+    # A pack's id is its content hash, CRLF normalized to LF: this file is written
+    # CRLF on Windows and LF elsewhere, and both must yield the same id or a
+    # cassette recorded on one platform cannot resolve its pack on another.
+    assert (
+        manifest.packs[1].sha256
+        == hashlib.sha256(pack.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    )
     assert "team/ticket" in manifest.rule_ids
     # Evidence, never the salt: the manifest records the mode, not the key.
     assert manifest.salt_mode == "stable"

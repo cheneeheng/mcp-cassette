@@ -22,11 +22,19 @@ DEAD_URL = "http://127.0.0.1:9/mcp"
 backends = pytest.mark.parametrize("backend", ["asyncio", "trio"])
 
 
-@backends
-def test_yields_session_with_resolved_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backend: str
-) -> None:
+@pytest.fixture(autouse=True)
+def _no_inherited_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let each test's ``mode=`` argument decide the mode.
+
+    ``MCP_CASSETTE_MODE`` outranks ``mode=`` by design, and CI sets it to ``none``
+    (a project invariant), so without this every ``mode="all"`` here silently became
+    ``none`` and any test that resolved an action failed on a missing cassette.
+    """
     monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+
+
+@backends
+def test_yields_session_with_resolved_mode(tmp_path: Path, backend: str) -> None:
     cassette = tmp_path / "c.mcp.json"
 
     async def main() -> str:
@@ -143,10 +151,7 @@ def _port_open(url: str) -> bool:
 
 
 @backends
-def test_faulted_session_serves_in_loop_and_stops_with_the_block(
-    monkeypatch: pytest.MonkeyPatch, backend: str
-) -> None:
-    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+def test_faulted_session_serves_in_loop_and_stops_with_the_block(backend: str) -> None:
 
     async def main() -> str:
         async with use_cassette_async(HTTP_CASSETTE, mode="none") as session:
@@ -165,7 +170,6 @@ def test_faulted_session_serves_in_loop_and_stops_with_the_block(
 def test_bind_failure_closes_the_socket_and_propagates(
     monkeypatch: pytest.MonkeyPatch, backend: str
 ) -> None:
-    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
     made: list[socket.socket] = []
 
     class _Unbindable(socket.socket):
@@ -189,9 +193,8 @@ def test_bind_failure_closes_the_socket_and_propagates(
 
 @backends
 def test_live_writer_claim_raises_cassette_error_on_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backend: str
+    tmp_path: Path, backend: str
 ) -> None:
-    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
     cassette = tmp_path / "c.mcp.json"
     entered: list[bool] = []
 

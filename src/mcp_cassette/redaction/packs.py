@@ -86,7 +86,8 @@ class LoadedPack:
     Attributes:
         pack: The parsed pack.
         path: Where it was loaded from, as given (``builtin:<id>`` when bundled).
-        sha256: Hash of the pack file's bytes — the identity replay resolves by.
+        sha256: Hash of the pack file's content, with CRLF normalized to LF — the
+            identity replay resolves by, stable across platforms.
     """
 
     pack: RedactionPack
@@ -168,7 +169,13 @@ def parse_pack(data: bytes, *, source: str, path: str | None) -> LoadedPack:
             raise ValueError(f"redaction pack {source}: duplicate rule id {rule.id!r}")
         seen.add(rule.id)
         compile_rule(rule, source)
-    return LoadedPack(pack=pack, path=path, sha256=hashlib.sha256(data).hexdigest())
+    # Line endings are not part of a pack's meaning, but they are part of its bytes:
+    # a CRLF checkout of the same file hashed to a different id, so a cassette
+    # recorded on one platform could not resolve its own pack on another.
+    normalized = data.replace(b"\r\n", b"\n")
+    return LoadedPack(
+        pack=pack, path=path, sha256=hashlib.sha256(normalized).hexdigest()
+    )
 
 
 def compile_rule(rule: PIIRule, source: str = "<pack>") -> re.Pattern[str]:

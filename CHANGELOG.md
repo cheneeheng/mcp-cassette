@@ -87,6 +87,13 @@ parallel runs, an async library door, and packaged CI. Cassettes move to
 
 ### Fixed
 
+- Redaction packs are identified by their content hash with CRLF normalized to
+  LF, so the same pack resolves on every platform. A pack checked out with
+  Windows line endings hashed to a different id, so a cassette recorded on
+  Linux or macOS could not resolve its own pack on Windows and every request
+  carrying redacted text missed. Existing cassettes are unaffected: LF content
+  hashes exactly as before. A `.gitattributes` also pins this repo's `.toml`
+  files to LF.
 - The CLI writes its output as UTF-8 on every platform. A finding that quotes non-ASCII
   cassette text — an `R007` mixed-script tool name, a `mask` run — previously killed
   `lint` with a `UnicodeEncodeError` and exit 1 on a console whose encoding was not UTF-8,
