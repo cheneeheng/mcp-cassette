@@ -20,6 +20,7 @@ import socket
 import sys
 import time
 import warnings
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,6 +35,41 @@ DEFAULT_CLAIM_TTL = 14400.0
 
 _POLL_SECONDS = 0.1
 _CORRUPT_GRACE_SECONDS = 5.0
+_SHARING_RETRY_SECONDS = 2.0
+_SHARING_POLL_SECONDS = 0.02  # not _POLL_SECONDS: never resonate with a waiter's poll
+
+
+def _despite_sharing[T](op: Callable[[], T], default: T | None = None) -> T | None:
+    """Run one claim-file mutation, retrying while a peer's open handle blocks it.
+
+    On Windows a process merely *reading* the claim blocks a concurrent create or
+    delete of it (``ERROR_SHARING_VIOLATION`` / ``ERROR_ACCESS_DENIED``, both
+    :class:`PermissionError`), and a waiter polls that file continuously by design —
+    so every mutation here is exposed, not just the one a given traceback names.
+
+    Args:
+        op: The mutation to attempt.
+        default: Returned when the contention outlasts the retry window.
+
+    Returns:
+        ``op()``'s result, or ``default`` if it never got through.
+
+    Raises:
+        PermissionError: On POSIX, where this is a real permission problem on the
+            directory rather than a sharing rule, and must surface.
+    """
+    deadline = time.monotonic() + _SHARING_RETRY_SECONDS
+    while True:
+        try:
+            return op()
+        except PermissionError:
+            if sys.platform != "win32":  # pragma: no cover — POSIX passthrough
+                raise
+            if time.monotonic() >= deadline:
+                # Giving up beats failing the run: a claim that outlives its holder
+                # is reclaimed by the next acquirer on pid liveness or the TTL.
+                return default
+            time.sleep(_SHARING_POLL_SECONDS)
 
 
 class ClaimRecord(BaseModel):
@@ -210,7 +246,9 @@ class ClaimFile:
         if self._record is None:
             return
         if read_claim(self.cassette_path) == self._record:
-            self.path.unlink(missing_ok=True)
+            # The most important of the three: a release that fails leaves a live
+            # claim on disk, and a waiter polling it blocks for its whole wait.
+            _despite_sharing(lambda: self.path.unlink(missing_ok=True))
         self._record = None
 
     def _attempt(self) -> ClaimRecord | None:
@@ -229,14 +267,7 @@ class ClaimFile:
                 f"mcp-cassette: reclaiming the claim on {self.cassette_path}: {reason}",
                 stacklevel=4,
             )
-            try:
-                self.path.unlink(missing_ok=True)
-            except PermissionError:
-                # Same Windows rule from the other side: a peer reading the claim
-                # blocks the unlink. Leave it for the next round rather than failing
-                # the run — the holder we just judged stale is still stale.
-                if sys.platform != "win32":  # pragma: no cover — POSIX passthrough
-                    raise
+            _despite_sharing(lambda: self.path.unlink(missing_ok=True))
         return holder or self._current_holder() or self._placeholder(time.time())
 
     def _create(self) -> bool:
@@ -251,17 +282,15 @@ class ClaimFile:
             token=secrets.token_hex(8),
         )
         try:
-            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            # Windows reports a contended claim as ERROR_ACCESS_DENIED rather than
+            # EEXIST, so _despite_sharing waits it out; None means it never got
+            # through, which is "we did not create it" — the same as EEXIST here.
+            fd = _despite_sharing(
+                lambda: os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            )
         except FileExistsError:
             return False
-        except PermissionError:
-            # Windows reports a *contended* claim file as ERROR_ACCESS_DENIED rather
-            # than EEXIST: a peer holds it open, or a concurrent reclaim left it
-            # delete-pending. We did not create it either way, so report that and let
-            # the retry loop in _attempt re-read the holder. On POSIX this is a real
-            # permission problem on the directory and must surface.
-            if sys.platform != "win32":  # pragma: no cover — POSIX passthrough
-                raise
+        if fd is None:
             return False
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(record.model_dump_json())

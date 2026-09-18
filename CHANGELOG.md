@@ -87,6 +87,12 @@ parallel runs, an async library door, and packaged CI. Cassettes move to
 
 ### Fixed
 
+- The single-writer claim survives contention on Windows, where a process
+  merely reading the claim blocks a concurrent create or delete of it and a
+  waiter polls that file by design. Every mutation now retries briefly instead
+  of raising: a failed release used to strand the claim, so a peer waited its
+  full timeout and then reported a conflict against a holder that had already
+  finished. POSIX is unchanged, where a permission error is a real one.
 - Redaction packs are identified by their content hash with CRLF normalized to
   LF, so the same pack resolves on every platform. A pack checked out with
   Windows line endings hashed to a different id, so a cassette recorded on
