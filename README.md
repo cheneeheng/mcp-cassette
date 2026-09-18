@@ -177,7 +177,18 @@ CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live serve
 
 Cassette paths come from the marker's `cassette=`, else `mcp_cassette_dir` (ini), else `<rootpath>/tests/cassettes`; `pytest -o mcp_cassette_dir=...` overrides it for one invocation. That setting is fixture-only, and deliberately has no env var — the fixture is the one door that *derives* a path from the test name. The CLI and `use_cassette` take the full path from you, so you compose the directory into it yourself.
 
-Full chapter: [OP-02. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md).
+### 3.1 Parallel runs: one writer per cassette
+
+Two processes recording the same cassette at once would interleave or truncate it, so a run that writes takes a `<cassette>.claim` file first. Readers never claim, so replay-only suites are unaffected and never serialize.
+
+| Mode | Another live process holds the claim |
+|---|---|
+| `once` | wait, then re-resolve — the other writer's recording is now present, so this run replays it |
+| `all`, `new_episodes` | fail fast: exit `6` from the CLI, `CassetteError` otherwise |
+
+`once` waiting and then replaying is the behaviour that makes `pytest -n auto` work on a cold cache: the first worker records, the rest find the cassette and play it back. Sessions wait 30s; the CLI fails immediately unless `record --claim-wait SECONDS` asks it to wait. A claim whose owner died is reclaimed automatically, and `record --force` breaks a live one with a warning.
+
+Full chapters: [OP-02. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md) and [OP-06. Parallel test runs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-06-parallel-test-runs.md).
 
 ## 4. The CI contract: record once, commit, replay forever
 

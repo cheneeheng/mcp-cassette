@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-18
+
 Hardening for recording against production servers: free-text redaction stamped on the
 cassette, lint over every tool-definition surface plus entropy-detected secrets, safe
 parallel runs, an async library door, and packaged CI. Cassettes move to
@@ -758,7 +760,8 @@ deterministic mock servers so agent test suites stop hitting live servers.
 - Server-initiated requests (sampling/elicitation) are recorded generically but
   not replayable in this release; such cassettes are refused at load.
 
-[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.9...HEAD
+[Unreleased]: https://github.com/cheneeheng/mcp-cassette/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.9...v0.4.0
 [0.3.9]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/cheneeheng/mcp-cassette/compare/v0.3.6...v0.3.7
