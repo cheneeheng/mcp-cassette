@@ -1,0 +1,160 @@
+{
+  "format_version": 3,
+  "recorded_at": "2026-09-17T09:19:51.327977Z",
+  "transport": "stdio",
+  "server_url": null,
+  "session_id": null,
+  "protocol_version": "2024-11-05",
+  "server_info": {
+    "name": "echo-example",
+    "version": "1.0.0"
+  },
+  "redaction": {
+    "profile": "team-baseline",
+    "backends": [
+      "structural",
+      "regex-pii"
+    ],
+    "packs": [
+      {
+        "id": "common",
+        "path": "builtin:common",
+        "sha256": "d5ba9d03de2178ec019813889984e09cb940724646eb7ca4250341808a783134"
+      },
+      {
+        "id": "team",
+        "path": "pii-pack.toml",
+        "sha256": "0bfea051afa14a8f67eba71586daade06923dc9b1be340952ac8c82fc9dcf919"
+      }
+    ],
+    "rule_ids": [
+      "common/email",
+      "common/phone-e164",
+      "common/ipv4",
+      "common/ipv6",
+      "common/us-ssn",
+      "common/iban",
+      "common/payment-card",
+      "common/aws-access-key-id",
+      "common/pem-private-key",
+      "common/jwt",
+      "team/employee-id",
+      "team/internal-host",
+      "team/account-number"
+    ],
+    "salt_mode": "stable",
+    "applied_at": "2026-09-17T09:19:51.327977Z"
+  },
+  "messages": [
+    {
+      "seq": 0,
+      "t_offset_ms": 62,
+      "sender": "client",
+      "kind": "request",
+      "method": "initialize",
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "example-client",
+            "version": "1.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 1,
+      "t_offset_ms": 62,
+      "sender": "client",
+      "kind": "notification",
+      "method": "notifications/initialized",
+      "msg_id": null,
+      "payload": {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 2,
+      "t_offset_ms": 62,
+      "sender": "client",
+      "kind": "request",
+      "method": "tools/call",
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "echo",
+          "arguments": {
+            "text": "ping <EMAIL>_a7bd12847992 about <EMPLOYEE>_a140ac176806"
+          }
+        }
+      },
+      "redacted": true,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 3,
+      "t_offset_ms": 125,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 1,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {
+            "tools": {}
+          },
+          "serverInfo": {
+            "name": "echo-example",
+            "version": "1.0.0"
+          }
+        }
+      },
+      "redacted": false,
+      "exchange": null,
+      "channel": null
+    },
+    {
+      "seq": 4,
+      "t_offset_ms": 125,
+      "sender": "server",
+      "kind": "response",
+      "method": null,
+      "msg_id": 2,
+      "payload": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "ping <EMAIL>_a7bd12847992 about <EMPLOYEE>_a140ac176806 [bcd95a40]"
+            }
+          ],
+          "isError": false
+        }
+      },
+      "redacted": true,
+      "exchange": null,
+      "channel": null
+    }
+  ]
+}

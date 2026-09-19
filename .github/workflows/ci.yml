@@ -28,7 +28,14 @@ jobs:
       - run: uv run mypy src
 
   examples:
-    runs-on: ubuntu-latest
+    # Same matrix as `test`: this job was ubuntu-only when a Windows-only
+    # UnicodeEncodeError in the CLI shipped, because nothing else runs the
+    # console-output surface the examples and the gate below exercise.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -40,6 +47,7 @@ jobs:
       # The two-step gate walked through in HT-09, asserted by exit code so the
       # documented numbers cannot drift away from what the tool does.
       - name: Cassette gate
+        shell: bash
         run: |
           expect() {
             want=$1; shift
@@ -58,6 +66,7 @@ jobs:
       # alone would not prove that — the bundled R001s produce 4 by themselves —
       # so assert the P001 finding.
       - name: Starter pattern pack fires
+        shell: bash
         run: |
           uv run mcp-cassette lint examples/cassettes/tools-v2.mcp.json \
             --pattern-pack examples/lint-pack.toml > pack.out 2>&1 || true

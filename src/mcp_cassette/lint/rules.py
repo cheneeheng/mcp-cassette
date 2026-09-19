@@ -1,4 +1,4 @@
-"""Lint models and the four bundled rules (R001–R004).
+"""Lint models and the bundled rules (R001–R007).
 
 ``LintFinding``/``LintReport`` are the report schema; the rule functions operate on
 surfaces extracted by :mod:`.engine` and return findings with JSON-pointer locators
@@ -10,17 +10,20 @@ from __future__ import annotations
 
 import difflib
 import json
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .packs import PatternMatch, PatternSet
+from .packs import PatternMatch, PatternSet, Surface
+from .secrets import MAX_CANDIDATES, EntropyDetector
 
 Severity = Literal["warning", "error"]
 
-RULE_IDS = ("R001", "R002", "R003", "R004")
+RULE_IDS = ("R001", "R002", "R003", "R004", "R005", "R006", "R007")
+"""Bundled rule ids: the default selection, and what --select/--ignore accept."""
 
 REDACTED_MARKER = "REDACTED"
 """The default redaction replacement; redacted surfaces are skipped, not matched."""
@@ -67,6 +70,32 @@ class ResultText:
     """One text content block from a recorded ``tools/call`` result."""
 
     tool: str | None
+    text: str
+    locator: str
+
+
+@dataclass
+class StringSurface:
+    """One JSON string value anywhere in a message payload."""
+
+    text: str
+    locator: str
+    message_index: int
+
+
+@dataclass
+class TextSurface:
+    """One piece of tool-definition text beyond the description.
+
+    Attributes:
+        tool: The tool name of the recorded occurrence this text belongs to.
+        kind: ``name``, ``schema_description``, or ``schema_enum``.
+        text: The text.
+        locator: Exact JSON pointer into the cassette.
+    """
+
+    tool: str
+    kind: Surface
     text: str
     locator: str
 
@@ -227,6 +256,130 @@ def rule_r004(
                 )
             )
     return findings
+
+
+def rule_r005(
+    strings: list[StringSurface], detector: EntropyDetector
+) -> tuple[list[LintFinding], list[str]]:
+    """High-entropy strings that look like secrets redaction missed (warning).
+
+    Secrets hide anywhere, not only in tool surfaces, so this walks every string
+    value. The message carries the entropy, the length, and at most six characters of
+    the token: a linter that echoes the secret into CI logs has moved the leak rather
+    than reported it. Scanning is capped per message; hitting the cap adds a note.
+
+    Returns:
+        ``(findings, notes)``.
+    """
+    findings: list[LintFinding] = []
+    notes: list[str] = []
+    budgets: dict[int, int] = {}
+    for surface in strings:
+        index = surface.message_index
+        remaining = budgets.get(index, MAX_CANDIDATES)
+        result = detector.scan(surface.text, remaining)
+        budgets[index] = remaining - result.examined
+        note = (
+            f"note: R005 stopped after {MAX_CANDIDATES} candidate tokens in "
+            f"message {index}; review the rest of it by hand"
+        )
+        if result.truncated and note not in notes:
+            notes.append(note)
+        for secret in result.secrets:
+            findings.append(
+                LintFinding(
+                    rule="R005",
+                    severity="warning",
+                    message=(
+                        f"high-entropy string ({secret.bits:.1f} bits/char, "
+                        f'{len(secret.token)} chars, "{secret.token[:6]}…")'
+                    ),
+                    locator=surface.locator,
+                )
+            )
+    return findings, notes
+
+
+_KIND_WORDS: dict[str, str] = {
+    "name": "tool name",
+    "schema_description": "schema description",
+    "schema_enum": "schema enum value",
+}
+
+
+def rule_r006(
+    surfaces: list[TextSurface], patterns: PatternSet | None = None
+) -> list[LintFinding]:
+    """Injection phrasing in a tool name or ``inputSchema`` text (warning).
+
+    A separate id rather than a widened R001: scanning new surfaces under an
+    ``error`` rule would turn an upgrade into a CI break. The message names the
+    surface kind, because phrasing in a property description and phrasing in the tool
+    description need different responses from a reviewer. Pack rules that target
+    these surfaces fire here with their own id and severity.
+    """
+    patterns = patterns or PatternSet()
+    findings: list[LintFinding] = []
+    for surface in surfaces:
+        if surface.text == REDACTED_MARKER:
+            continue
+        kind = _KIND_WORDS[surface.kind]
+        for hit in patterns.match(surface.text, surface.kind):
+            default = (
+                f'tool "{surface.tool}": injection phrasing in {kind} ({hit.label})'
+                if hit.rule_id is None
+                else f'tool "{surface.tool}": {kind} matches pattern ({hit.label})'
+            )
+            findings.append(
+                LintFinding(
+                    rule=hit.rule_id or "R006",
+                    severity=hit.severity or "warning",
+                    message=hit.message or default,
+                    locator=surface.locator,
+                    tool=surface.tool,
+                )
+            )
+    return findings
+
+
+def rule_r007(surfaces: list[TextSurface]) -> list[LintFinding]:
+    """Mixed-script or non-ASCII tool names — lookalike identifiers (warning).
+
+    Uses script mixing via :mod:`unicodedata` rather than a confusables table (a data
+    file). MCP tool names are protocol identifiers with no reason to carry non-ASCII,
+    so plain non-ASCII is itself worth a warning. The message names each offending
+    character by code point and Unicode name, since the point is that it is visually
+    indistinguishable from what a reader assumes is there.
+    """
+    findings: list[LintFinding] = []
+    for surface in surfaces:
+        if surface.kind != "name" or surface.text.isascii():
+            continue
+        offenders = dict.fromkeys(c for c in surface.text if not c.isascii())
+        points = ", ".join(
+            f"U+{ord(c):04X} {unicodedata.name(c, 'UNNAMED CHARACTER')}"
+            for c in offenders
+        )
+        scripts = sorted({_script(c) for c in surface.text if c.isalpha()})
+        if len(scripts) > 1:
+            detail = f"mixed-script tool name ({', '.join(scripts)}): {points}"
+        else:
+            detail = f"non-ASCII tool name: {points}"
+        findings.append(
+            LintFinding(
+                rule="R007",
+                severity="warning",
+                message=f'tool "{surface.text}": {detail}',
+                locator=surface.locator,
+                tool=surface.text,
+            )
+        )
+    return findings
+
+
+def _script(char: str) -> str:
+    name = unicodedata.name(char, "")
+    return name.split(" ", 1)[0] if name else "UNKNOWN"
 
 
 def _result_message(hit: PatternMatch, result: ResultText) -> str:

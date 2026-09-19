@@ -1,5 +1,7 @@
 # OP-04. CLI reference
 
+[← Guide index](../index.md)
+
 **Audience:** operators. The authoritative surface is `mcp-cassette <command> --help`;
 this page mirrors it.
 
@@ -8,7 +10,7 @@ mcp-cassette record  --cassette PATH [--url URL] [flags] [-- CMD ...]
 mcp-cassette serve   CASSETTE [flags] [-- CMD ...]
 mcp-cassette inspect CASSETTE [--method METHOD] [--grep PATTERN] [--timeline | --tools] [--format text|json] [--faults PATH]
 mcp-cassette diff    OLD NEW [--format text|json] [--tools-only]
-mcp-cassette lint    CASSETTE [--baseline PATH] [--format text|json] [--select RULE] [--ignore RULE] [--pattern-pack PATH] [--fail-on error|warning] [--no-config]
+mcp-cassette lint    CASSETTE... [--baseline PATH] [--require-redaction NAME] [--format text|json] [--annotate github] [--select RULE] [--ignore RULE] [--pattern-pack PATH] [--fail-on error|warning] [--no-config] [--entropy | --no-entropy] [--entropy-min-bits FLOAT] [--entropy-min-length N] [--entropy-allow STRING]
 ```
 
 `python -m mcp_cassette ...` is equivalent to the `mcp-cassette` console script.
@@ -18,10 +20,11 @@ mcp-cassette lint    CASSETTE [--baseline PATH] [--format text|json] [--select R
 | Code | Meaning |
 |---|---|
 | `0` | Success. For `lint`: no error-severity findings. |
-| `2` | Usage error, or a cassette or fault overlay that is missing, unreadable, malformed, or has an unsupported `format_version`. |
+| `2` | Usage error, or a cassette, fault overlay, or pack that is missing, unreadable, malformed, or has an unsupported `format_version`. Also: an unknown rule id in `--select`/`--ignore`, a redaction pack the cassette's manifest names that cannot be resolved, and `--redact-salt-env` without `MCP_CASSETTE_REDACT_SALT`. |
 | `3` | `serve`: an unmatched request was received. |
-| `4` | `lint`: at least one finding at or above `--fail-on` (default: error severity). |
+| `4` | `lint`: at least one finding at or above `--fail-on` (default: error severity), or a cassette failing `--require-redaction`. |
 | `5` | `diff`: the two cassettes differ. |
+| `6` | `record`, `serve --new-episodes`: another live process holds the cassette for writing. Worth retrying; see [OP-06](OP-06-parallel-test-runs.md). |
 | `130` | Recording interrupted by a signal; the cassette was finalized first. |
 | other | `record`: the wrapped server's own exit code. |
 
@@ -38,13 +41,30 @@ are mutually exclusive, and one is required.
 | `--max-idle SECONDS` | off | End the recording after this much client inactivity. `--url` only. |
 | `--checkpoint-interval SECONDS` | `5` | Interval for `<cassette>.partial` checkpoints; `0` disables. |
 | `--redact LOCATOR[=REPLACEMENT]` | — | Extra redaction rule. Repeatable. Key-glob, or JSON pointer if it starts with `/`. |
-| `--no-default-redactions` | off | Disable the always-on default rule set. |
+| `--no-default-redactions` | off | Disable the always-on defaults: the structural key rules and the bundled PII pack. |
+| `--pii-pack PATH` | — | TOML redaction pack scrubbing free text. Repeatable; additive to the bundled pack. |
+| `--redact-profile NAME` | — | Profile stamped on the cassette's redaction manifest, which `lint --require-redaction` checks. |
+| `--redact-salt-env` | off | Key `hash` pseudonyms with `MCP_CASSETTE_REDACT_SALT` instead of the stable default. Re-records then produce different bytes. |
+| `--force` | off | Break another live process's write claim, with a warning, instead of exiting `6`. |
+| `--claim-wait SECONDS` | `0` | Wait this long for another writer's claim to be released before exiting `6`. |
 | `--report PATH` | — | Write a JSON session report here. |
 
 ```
 mcp-cassette record --cassette demo.json -- python tools/server.py
 mcp-cassette record --cassette demo.json --url https://mcp.example.com/mcp --port 8902 --max-idle 30
+mcp-cassette record --cassette demo.json --pii-pack team.toml --redact-profile team-baseline -- python tools/server.py
 ```
+
+**Redaction flag combinations.**
+
+| Combination | Result |
+|---|---|
+| `record --pii-pack` with `--no-default-redactions` | accepted: the flag drops the bundled rules, not packs you name |
+| `record --redact-salt-env` without `MCP_CASSETTE_REDACT_SALT` | exit `2` naming the variable and the flag |
+| `serve --pii-pack` on a cassette with no redaction manifest | exit `2`: there is nothing to resolve the pack against |
+| `serve --pii-pack` naming a pack the manifest does not list | accepted and ignored with a note, so one command can serve several cassettes |
+
+Packs and the salt are explained in [HT-10](../how-to/HT-10-redact-pii.md).
 
 `--port` and `--max-idle` belong to the `--url` proxy; passing either with a stdio
 `-- CMD` is a usage error (exit `2`) rather than a silently ignored flag.
@@ -87,6 +107,7 @@ Stands up a replay server. The transport is inferred from the cassette.
 | `--ignore-param POINTER` | — | JSON pointer excluded from matching. Repeatable. |
 | `--rewrite-protocol-version` | off | Answer `initialize` with the client's requested version. |
 | `--faults PATH` | — | Fault overlay JSON sidecar. Replay-only: with `--new-episodes` it is a usage error (exit `2`). |
+| `--pii-pack PATH` | — | A redaction pack the cassette's manifest names, when its recorded path no longer resolves. Repeatable. |
 | `--pace none\|recorded` | `none` | Replay recorded inter-message latency. Off by default — replay is instant. |
 | `--pace-scale FLOAT` | `1.0` | Multiply every recorded gap. Must be `> 0`. Requires `--pace recorded`. |
 | `--pace-cap-ms MS` | `5000` | Per-gap upper bound; `0` is uncapped. Requires `--pace recorded`. |
@@ -163,9 +184,11 @@ lint's `R002` is the gate. See
 
 Heuristic security scan of recorded tool descriptions and results.
 
-Scope: lint reads tool `description`s from recorded `tools/list` responses and text content
-from recorded `tools/call` responses — nothing else. A cassette containing neither method
-lints clean because there is nothing to scan, not because it is safe.
+Scope: the pattern rules read tool definitions from recorded `tools/list` responses (names,
+descriptions, `inputSchema` descriptions and enum values) and text content from recorded
+`tools/call` responses. `R005` additionally walks every string value in the cassette. A
+cassette containing neither method can still only produce `R005` findings, and a clean lint
+means nothing matched, not that the cassette is safe.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -173,16 +196,32 @@ lints clean because there is nothing to scan, not because it is safe.
 | `R002` | error | Description/schema drift versus a baseline — the "rug pull". Requires `--baseline`. |
 | `R003` | warning | Duplicate tool names. |
 | `R004` | warning | Instruction-shaped tool results. |
+| `R005` | warning | High-entropy strings that look like secrets, anywhere in the cassette. See [HT-11](../how-to/HT-11-detect-secrets.md). |
+| `R006` | warning | Injection phrasing in a tool name or in `inputSchema` descriptions and enum values. |
+| `R007` | warning | Non-ASCII or mixed-script tool names — lookalike identifiers. |
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--baseline PATH` | — | Older cassette to diff tool surfaces against; enables `R002`. |
+| `CASSETTE...` | required | One or more cassettes. With several, text output gains a header per file and JSON output is a list. |
+| `--baseline PATH` | — | Older cassette to diff tool surfaces against; enables `R002`. One `CASSETTE` only. |
+| `--require-redaction NAME` | — | Exit `4` unless every cassette's redaction manifest names this profile. The reason goes to stderr. |
 | `--format text\|json` | `text` | `json` is deterministic and diffable — use it in CI. |
-| `--select RULE` | all | Run only these rule ids. Repeatable. |
-| `--ignore RULE` | — | Skip these rule ids. Repeatable. `--select` wins on a conflict, with a printed note. |
+| `--annotate github` | off | Also print one GitHub Actions workflow command per finding, after the `--format` output. File-level; nothing when there are no findings. |
+| `--select RULE` | all | Run only these rule ids. Repeatable. An unknown id exits `2`. |
+| `--ignore RULE` | — | Skip these rule ids. Repeatable. `--select` wins on a conflict, with a printed note. An unknown id exits `2`. |
 | `--pattern-pack PATH` | — | TOML pattern pack. Repeatable, and additive to the project config's packs. |
 | `--fail-on error\|warning` | `error` | Lowest severity that exits `4`. Changes only the exit code, never a finding's severity. |
 | `--no-config` | off | Ignore `[tool.mcp_cassette.lint]` in the nearest `pyproject.toml`. |
+| `--entropy` / `--no-entropy` | on | Run `R005`. |
+| `--entropy-min-bits FLOAT` | `3.5` | Lowest Shannon entropy per character `R005` reports. |
+| `--entropy-min-length N` | `20` | Shortest token `R005` considers. |
+| `--entropy-allow STRING` | — | Exact token `R005` never reports. Repeatable; replaces the project config's allowlist. |
+
+`--annotate github` output, after the normal text:
+
+```
+::error file=examples/cassettes/tools-v2.mcp.json,title=R001::R001 /messages/4/payload/result/tools/0/description tool "echo": description matches injection pattern (override-instructions)
+```
 
 Packs extend the bundled rules; they never replace them. See
 [HT-08. Lint with your own pattern packs](../how-to/HT-08-lint-pattern-packs.md).
@@ -192,3 +231,7 @@ default), `4` otherwise. Every finding carries a JSON-pointer locator into the c
 
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known*
 > smells, nothing more.
+
+---
+
+[← OP-03 CI pipeline](OP-03-ci.md) · [Guide index](../index.md) · [OP-05 Runbook: replay misses and failed recordings →](OP-05-runbook-replay-misses.md)

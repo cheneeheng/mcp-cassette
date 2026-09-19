@@ -1,0 +1,21 @@
+# Copy to .github/workflows/cassettes.yml. Gates every pull request on the cassettes
+# it changes: lint (injection phrasing, secrets, drift vs the base branch) and a
+# tool-surface diff against the same cassette on the base branch.
+name: Cassettes
+
+on:
+  pull_request:
+
+jobs:
+  cassettes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # required: the merge-base baseline needs the shared history
+      - uses: cheneeheng/mcp-cassette@v0.4.0
+        with:
+          cassettes: tests/cassettes/**/*.mcp.json
+          checks: lint,diff
+          require-redaction: team-baseline
+          pattern-packs: lint/packs/team.toml

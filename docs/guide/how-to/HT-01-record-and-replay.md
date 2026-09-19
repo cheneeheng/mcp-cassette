@@ -1,9 +1,11 @@
 # HT-01. Record and replay a stdio server
 
-**When:** your MCP server runs as a local command and you want a test or harness to drive
-an agent against it once, then offline forever.
-**Prerequisites:** mcp-cassette installed; the server launchable as a command, for example
-`python tools/github_server.py`.
+[← Guide index](../index.md)
+
+- **When:** your MCP server runs as a local command and you want a test or harness to drive
+  an agent against it once, then offline forever.
+- **Prerequisites:** mcp-cassette installed; the server launchable as a command, for example
+  `python tools/github_server.py`.
 
 The task is the same through all three doors: put a cassette in the slot where the real
 server command goes. Pick your door and read that section — they do not build on each
@@ -259,3 +261,7 @@ own timeout, and the shutdown summary names the request still pending.
   keyword.
 - [OP-05. Runbook: replay misses](../operations/OP-05-runbook-replay-misses.md) — when a
   replay misses in CI.
+
+---
+
+[Guide index](../index.md) · [HT-02 Record and replay a remote HTTP server →](HT-02-remote-http.md)

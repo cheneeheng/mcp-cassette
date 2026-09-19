@@ -1,0 +1,3 @@
+# A redaction or lint pack is identified by its content hash, so its bytes must not
+# vary by platform. See redaction/packs.py, which also normalizes before hashing.
+*.toml text eol=lf

@@ -1,9 +1,11 @@
 # HT-08. Lint with your own pattern packs
 
-**When:** the bundled rules catch generic smells, but you need to catch *yours* — a vendor
-name that must never appear in a tool description, an internal hostname that signals a
-misconfigured staging server, domain-specific exfiltration phrasing.
-**Prerequisites:** a cassette and a TOML file you control.
+[← Guide index](../index.md)
+
+- **When:** the bundled rules catch generic smells, but you need to catch *yours* — a vendor
+  name that must never appear in a tool description, an internal hostname that signals a
+  misconfigured staging server, domain-specific exfiltration phrasing.
+- **Prerequisites:** a cassette and a TOML file you control.
 
 **There is no Python rule-plugin API, and that is deliberate.** A `Rule` protocol and
 `register_rule()` would be a public contract to keep semver-stable forever, and would make
@@ -43,7 +45,7 @@ message = "description describes sending environment variables off-host"  # opti
 | `regex` | Compiled, never evaluated as code. No code is imported from a pack. |
 | `flags` | Any of `i`, `m`, `s`, `x`. |
 | `severity` | `error` (default) or `warning`. |
-| `surfaces` | `description` (recorded `tools/list`), `result` (recorded `tools/call` text), or both. |
+| `surfaces` | Any of `name`, `description`, `schema_description`, `schema_enum` (from recorded `tools/list`) and `result` (recorded `tools/call` text). Default: `description` and `result`. |
 | `message` | Replaces the default wording. |
 
 Catastrophic backtracking in a pack regex is the pack author's risk — your file, your CI
@@ -127,14 +129,23 @@ the exit code is the only thing this door does not compute for you.
 
 ### What a pack can reach, and what it cannot
 
-Lint reads exactly two things, from exactly two recorded methods:
+Pattern rules read five surface kinds, from two recorded methods. A pack names the ones it
+targets; a pack that names none gets `description` and `result`, as before.
 
-| Extracted | From | Reachable by a pack pattern |
-|---|---|---|
-| tool `description` | a `tools/list` response | yes — `surfaces = ["description"]` |
-| text content of a result | a `tools/call` response | yes — `surfaces = ["result"]` |
-| tool `name` | a `tools/list` response | no — `R003` consumes it |
-| tool `inputSchema` | a `tools/list` response | no — `R002` and `diff` consume it |
+| Surface | Extracted from | Bundled pattern rule | Pack `surfaces` value |
+|---|---|---|---|
+| tool `description` | a `tools/list` response | `R001` (error) | `description` |
+| text content of a result | a `tools/call` response | `R004` (warning) | `result` |
+| tool `name` | a `tools/list` response | `R006` (warning) | `name` |
+| `inputSchema` property descriptions, at any depth | a `tools/list` response | `R006` (warning) | `schema_description` |
+| `inputSchema` enum string values | a `tools/list` response | `R006` (warning) | `schema_enum` |
+
+Schema *text* matching is new: `R006` and any pack can now read a phrase hidden in a
+property description. Schema *comparison* is unchanged and remains `R002`'s and `diff`'s
+job: whether the `inputSchema` moved between two recordings is a structural question no
+pattern answers. Separately, `R005` walks every string value in the cassette for
+high-entropy secrets ([HT-11](HT-11-detect-secrets.md)), and `R007` flags non-ASCII or
+mixed-script tool names.
 
 **A cassette can have nothing to lint.** `examples/cassettes/echo_and_add.mcp.json` records
 two `tools/call`s and no `tools/list`, so it holds no description to scan and can never
@@ -149,7 +160,8 @@ the ones already seen in the same result, and `R002` compares this cassette agai
 baseline — structurally, since `inputSchema` is compared as sorted JSON so reordered keys
 are correctly *not* a change.
 
-So the ceiling is: a pack adds patterns, never surfaces and never structure.
+So the ceiling is: a pack adds patterns over the five surfaces above, never new surfaces
+and never structure.
 
 | You want to catch | Use |
 |---|---|
@@ -157,7 +169,8 @@ So the ceiling is: a pack adds patterns, never surfaces and never structure.
 | A base64 blob smuggled through a tool result | a pack pattern, `surfaces = ["result"]` |
 | A schema that grew a `callback_url` parameter | `lint --baseline` (`R002`) or `diff --tools-only` — no wording changed, so no pattern can see it |
 | A tool that appeared or vanished since the last release | `diff`; `R002` deliberately ignores both, since servers legitimately grow |
-| A tool *name* matching `^(exec\|eval\|shell)` | nothing today — `name` is extracted but is not a matchable surface |
+| A tool *name* matching `^(exec\|eval\|shell)` | a pack pattern, `surfaces = ["name"]` (commented example in `examples/lint-pack.toml`) |
+| A phrase hidden in a parameter's description | `R006` by default, or a pack pattern with `surfaces = ["schema_description"]` |
 
 Adding a surface (say, `resources/read` results) or a structural rule is a change to
 mcp-cassette itself, not something a pack can express.
@@ -204,3 +217,7 @@ All exit `2`, all naming the file and the offending key:
   time; packs detect **phrasing** at lint time. Different jobs, often confused.
 - [HT-09. Gate a drifting server surface](HT-09-gate-a-drifting-server.md)
 - [OP-03. CI pipeline](../operations/OP-03-ci.md)
+
+---
+
+[← HT-07 Redact secrets from cassettes](HT-07-redact-secrets.md) · [Guide index](../index.md) · [HT-09 Gate a drifting server surface →](HT-09-gate-a-drifting-server.md)

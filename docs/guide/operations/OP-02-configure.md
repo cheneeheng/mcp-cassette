@@ -1,14 +1,17 @@
 # OP-02. Configuration
 
+[← Guide index](../index.md)
+
 **Audience:** operators. Every setting that changes record/replay behaviour, its default,
 and its effect.
 
 ## OP-02.0 One setting, three spellings
 
-Most settings exist on all three doors under different names. Find the row, then read the
-detail section it points at.
+Most settings exist on every door under different names. Find the row, then read the
+detail section it points at. `use_cassette_async` takes the same keywords as
+`use_cassette`, so the two share a column.
 
-| Setting | pytest marker / ini | `use_cassette` | CLI | Detail |
+| Setting | pytest marker / ini | `use_cassette`, `use_cassette_async` | CLI | Detail |
 |---|---|---|---|---|
 | record mode | `mode=` / `mcp_cassette_mode` | `mode=` | pick `record` or `serve` | [OP-02.1](#op-021-record-mode) |
 | cassette path | `cassette=` / `mcp_cassette_dir` | `cassette` argument | `--cassette PATH` / positional | [OP-02.2](#op-022-ini-options) |
@@ -17,11 +20,12 @@ detail section it points at.
 | protocol rewrite | `rewrite_protocol_version=` | `MatchConfig(rewrite_protocol_version=)` | `--rewrite-protocol-version` | [OP-02.4](#op-024-matching) |
 | faults | `with_faults(...)` | `faults=` | `--faults PATH` | [HT-04](../how-to/HT-04-inject-faults.md) |
 | pacing | `pace=`, `pace_scale=`, `pace_cap_ms=` | `pace=PaceConfig(...)` | `--pace`, `--pace-scale`, `--pace-cap-ms` | [HT-05](../how-to/HT-05-replay-timing.md) |
-| redaction | **not available** | **not available** | `--redact`, `--no-default-redactions` | [OP-02.5](#op-025-redaction) |
+| structural redaction rules | **not available** | **not available** | `--redact`, `--no-default-redactions` | [OP-02.5](#op-025-redaction) |
+| redaction packs | `pii_packs=` | `pii_packs=` | `--pii-pack` | [OP-02.5](#op-025-redaction) |
 | checkpoint interval | not available | not available | `--checkpoint-interval` | [OP-02.6](#op-026-checkpointing) |
 
 Two rows are deliberately uneven. `MCP_CASSETTE_MODE` is the only genuinely cross-door
-*environment* setting — all three doors delegate to `resolve_mode`, which is what makes the
+*environment* setting — every door delegates to `resolve_mode`, which is what makes the
 CI `none` invariant hold everywhere. Redaction and checkpointing are record-time proxy
 settings and are reachable only from the CLI or from `StdioRecordingProxy` directly; see
 [HT-07.3](../how-to/HT-07-redact-secrets.md#ht-073-the-gap-in-the-fixture-and-use_cassette)
@@ -79,13 +83,13 @@ invocation — pytest's own mechanism, no mcp-cassette flag involved.
 **`mcp_cassette_dir` is fixture-only, and there is no `MCP_CASSETTE_DIR` env var.** The
 fixture is the one door that *derives* a cassette path, because a test node name is the
 only thing that can name a cassette automatically; the base directory exists solely to be
-joined onto that derivation. The other two doors take the full path from you:
+joined onto that derivation. Every other door takes the full path from you:
 
 | Door | Cassette named by |
 |---|---|
 | pytest fixture | derived — `<mcp_cassette_dir>/<module>/<node name>.mcp.json` |
 | `mcp-cassette record` / `serve` | `--cassette PATH` / positional `PATH` |
-| `use_cassette(...)` | the `cassette` argument |
+| `use_cassette(...)` / `use_cassette_async(...)` | the `cassette` argument |
 
 So configure the directory where it belongs — in the path you pass:
 
@@ -96,8 +100,8 @@ with use_cassette(CASSETTES / "search.mcp.json") as session:
 ```
 
 This is the opposite of `MCP_CASSETTE_MODE`, which is genuinely cross-door: `resolve_mode`
-reads it and all three doors delegate there, so the `none` invariant holds everywhere. A
-directory env var would reach exactly one door of three.
+reads it and every door delegates there, so the `none` invariant holds everywhere. A
+directory env var would reach exactly one door of four.
 
 ## OP-02.3 Marker options
 
@@ -118,6 +122,7 @@ directory env var would reach exactly one door of three.
 | `ordering` | `per_method` | Match ordering discipline. |
 | `ignore_params` | `[]` | JSON pointers excluded from the match key. |
 | `rewrite_protocol_version` | `False` | Answer `initialize` with the client's requested `protocolVersion` instead of the recorded one. |
+| `pii_packs` | `[]` | Redaction pack files: applied when recording, and used to resolve the manifest's packs when replaying. |
 
 ## OP-02.4 Matching
 
@@ -144,11 +149,23 @@ Three ordering disciplines:
 Always-on default rules (key-globs, case-insensitive, replacement `REDACTED`):
 `*token*`, `*secret*`, `*password*`, `*apikey*`, `*api_key*`, `authorization`.
 
+`-` and `_` are folded together before a key-glob matches, so `*api_key*` also matches
+`X-API-Key`. The bundled `common` redaction pack (free-text PII) is on by default too.
+
 - Add rules: `--redact LOCATOR[=REPLACEMENT]`, repeatable. A locator starting with `/` is
   a JSON pointer; anything else is a key-glob.
-- Turn defaults off: `--no-default-redactions`.
+- Add packs: `--pii-pack PATH`, repeatable; `pii_packs=` from the marker and both library
+  doors.
+- Stamp a profile for `lint --require-redaction`: `--redact-profile NAME`.
+- Turn defaults off (structural rules and the bundled pack): `--no-default-redactions`.
 
-Details and limits: [HT-07. Redact secrets](../how-to/HT-07-redact-secrets.md).
+| Environment variable | Read when | Effect |
+|---|---|---|
+| `MCP_CASSETTE_REDACT_SALT` | only under `record --redact-salt-env` | Keys `hash` pseudonyms. Unset under that flag exits `2`. |
+
+Details and limits: [HT-07. Redact secrets](../how-to/HT-07-redact-secrets.md) for
+structural rules, [HT-10. Redact PII from free text](../how-to/HT-10-redact-pii.md) for
+packs and the salt.
 
 ## OP-02.6 Checkpointing
 
@@ -181,3 +198,7 @@ exit `130`. SIGTERM has no graceful-finalize semantics on Windows.
 
 Off the main thread, where no signal handler can be installed, shutdown degrades to
 EOF-driven: close the client's stdin to end the session.
+
+---
+
+[← OP-01 Installation](OP-01-install.md) · [Guide index](../index.md) · [OP-03 CI pipeline →](OP-03-ci.md)

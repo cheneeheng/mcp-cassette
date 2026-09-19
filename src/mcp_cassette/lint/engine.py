@@ -14,19 +14,28 @@ from pathlib import Path
 from typing import Any
 
 from ..cassette import Cassette
-from .packs import ProjectLintConfig, build_pattern_set
+from .packs import EntropyConfig, ProjectLintConfig, build_pattern_set
 from .rules import (
     REDACTED_MARKER,
     RULE_IDS,
     LintFinding,
     LintReport,
     ResultText,
+    StringSurface,
+    TextSurface,
     ToolSurface,
     rule_r001,
     rule_r002,
     rule_r003,
     rule_r004,
+    rule_r005,
+    rule_r006,
+    rule_r007,
 )
+from .secrets import EntropyDetector
+
+MAX_SCHEMA_DEPTH = 12
+"""How deep the ``inputSchema`` walk goes; ``$ref`` is never followed."""
 
 
 def run(
@@ -70,13 +79,21 @@ def run_with_notes(
     """Like :func:`run`, also returning note-level lines for text output.
 
     Notes record skipped surfaces (e.g. redacted descriptions, which are never
-    pattern-matched so redaction cannot manufacture findings) and contradictory
-    rule selection.
+    pattern-matched so redaction cannot manufacture findings), contradictory rule
+    selection, and an R005 scan that hit its per-message cap.
+
+    Raises:
+        ValueError: If ``rules`` or ``ignore`` names an id that is neither bundled nor
+            defined by a loaded pack — a typo'd ``--select`` would otherwise enable
+            nothing and report clean.
     """
     config = config or ProjectLintConfig()
     all_packs: list[str | os.PathLike[str]] = [*config.pattern_packs, *(packs or [])]
     pattern_set = build_pattern_set(all_packs)
-    selected = list(rules) if rules else [*RULE_IDS, *pattern_set.rule_ids]
+    known = [*RULE_IDS, *pattern_set.rule_ids]
+    _check_rule_ids(rules or [], known, "--select")
+    _check_rule_ids(ignore or [], known, "--ignore")
+    selected = list(rules) if rules else known
     ignored = list(ignore or [])
     # Read the caller's own selection, not `selected`: with no --select that is a
     # synthesized "no filter" placeholder, and testing it made every --ignore'd id
@@ -107,6 +124,22 @@ def run_with_notes(
     if "R003" in enabled:
         findings += rule_r003(tool_lists)
     findings += rule_r004(results, pattern_set.filtered(enabled, "R004" in enabled))
+    # A second tool-surface extraction for the widened kinds. R002 above keeps the
+    # flattened v3 list, so a name surface can never enter the baseline comparison.
+    tool_text, schema_notes = extract_tool_text(loaded)
+    notes += schema_notes
+    findings += rule_r006(tool_text, pattern_set.filtered(enabled, "R006" in enabled))
+    if "R007" in enabled:
+        findings += rule_r007(tool_text)
+    entropy = config.entropy or EntropyConfig()
+    if "R005" in enabled and entropy.enabled:
+        # A second extraction path, parallel to the tool surfaces: secrets hide in any
+        # payload string, and keeping the paths apart lets either widen alone.
+        secrets, secret_notes = rule_r005(
+            extract_strings(loaded), EntropyDetector(entropy)
+        )
+        findings += secrets
+        notes += secret_notes
     findings.sort(key=lambda f: (f.locator, f.rule))
     report = LintReport(
         cassette=Path(cassette),
@@ -179,6 +212,110 @@ def extract_surfaces(
                             )
                         )
     return tool_lists, results
+
+
+def extract_tool_text(cassette: Cassette) -> tuple[list[TextSurface], list[str]]:
+    """Tool names and ``inputSchema`` text, one set per recorded occurrence.
+
+    Nothing is deduplicated by name: a tool listed with a lookalike name and re-listed
+    with the real one must surface both, or the reverted listing would hide the first
+    (the shape ITER_06_v3 closed for R002). ``schema_description`` is every
+    ``description`` string in the schema at any depth; ``schema_enum`` is every string
+    member of any ``enum`` (non-strings are skipped, not stringified). The walk stops at
+    :data:`MAX_SCHEMA_DEPTH` and never resolves ``$ref``.
+
+    Args:
+        cassette: The loaded cassette.
+
+    Returns:
+        ``(surfaces, notes)`` — surfaces in document order, and one note per tool
+        occurrence whose schema was cut off at the depth cap.
+    """
+    tool_lists, _ = extract_surfaces(cassette)
+    surfaces: list[TextSurface] = []
+    notes: list[str] = []
+    for tools in tool_lists:
+        for tool in tools:
+            surfaces.append(
+                TextSurface(tool.name, "name", tool.name, f"{tool.locator_base}/name")
+            )
+            schema_pointer = f"{tool.locator_base}/inputSchema"
+            if _walk_schema(tool.input_schema, schema_pointer, tool.name, 0, surfaces):
+                notes.append(
+                    f'note: stopped walking the inputSchema of tool "{tool.name}" at '
+                    f"depth {MAX_SCHEMA_DEPTH} ({schema_pointer})"
+                )
+    return surfaces, notes
+
+
+def _walk_schema(
+    node: Any, pointer: str, tool: str, depth: int, out: list[TextSurface]
+) -> bool:
+    """Collect schema text under ``node``; return whether the depth cap cut it off."""
+    if not isinstance(node, dict | list):
+        return False
+    if depth >= MAX_SCHEMA_DEPTH:
+        return bool(node)
+    truncated = False
+    items = node.items() if isinstance(node, dict) else enumerate(node)
+    for key, value in items:
+        child = f"{pointer}/{_pointer_token(key)}"
+        if key == "description" and isinstance(value, str):
+            out.append(TextSurface(tool, "schema_description", value, child))
+        elif key == "enum" and isinstance(value, list):
+            out.extend(
+                TextSurface(tool, "schema_enum", member, f"{child}/{position}")
+                for position, member in enumerate(value)
+                if isinstance(member, str)
+            )
+        else:
+            truncated = _walk_schema(value, child, tool, depth + 1, out) or truncated
+    return truncated
+
+
+def _pointer_token(key: object) -> str:
+    return str(key).replace("~", "~0").replace("/", "~1")
+
+
+def extract_strings(cassette: Cassette) -> list[StringSurface]:
+    """Every string value in every message payload, with its JSON pointer.
+
+    Walks all message kinds, ``raw`` and ``unclassified`` included — exactly the
+    payloads structural redaction can miss. Object keys are structure, not values,
+    and are not yielded.
+
+    Args:
+        cassette: The loaded cassette.
+
+    Returns:
+        String surfaces in document order.
+    """
+    surfaces: list[StringSurface] = []
+    for index, message in enumerate(cassette.messages):
+        _walk_strings(message.payload, f"/messages/{index}/payload", index, surfaces)
+    return surfaces
+
+
+def _walk_strings(
+    node: Any, pointer: str, index: int, out: list[StringSurface]
+) -> None:
+    if isinstance(node, str):
+        out.append(StringSurface(text=node, locator=pointer, message_index=index))
+    elif isinstance(node, dict):
+        for key, value in node.items():
+            _walk_strings(value, f"{pointer}/{_pointer_token(key)}", index, out)
+    elif isinstance(node, list):
+        for position, value in enumerate(node):
+            _walk_strings(value, f"{pointer}/{position}", index, out)
+
+
+def _check_rule_ids(ids: list[str], known: list[str], flag: str) -> None:
+    unknown = [rule_id for rule_id in ids if rule_id not in known]
+    if unknown:
+        raise ValueError(
+            f"unknown rule id(s) {', '.join(repr(r) for r in unknown)} in {flag} "
+            f"(valid: {', '.join(known)})"
+        )
 
 
 def latest_tools(cassette: Cassette) -> dict[str, ToolSurface]:

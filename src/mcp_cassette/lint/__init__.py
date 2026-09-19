@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .engine import run, run_with_notes
 from .packs import (
+    EntropyConfig,
     PatternRule,
     PatternSet,
     ProjectLintConfig,
@@ -18,6 +19,7 @@ from .packs import (
 from .rules import LintFinding, LintReport
 
 __all__ = [
+    "EntropyConfig",
     "LintFinding",
     "LintReport",
     "PatternRule",

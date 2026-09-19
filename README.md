@@ -56,9 +56,9 @@ prefix for brevity; the step-by-step walkthroughs in the guide keep it.
 
 Full chapter: [OP-01. Installation](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-01-install.md).
 
-## 2. The three front doors
+## 2. The front doors
 
-One machinery, three ways in: the **pytest fixture**, the **`use_cassette` library door**, and the **CLI**. Same cassette format, same record modes (§3), same fault matrix (§5), same failure semantics — they differ only in who drives the session and where the cassette path comes from.
+One machinery, four ways in: the **pytest fixture**, the **`use_cassette` library door** and its async twin **`use_cassette_async`**, and the **CLI**. Same cassette format, same record modes (§3), same fault matrix (§5), same failure semantics — they differ only in who drives the session and where the cassette path comes from.
 
 ### 2.1 The pytest fixture (the main surface)
 
@@ -109,6 +109,18 @@ with use_cassette("cassettes/search.mcp.json", mode="once") as session:
 
 The session report goes to a temp directory that is removed on exit — no untracked JSON next to cassettes you commit. `examples/library_mode.py` is runnable from a clone.
 
+From async code, `use_cassette_async` runs the HTTP server as a task in your own event loop, with no background thread, under asyncio or trio. Calling the sync `use_cassette` from inside a running loop raises `RuntimeError` pointing here.
+
+```python
+from mcp_cassette import use_cassette_async
+
+async with use_cassette_async("cassettes/tracker.mcp.json") as session:
+    url = session.server_url("https://mcp.example.com/mcp")
+    result = await run_my_agent(mcp_servers={"tracker": {"url": url}})
+```
+
+`examples/library_mode_async.py` is runnable from a clone.
+
 Full chapter: [HT-03. Use it as a library](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-03-use-as-a-library.md).
 
 ### 2.3 The CLI
@@ -158,14 +170,25 @@ How each door selects a mode, highest precedence first:
 | Door | Selection |
 |---|---|
 | pytest fixture | `MCP_CASSETTE_MODE` (env) → marker `mode=` → `mcp_cassette_mode` (ini) → default `once` |
-| `use_cassette` | `MCP_CASSETTE_MODE` (env) → `mode=` argument → default `once` |
+| `use_cassette`, `use_cassette_async` | `MCP_CASSETTE_MODE` (env) → `mode=` argument → default `once` |
 | CLI | explicit by command: `record` records, `serve` replays, `serve --new-episodes` appends misses |
 
 CI should set `MCP_CASSETTE_MODE=none` so no pipeline silently hits a live server — the env var wins through both programmatic doors, and the CLI has no door that records by accident.
 
 Cassette paths come from the marker's `cassette=`, else `mcp_cassette_dir` (ini), else `<rootpath>/tests/cassettes`; `pytest -o mcp_cassette_dir=...` overrides it for one invocation. That setting is fixture-only, and deliberately has no env var — the fixture is the one door that *derives* a path from the test name. The CLI and `use_cassette` take the full path from you, so you compose the directory into it yourself.
 
-Full chapter: [OP-02. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md).
+### 3.1 Parallel runs: one writer per cassette
+
+Two processes recording the same cassette at once would interleave or truncate it, so a run that writes takes a `<cassette>.claim` file first. Readers never claim, so replay-only suites are unaffected and never serialize.
+
+| Mode | Another live process holds the claim |
+|---|---|
+| `once` | wait, then re-resolve — the other writer's recording is now present, so this run replays it |
+| `all`, `new_episodes` | fail fast: exit `6` from the CLI, `CassetteError` otherwise |
+
+`once` waiting and then replaying is the behaviour that makes `pytest -n auto` work on a cold cache: the first worker records, the rest find the cassette and play it back. Sessions wait 30s; the CLI fails immediately unless `record --claim-wait SECONDS` asks it to wait. A claim whose owner died is reclaimed automatically, and `record --force` breaks a live one with a warning.
+
+Full chapters: [OP-02. Configuration](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-02-configure.md) and [OP-06. Parallel test runs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-06-parallel-test-runs.md).
 
 ## 4. The CI contract: record once, commit, replay forever
 
@@ -179,7 +202,7 @@ Three steps, and the third is the one that has to be enforced:
 
 ```bash
 MCP_CASSETTE_MODE=none uv run pytest examples/test_echo.py -q   # one file: 4 passed
-MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 5 passed
+MCP_CASSETTE_MODE=none uv run pytest examples/ -q               # all examples: 28 passed
 ```
 
 Both run with no server, no network, and no credentials. Under `none`, a deleted or unmerged cassette fails with `no cassette at <path> and recording is forbidden` — delete one on a scratch branch to see it.
@@ -228,9 +251,18 @@ Full chapter: [HT-05. Replay timing](https://github.com/cheneeheng/mcp-cassette/
 
 ## 7. Redaction
 
-Cassettes are verbatim transcripts, and you commit them — so redaction runs at capture time, on a deep copy, with defaults always on: values under keys matching `*token*`, `*secret*`, `*password*`, `*apikey*`, `*api_key*`, or `authorization` are replaced with `REDACTED` before the cassette is written. Add your own rules with `--redact` (key-glob or JSON pointer). Read every new cassette before its first commit anyway.
+Cassettes are verbatim transcripts, and you commit them — so redaction runs at capture time, on a deep copy, with defaults always on: values under keys matching `*token*`, `*secret*`, `*password*`, `*apikey*`, `*api_key*`, or `authorization` (with `-` and `_` folded, so `X-API-Key` matches) are replaced with `REDACTED` before the cassette is written. Add your own rules with `--redact` (key-glob or JSON pointer).
 
-Full chapter: [HT-07. Redact secrets](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-07-redact-secrets.md).
+Free text needs a different tool: an email inside a search result has no key. A bundled redaction pack (email, phone, IP, SSN, IBAN, card, AWS key id, private key, JWT) is also on by default, and your own TOML packs add labelled regexes with a `replace`, `hash`, or `mask` strategy:
+
+```
+mcp-cassette record --cassette demo.json --pii-pack team.toml --redact-profile team-baseline -- python tools/server.py
+mcp-cassette lint demo.json --require-redaction team-baseline    # exit 4 unless scrubbed with that profile
+```
+
+The cassette records which packs scrubbed it, and replay re-applies them to live requests so a scrubbed recording still matches. From Python, pass `pii_packs=[...]` to the marker, `use_cassette`, or `use_cassette_async`. Read every new cassette before its first commit anyway.
+
+Full chapters: [HT-07. Redact secrets](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-07-redact-secrets.md), [HT-10. Redact PII from free text](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-10-redact-pii.md).
 
 ## 8. Gating your cassettes
 
@@ -247,7 +279,7 @@ mcp-cassette lint demo-http.json
 mcp-cassette lint new.json --baseline tests/cassettes/old.json --format json
 ```
 
-Rules: `R001` instruction injection in a tool description (error), `R002` description/schema drift vs a baseline — the "rug pull" (error), `R003` duplicate tool names (warning), `R004` instruction-shaped tool results (warning). Exit `0` = no error-severity findings, `4` = at least one. Each finding carries a JSON-pointer locator into the cassette.
+Rules: `R001` instruction injection in a tool description (error), `R002` description/schema drift vs a baseline — the "rug pull" (error), `R003` duplicate tool names (warning), `R004` instruction-shaped tool results (warning), `R005` high-entropy strings that look like secrets, anywhere in the cassette (warning), `R006` injection phrasing in tool names and `inputSchema` text (warning), `R007` non-ASCII or mixed-script tool names (warning). Exit `0` = no error-severity findings, `4` = at least one. Each finding carries a JSON-pointer locator into the cassette.
 
 Bring your own rules with a declarative TOML pattern pack — no Python plugin API, deliberately, because `lint` should never execute third-party code on a supply-chain-security surface:
 
@@ -258,7 +290,7 @@ mcp-cassette lint demo.json --fail-on warning
 
 `[tool.mcp_cassette.lint]` in `pyproject.toml` makes your packs, selection, and failure threshold the default for every invocation, so the CI command stays generic. Packs extend the bundled rules; they never replace them.
 
-A pack adds *patterns*, not *surfaces*: patterns match tool descriptions (from `tools/list`) and tool result text (from `tools/call`), which is everything lint reads. A tool's `name` and `inputSchema` are compared, not pattern-matched — that is `R002`'s and `diff`'s job.
+A pack adds *patterns*: it can target tool names, descriptions, `inputSchema` descriptions and enum values (from `tools/list`), and tool result text (from `tools/call`). Whether a tool's `inputSchema` *changed* between two recordings is compared, not pattern-matched — that is `R002`'s and `diff`'s job.
 
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known* smells, nothing more.
 
@@ -278,6 +310,37 @@ mcp-cassette diff examples/cassettes/tools.mcp.json \
 A red drift gate is not a failure to re-record away: read the diff, decide whether you accept the new surface, and only then commit the fresh cassette as the new baseline.
 
 Full chapters: [HT-08. Lint with your own pattern packs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-08-lint-pattern-packs.md), [HT-09. Gate a drifting server surface](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/how-to/HT-09-gate-a-drifting-server.md).
+
+### 8.3 Packaged CI: a GitHub Action and pre-commit hooks
+
+Both gates ship packaged, version-locked to the library. The Action lints every cassette against the same file on the pull request's base branch, so `R002` fires on the diff that introduces the drift, and posts findings as annotations, a job summary, and a JSON report artifact:
+
+```yaml
+# .github/workflows/cassettes.yml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }          # required: the merge-base baseline needs history
+- uses: cheneeheng/mcp-cassette@v0.4.0
+  with:
+    checks: lint,diff
+    require-redaction: team-baseline
+    pattern-packs: lint/packs/team.toml
+```
+
+The pre-commit hooks refuse an unclean or unscrubbed cassette before it is ever committed. They read local files only, never the network:
+
+```yaml
+# .pre-commit-config.yaml
+- repo: https://github.com/cheneeheng/mcp-cassette
+  rev: v0.4.0
+  hooks:
+    - id: mcp-cassette-lint
+    - id: mcp-cassette-redaction-check
+      args: [team-baseline]
+```
+
+Both files are runnable in [`examples/ci/`](https://github.com/cheneeheng/mcp-cassette/tree/main/examples/ci). Running the suite with `pytest -n auto`? Replay is always safe to share, and concurrent recordings to one cassette are detected rather than silently lost.
+
+Full chapters: [OP-03. CI pipeline](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-03-ci.md), [OP-06. Parallel test runs](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-06-parallel-test-runs.md), [OP-07. Pre-commit hooks](https://github.com/cheneeheng/mcp-cassette/blob/main/docs/guide/operations/OP-07-pre-commit.md).
 
 ## 9. Built with Claude Code
 

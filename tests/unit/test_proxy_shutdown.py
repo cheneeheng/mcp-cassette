@@ -69,6 +69,49 @@ def _proxy(tmp_path: Path) -> StdioRecordingProxy:
     )
 
 
+def test_posix_receiver_path_hard_exits_on_first_signal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from test_signals import _OneShotReceiver
+
+    proxy = _proxy(tmp_path)
+    proxy._recorder.on_line("client", b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')  # noqa: SLF001
+    exits: list[int] = []
+    monkeypatch.setattr(os, "_exit", exits.append)
+    monkeypatch.setattr(anyio, "open_signal_receiver", lambda *s: _OneShotReceiver())
+    process = _FakeProcess()
+
+    anyio.run(proxy._watch_signals, process)  # noqa: SLF001
+    assert exits == [130]
+    assert process.terminated
+    assert Cassette.load(tmp_path / "c.json").messages
+
+
+def test_posix_receiver_that_ends_without_a_signal_does_not_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _ClosedReceiver:
+        def __enter__(self) -> Any:
+            async def signals() -> Any:
+                return
+                yield  # an async generator that yields nothing
+
+            return signals()
+
+        def __exit__(self, *exc: object) -> None:
+            pass
+
+    exits: list[int] = []
+    monkeypatch.setattr(os, "_exit", exits.append)
+    monkeypatch.setattr(anyio, "open_signal_receiver", lambda *s: _ClosedReceiver())
+    process = _FakeProcess()
+
+    anyio.run(_proxy(tmp_path)._watch_signals, process)  # noqa: SLF001
+    assert exits == []
+    assert not process.terminated
+    assert not (tmp_path / "c.json").exists()
+
+
 def test_windows_watcher_finalizes_on_sigint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

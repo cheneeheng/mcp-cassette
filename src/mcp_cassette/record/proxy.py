@@ -10,15 +10,17 @@ from __future__ import annotations
 import os
 import signal
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import NoReturn
 
 import anyio
 from anyio.abc import ByteReceiveStream, ByteSendStream, Process
 
 from .._stdio import stderr_stream, stdin_stream, stdout_stream
-from ..cassette import Cassette, RedactionRule, default_redaction_rules
+from ..cassette import Cassette, RedactionRule, SaltMode
+from ..redaction.redactor import build_redactor
 from ..report import write_report as _write_report
+from ..session.claim import ClaimFile
 from . import checkpoint
 from .checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from .pump import pump_lines
@@ -66,6 +68,10 @@ class StdioRecordingProxy:
         include_default_redactions: bool = True,
         report_path: str | None = None,
         checkpoint_interval: float | None = DEFAULT_CHECKPOINT_INTERVAL,
+        pii_packs: Sequence[str | os.PathLike[str]] = (),
+        redact_profile: str | None = None,
+        salt_mode: SaltMode = "stable",
+        claim: ClaimFile | None = None,
     ) -> None:
         """Initialize the proxy.
 
@@ -73,22 +79,36 @@ class StdioRecordingProxy:
             server_cmd: The real server command and its arguments.
             cassette_path: Where the recorded cassette is written on shutdown.
             redaction: Additional redaction rules beyond the defaults.
-            include_default_redactions: Whether to prepend the default rule set.
+            include_default_redactions: Whether to include the default structural
+                rules and the bundled PII packs.
             report_path: Optional path to write a JSON session report (message count),
                 used by the pytest fixture to detect empty recordings across processes.
             checkpoint_interval: Seconds between crash-safety checkpoints to
                 ``<cassette>.partial``; ``None`` or non-positive disables them.
+            pii_packs: Extra redaction pack files.
+            redact_profile: Profile name stamped on the redaction manifest.
+            salt_mode: ``stable`` or ``env`` pseudonym keying.
+            claim: The single-writer claim held for ``cassette_path``, released at
+                the end of every finalize path — including the ones that hard-exit.
+
+        Raises:
+            ValueError: On a malformed redaction pack or an unset env salt.
+            OSError: If a redaction pack cannot be read.
         """
         self.server_cmd = server_cmd
         self.cassette_path = cassette_path
         self.report_path = report_path
         self.checkpoint_interval = checkpoint_interval
-        rules: list[RedactionRule] = []
-        if include_default_redactions:
-            rules.extend(default_redaction_rules())
-        if redaction:
-            rules.extend(redaction)
-        self._recorder = SessionRecorder(rules)
+        self.claim = claim
+        self._recorder = SessionRecorder(
+            redactor=build_redactor(
+                redaction or [],
+                include_defaults=include_default_redactions,
+                pii_packs=pii_packs,
+                profile=redact_profile,
+                salt_mode=salt_mode,
+            )
+        )
         self._signal_received = False
         self._client_eof = False
 
@@ -232,6 +252,7 @@ class StdioRecordingProxy:
         return self._recorder.build()
 
     def _finalize(self) -> None:
+        self._recorder.warn_unrecognized()
         cassette = self._snapshot()
         if cassette is not None:
             cassette.save(self.cassette_path)
@@ -253,3 +274,7 @@ class StdioRecordingProxy:
         checkpoint.discard(self.cassette_path)
         if self.report_path is not None:
             _write_report(self.report_path, {"messages": self._recorder.message_count})
+        # Every path that reaches os._exit runs _finalize first, and os._exit skips
+        # finally blocks — so the claim is released here, not by a context manager.
+        if self.claim is not None:
+            self.claim.release()

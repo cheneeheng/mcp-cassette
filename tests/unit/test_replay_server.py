@@ -276,7 +276,9 @@ def test_new_episodes_custom_redaction_without_defaults(tmp_path: Any) -> None:
     proxy = _new_episodes_proxy(
         str(tmp_path / "c.json"), redaction=[rule], include_default_redactions=False
     )
-    assert proxy._recorder._rules == [rule]
+    structural = proxy._recorder._redactor._structural
+    assert structural is not None
+    assert structural.rules == [rule]
 
 
 def test_new_episodes_replay_emits_response_and_dict_notifications(

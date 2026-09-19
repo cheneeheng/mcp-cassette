@@ -5,3 +5,14 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+  # Dogfood: this repository's committed cassettes pass the lint hook it publishes in
+  # .pre-commit-hooks.yaml. The two excluded fixtures are deliberately unsafe, because
+  # the docs and CI demonstrate lint catching them.
+  - repo: local
+    hooks:
+      - id: mcp-cassette-lint
+        name: mcp-cassette lint
+        entry: uv run mcp-cassette lint
+        language: system
+        files: \.mcp\.json$
+        exclude: ^examples/cassettes/(tools-v2|injected)\.mcp\.json$

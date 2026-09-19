@@ -1,5 +1,7 @@
 # Getting started
 
+[← Guide index](index.md)
+
 Goal: go from nothing to a session that records against a real MCP server once and then
 replays it offline, forever.
 
@@ -78,6 +80,7 @@ Per door, one thing more:
 |---|---|
 | pytest fixture | pytest 8 or newer, and an agent whose MCP server config you can set from test code |
 | `use_cassette` | nothing else — plain Python |
+| `use_cassette_async` | an event loop to run it in — asyncio or trio, both work |
 | CLI | a client you can point at a command, or a shell that can pipe JSON-RPC lines |
 
 ## Install
@@ -129,16 +132,21 @@ installed in a different environment than the one pytest runs in; the health che
 
 ## Pick your door
 
-There are three ways in, and they open the same machinery: the same cassette format, the
+There are four ways in, and they open the same machinery: the same cassette format, the
 same matching rules, the same failure semantics. Pick the one that matches how your tests
 already run — the sections below do not build on each other, so read one and skip the
-other two.
+rest.
 
 | Door | You call | Pick it when | Section |
 |---|---|---|---|
 | pytest fixture | `mcp_cassette.server_command(...)` | your tests are a pytest suite | [First run with the pytest fixture](#first-run-with-the-pytest-fixture) |
 | library | `with use_cassette(...) as session:` | your harness is a notebook, a benchmark runner, or another test framework | [First run with `use_cassette`](#first-run-with-use_cassette) |
+| async library | `async with use_cassette_async(...) as session:` | your harness is async code — the sync door refuses a running event loop | [HT-03.9](how-to/HT-03-use-as-a-library.md#ht-039-async-code-use_cassette_async) |
 | CLI | `mcp-cassette record` / `serve` | you drive recording by hand, from a shell script, or your agent is configured outside Python | [First run with the CLI](#first-run-with-the-cli) |
+
+The async door takes the same arguments as `use_cassette` and resolves modes the same
+way, so it has no separate walkthrough here: follow the `use_cassette` section and swap
+in `async with`. `examples/library_mode_async.py` is that script, runnable from a clone.
 
 Whichever you pick, the move is the same: put a cassette in the slot where the real
 server command goes. Nothing about your agent changes — it is never patched.
@@ -185,7 +193,7 @@ Every line below is printed; only the values differ for your server:
 
 ```
 cassette: tests/cassettes/test_agent/test_agent_summarizes_repo.mcp.json
-format_version: 2
+format_version: 3
 transport: stdio
 recorded_at: 2026-08-01T15:50:25.605552+00:00
 protocol_version: 2024-11-05
@@ -334,7 +342,7 @@ uv run mcp-cassette inspect demo.mcp.json
 
 ```
 cassette: demo.mcp.json
-format_version: 2
+format_version: 3
 transport: stdio
 recorded_at: 2026-08-01T15:50:25.605552+00:00
 protocol_version: 2024-11-05
@@ -381,7 +389,7 @@ MCP_CASSETTE_MODE=none
 ```
 
 In `none` mode a missing cassette fails the run instead of recording it. The environment
-variable is the top tier on both doors that have a mode — it outranks a marker, an ini
+variable is the top tier on every door that has a mode — it outranks a marker, an ini
 option, and a hard-coded `mode=` argument alike — so a suite cannot opt itself back into
 recording. The CLI has no mode to override: `record` and `serve` are separate commands, so
 a pipeline simply never invokes `record`. Full pipeline setup is in

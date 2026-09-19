@@ -1,5 +1,7 @@
 # OP-01. Installation
 
+[← Guide index](../index.md)
+
 **Audience:** operators standing up mcp-cassette in a project or pipeline.
 
 ## OP-01.0 The whole setup, in five commands
@@ -41,7 +43,7 @@ to [OP-01.3](#op-013-post-install-health-check).
 |---|---|
 | Python | >= 3.12 (classifiers cover 3.12 and 3.13) |
 | OS | Linux, macOS, Windows |
-| Runtime deps | `anyio>=4.2`, `pydantic>=2.0` — that is all |
+| Runtime deps | `anyio>=4.11`, `pydantic>=2.0` — that is all |
 | Optional `[http]` | `httpx>=0.27`, `h11>=0.14` |
 | Optional `[test]` | `pytest>=8.0` |
 
@@ -170,3 +172,7 @@ carries a paste-able 30-line server that stands in for them.
 
 - [OP-02. Configuration](OP-02-configure.md) — modes, ini options, matching.
 - [OP-03. CI pipeline](OP-03-ci.md) — the settings a pipeline must have.
+
+---
+
+[Guide index](../index.md) · [OP-02 Configuration →](OP-02-configure.md)

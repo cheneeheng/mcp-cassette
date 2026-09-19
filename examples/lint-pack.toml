@@ -24,3 +24,14 @@ label = "internal-hostname"
 regex = '\b[\w.-]+\.(?:internal|corp|local)\b'
 flags = ["i"]
 severity = "warning"
+
+# Patterns can target tool-definition text beyond descriptions and results. Surfaces:
+# name, description, result, schema_description, schema_enum. Uncomment to flag tool
+# names that promise shell access.
+#
+# [[patterns]]
+# id = "P003"
+# label = "shell-tool-name"
+# regex = '^(?:exec|eval|shell|run_command)$'
+# severity = "warning"
+# surfaces = ["name"]

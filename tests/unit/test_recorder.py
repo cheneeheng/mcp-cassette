@@ -15,12 +15,12 @@ def test_blank_line_is_skipped() -> None:
     assert recorder.message_count == 0
 
 
-def test_json_without_method_or_id_recorded_as_raw() -> None:
+def test_json_without_method_or_id_recorded_as_unclassified() -> None:
     recorder = SessionRecorder()
     recorder.on_line("server", b'{"jsonrpc": "2.0"}\n')
     (msg,) = recorder.build().messages
-    assert msg.kind == "raw"
-    assert msg.payload == '{"jsonrpc": "2.0"}'
+    assert msg.kind == "unclassified"
+    assert msg.payload == {"jsonrpc": "2.0"}
 
 
 def test_json_non_object_recorded_as_raw() -> None:
@@ -30,13 +30,14 @@ def test_json_non_object_recorded_as_raw() -> None:
     assert msg.kind == "raw"
 
 
-def test_non_json_warns_once_only() -> None:
+def test_non_json_warns_once_with_a_count_at_finalize() -> None:
     recorder = SessionRecorder()
-    with pytest.warns(UserWarning, match="kind='raw'"):
-        recorder.on_line("server", b"plain log line\n")
     with warnings.catch_warnings():
-        warnings.simplefilter("error")  # a second warning would fail the test
+        warnings.simplefilter("error")  # no per-line warning any more
+        recorder.on_line("server", b"plain log line\n")
         recorder.on_line("server", b"another log line\n")
+    with pytest.warns(UserWarning, match="2 recorded as kind='raw'"):
+        recorder.warn_unrecognized()
     assert recorder.message_count == 2
 
 

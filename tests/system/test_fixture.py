@@ -61,6 +61,10 @@ def test_new_episodes_appends_novel_call(tmp_path: Path) -> None:
         seed.server_command(reference_server_cmd()),
         [*initialize_sequence(), tool_call(2, "echo", {"text": "hi"})],
     )
+    # A recording session holds the write claim until it is closed, as the fixture
+    # and use_cassette always do; the new_episodes session below would otherwise
+    # (correctly) find the cassette held.
+    seed.finalize()
     before = len(Cassette.load(cassette).messages)
 
     # new_episodes: echo replays from cassette; novel add() falls through and appends
@@ -148,14 +152,23 @@ def test_fixture_and_library_agree_on_the_env_mode(
     pytester: pytest.Pytester,
     monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
-    # The two front doors must never drift on what MCP_CASSETTE_MODE means.
+    # The front doors must never drift on what MCP_CASSETTE_MODE means.
     monkeypatch.setenv("MCP_CASSETTE_MODE", "none")
     pytester.makepyfile(
         """
-        from mcp_cassette import resolve_mode
+        import anyio
+        from mcp_cassette import resolve_mode, use_cassette, use_cassette_async
 
-        def test_mode(mcp_cassette):
+        def test_mode(mcp_cassette, tmp_path):
+            with use_cassette(tmp_path / "s.mcp.json", mode="all") as session:
+                sync_mode = session.mode
+
+            async def main():
+                async with use_cassette_async(tmp_path / "a.mcp.json", mode="all") as s:
+                    return s.mode
+
             assert mcp_cassette.mode == resolve_mode("all") == "none"
+            assert sync_mode == anyio.run(main) == "none"
         """
     )
     pytester.runpytest_inprocess().assert_outcomes(passed=1)

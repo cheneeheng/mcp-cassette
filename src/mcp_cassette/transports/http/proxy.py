@@ -11,8 +11,11 @@ content type (framing decision).
 
 from __future__ import annotations
 
+import os
+import socket
 import sys
 import time
+from collections.abc import Sequence
 from functools import partial
 
 import anyio
@@ -20,11 +23,13 @@ import anyio.abc
 import httpx
 
 from ..._signals import wait_for_interrupt
-from ...cassette import Cassette, Channel, RedactionRule, default_redaction_rules
+from ...cassette import Cassette, Channel, RedactionRule, SaltMode
 from ...record import checkpoint
 from ...record.checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from ...record.recorder import SessionRecorder
+from ...redaction.redactor import build_redactor
 from ...report import write_report
+from ...session.claim import ClaimFile
 from . import wire
 from .wire import HttpRequest, Responder, SseParser
 
@@ -66,6 +71,10 @@ class RecordingProxy:
         report_path: str | None = None,
         max_idle: float | None = None,
         checkpoint_interval: float | None = DEFAULT_CHECKPOINT_INTERVAL,
+        pii_packs: Sequence[str | os.PathLike[str]] = (),
+        redact_profile: str | None = None,
+        salt_mode: SaltMode = "stable",
+        claim: ClaimFile | None = None,
     ) -> None:
         """Initialize the proxy.
 
@@ -73,26 +82,40 @@ class RecordingProxy:
             server_url: The real remote MCP endpoint (e.g. ``https://.../mcp``).
             cassette_path: Where the recorded cassette is written on shutdown.
             redaction: Additional redaction rules beyond the defaults.
-            include_default_redactions: Whether to prepend the default rule set.
+            include_default_redactions: Whether to include the default structural
+                rules and the bundled PII packs.
             port: Local port to bind (``0`` = ephemeral; bound URL is reported).
             report_path: Optional path for a JSON session report (message count).
             max_idle: End the recording after this many seconds without client
                 activity (the unattended-CI escape hatch; default off).
             checkpoint_interval: Seconds between crash-safety checkpoints to
                 ``<cassette>.partial``; ``None`` or non-positive disables them.
+            pii_packs: Extra redaction pack files.
+            redact_profile: Profile name stamped on the redaction manifest.
+            salt_mode: ``stable`` or ``env`` pseudonym keying.
+            claim: The single-writer claim held for ``cassette_path``, released
+                when the recording finalizes.
+
+        Raises:
+            ValueError: On a malformed redaction pack or an unset env salt.
+            OSError: If a redaction pack cannot be read.
         """
         self.server_url = server_url
         self.cassette_path = cassette_path
         self.report_path = report_path
         self.max_idle = max_idle
         self.checkpoint_interval = checkpoint_interval
+        self.claim = claim
         self._port = port
-        rules: list[RedactionRule] = []
-        if include_default_redactions:
-            rules.extend(default_redaction_rules())
-        if redaction:
-            rules.extend(redaction)
-        self._recorder = SessionRecorder(rules)
+        self._recorder = SessionRecorder(
+            redactor=build_redactor(
+                redaction or [],
+                include_defaults=include_default_redactions,
+                pii_packs=pii_packs,
+                profile=redact_profile,
+                salt_mode=salt_mode,
+            )
+        )
         self._exchange = 0
         self._session_id: str | None = None
         self._get_open = False
@@ -146,20 +169,22 @@ class RecordingProxy:
     async def serve(
         self,
         *,
+        sock: socket.socket | None = None,
         task_status: anyio.abc.TaskStatus[str] = anyio.TASK_STATUS_IGNORED,
     ) -> None:
         """Serve until cancelled, reporting the bound URL via ``task_status``.
 
         On any exit path (cancellation included) the captured session is finalized
         into a cassette — unless the upstream failed at first contact, in which case
-        no cassette file is created.
+        no cassette file is created. ``sock`` is an already-bound listening socket to
+        serve instead of binding.
         """
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None))
         try:
             async with anyio.create_task_group() as tg:
                 self._serve_scope = tg.cancel_scope
                 port = await tg.start(
-                    partial(wire.serve_http, self._handle, port=self._port)
+                    partial(wire.serve_http, self._handle, port=self._port, sock=sock)
                 )
                 self.bound_url = f"http://127.0.0.1:{port}/mcp"
                 task_status.started(self.bound_url)
@@ -193,17 +218,24 @@ class RecordingProxy:
         if self._finalized:
             return
         self._finalized = True
-        if self._fatal is not None:
+        try:
+            self._recorder.warn_unrecognized()
+            if self._fatal is not None:
+                checkpoint.discard(self.cassette_path)
+                return
+            # No file for a session that captured nothing (see _snapshot, which
+            # declines the same session's checkpoints). The report is still written,
+            # so the fixture still reports the empty recording.
+            if self._recorder.message_count:
+                self._build().save(self.cassette_path)
             checkpoint.discard(self.cassette_path)
-            return
-        # No file for a session that captured nothing (see _snapshot, which declines
-        # the same session's checkpoints). The report is still written, so the fixture
-        # still reports the empty recording.
-        if self._recorder.message_count:
-            self._build().save(self.cassette_path)
-        checkpoint.discard(self.cassette_path)
-        if self.report_path is not None:
-            write_report(self.report_path, {"messages": self._recorder.message_count})
+            if self.report_path is not None:
+                write_report(
+                    self.report_path, {"messages": self._recorder.message_count}
+                )
+        finally:
+            if self.claim is not None:
+                self.claim.release()
 
     async def _handle(self, request: HttpRequest, responder: Responder) -> None:
         self._last_activity = time.monotonic()

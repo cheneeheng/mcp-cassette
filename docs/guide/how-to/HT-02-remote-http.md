@@ -1,9 +1,11 @@
 # HT-02. Record and replay a remote HTTP server
 
-**When:** the MCP server your agent talks to is a remote Streamable HTTP endpoint, not a
-local command.
-**Prerequisites:** the `[http]` extra installed; network access to the real endpoint on
-the recording run only.
+[← Guide index](../index.md)
+
+- **When:** the MCP server your agent talks to is a remote Streamable HTTP endpoint, not a
+  local command.
+- **Prerequisites:** the `[http]` extra installed; network access to the real endpoint on
+  the recording run only.
 
 ```
 uv add --dev "mcp-cassette[http]"   # in your own project
@@ -21,9 +23,10 @@ sections do not build on each other.
 |---|---|---|
 | pytest fixture | [HT-02.1](#ht-021-with-the-pytest-fixture) | your tests are a pytest suite |
 | library (`use_cassette`) | [HT-02.2](#ht-022-with-use_cassette) | your harness is a notebook, benchmark, or another test framework |
+| async library (`use_cassette_async`) | [HT-02.2.1](#ht-0221-async-no-background-thread) | your harness is async code |
 | CLI | [HT-02.3](#ht-023-with-the-cli) | you record by hand or from a shell script |
 
-[HT-02.4](#ht-024-behaviour-shared-by-all-three-doors) holds what is identical everywhere:
+[HT-02.4](#ht-024-behaviour-shared-by-every-door) holds what is identical everywhere:
 credentials, transport mixing, and what a client must do to drive the replay server.
 
 ## HT-02.1 With the pytest fixture
@@ -83,6 +86,32 @@ after the first run.
 > already be listening before the agent connects. See
 > [HT-03.3](HT-03-use-as-a-library.md#ht-033-the-one-asymmetry-stated-up-front).
 
+### HT-02.2.1 Async: no background thread
+
+HTTP is where the async door earns its keep, because it is the door that runs a server.
+`use_cassette_async` starts it as a task in **your** event loop instead of on a background
+thread, so a debugger steps straight into it and shutdown joins nothing.
+
+```python
+from mcp_cassette import use_cassette_async
+
+async def main():
+    async with use_cassette_async("cassettes/tracker.mcp.json", mode="once") as session:
+        url = session.server_url("https://mcp.example.com/mcp")
+        await run_my_agent(mcp_servers={"tracker": {"url": url}})
+```
+
+Everything else is the same door: the same arguments, the same mode precedence, the same
+`CassetteError` on an empty recording or a replay miss, and everything in
+[HT-02.4](#ht-024-behaviour-shared-by-every-door) applies unchanged. Entering the
+*sync* `use_cassette` from inside a running loop raises `RuntimeError` naming this
+function rather than deadlocking on its portal.
+
+**Verify:** `uv run python examples/library_mode_async.py` twice from a clone — the first
+run records over HTTP, the second replays with the example server stopped. The full async
+surface, including cancellation and `aclose`/`afinalize`, is
+[HT-03.9](HT-03-use-as-a-library.md#ht-039-async-code-use_cassette_async).
+
 ## HT-02.3 With the CLI
 
 1. Start the recording proxy against the real endpoint:
@@ -117,7 +146,7 @@ Expected: `transport: http`, plus the recorded server host and exchange count.
 A worked, runnable version using the bundled sample servers is in
 [`examples/README.md`](../../../examples/README.md).
 
-## HT-02.4 Behaviour shared by all three doors
+## HT-02.4 Behaviour shared by every door
 
 ### Headers and credentials
 
@@ -158,3 +187,7 @@ Anything driving the replay server must behave like a Streamable HTTP MCP client
 - [HT-05. Replay timing](HT-05-replay-timing.md) — SSE inter-event spacing is the
   highest-fidelity thing pacing buys, and it is HTTP-only.
 - [OP-04. CLI reference](../operations/OP-04-cli-reference.md) — every flag.
+
+---
+
+[← HT-01 Record and replay a stdio server](HT-01-record-and-replay.md) · [Guide index](../index.md) · [HT-03 Use it as a library →](HT-03-use-as-a-library.md)

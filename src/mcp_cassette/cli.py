@@ -8,12 +8,14 @@ the MVP.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 from .cassette import (
@@ -23,17 +25,27 @@ from .cassette import (
     Message,
     PaceConfig,
     RedactionRule,
+    SaltMode,
     UnsupportedFormatVersion,
 )
 from .diffing import CassetteDiff, ToolChange, diff_cassettes
-from .lint import ProjectLintConfig, discover_config, run_with_notes
+from .lint import (
+    EntropyConfig,
+    LintReport,
+    ProjectLintConfig,
+    discover_config,
+    run_with_notes,
+)
 from .lint.engine import latest_tools
 from .matching import Matcher
 from .record.checkpoint import DEFAULT_CHECKPOINT_INTERVAL
 from .record.proxy import StdioRecordingProxy
+from .redaction import Redactor, append_redactor, replay_transform, resolve_packs
+from .redaction.replay import RequestTransform
 from .replay.faults import Injector
 from .replay.new_episodes import NewEpisodesProxy
 from .replay.server import ReplayServer
+from .session.claim import ClaimConflict, ClaimFile, read_claim
 
 _LOAD_ERRORS = (UnsupportedFormatVersion, OSError, ValueError)
 """Everything loading a cassette or fault overlay can raise, as exit-2 usage errors.
@@ -102,10 +114,63 @@ def build_parser() -> argparse.ArgumentParser:
     rec.add_argument(
         "--no-default-redactions",
         action="store_true",
-        help="Disable the always-on default redaction rule set.",
+        help=(
+            "Disable the always-on default redactions: the structural key rules and "
+            "the bundled PII pack."
+        ),
     )
+    rec.add_argument(
+        "--pii-pack",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "TOML redaction pack scrubbing free text at record time (repeatable; "
+            "additive to the bundled pack)."
+        ),
+    )
+    rec.add_argument(
+        "--redact-profile",
+        metavar="NAME",
+        help=(
+            "Profile name stamped on the cassette's redaction manifest — what "
+            "lint --require-redaction checks."
+        ),
+    )
+    rec.add_argument(
+        "--redact-salt-env",
+        action="store_true",
+        help=(
+            "Key hash pseudonyms with $MCP_CASSETTE_REDACT_SALT. The stable default "
+            "keeps cassettes diffable but a stable pseudonym of a low-entropy value "
+            "is dictionary-attackable; with this flag pseudonyms differ across "
+            "projects and re-records produce different bytes."
+        ),
+    )
+    rec.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Break another live process's write claim on --cassette (with a "
+            "warning) instead of exiting 6."
+        ),
+    )
+    rec.add_argument(
+        "--claim-wait",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "Wait this long for another writer's claim on --cassette to be released "
+            "before exiting 6 (default: 0, fail fast)."
+        ),
+    )
+    rec.add_argument("--claim-held-by", type=int, default=None, help=argparse.SUPPRESS)
     rec.add_argument("--report", help="Write a JSON session report to this path.")
-    rec.epilog = "Pass the real server command after a -- separator: -- CMD [ARGS...]."
+    rec.epilog = (
+        "Pass the real server command after a -- separator: -- CMD [ARGS...]. "
+        "Exit 6 means another live process holds --cassette for writing."
+    )
 
     srv = sub.add_parser(
         "serve",
@@ -148,6 +213,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     srv.add_argument("--faults", help="Path to a fault overlay JSON sidecar.")
     srv.add_argument(
+        "--pii-pack",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "Redaction pack named by the cassette's manifest, to re-apply its "
+            "scrubbing to live requests (repeatable; packs it does not name are "
+            "ignored)."
+        ),
+    )
+    srv.add_argument(
         "--pace",
         choices=["none", "recorded"],
         default="none",
@@ -177,6 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Replay matches; fall through misses to the real server (needs -- CMD).",
     )
+    srv.add_argument("--claim-held-by", type=int, default=None, help=argparse.SUPPRESS)
     srv.add_argument("--report", help="Write a JSON session report to this path.")
     srv.epilog = "For --new-episodes, pass the real server command after --: -- CMD ..."
 
@@ -241,24 +318,48 @@ def build_parser() -> argparse.ArgumentParser:
         "lint",
         help="Heuristic security scan of a cassette (CI-friendly; exit 4 on errors).",
         description=(
-            "Scan recorded tool descriptions and results for known smells: "
-            "injection phrasing (R001), description drift vs a baseline (R002), "
-            "duplicate tool names (R003), instruction-shaped results (R004). "
+            "Scan recorded tool definitions, results, and every other string for "
+            "known smells: injection phrasing (R001), description drift vs a "
+            "baseline (R002), duplicate tool names (R003), instruction-shaped "
+            "results (R004), high-entropy strings that look like secrets (R005), "
+            "injection phrasing in tool names or inputSchema text (R006), "
+            "non-ASCII or mixed-script tool names (R007). "
             "These are pattern rules, not a guarantee — a clean lint is absence "
             "of known smells, nothing more. Packs extend the bundled rules; they "
             "never replace them."
         ),
     )
-    lint.add_argument("cassette", help="Path to the cassette to lint.")
+    lint.add_argument("cassette", nargs="+", help="Cassette(s) to lint.")
     lint.add_argument(
         "--baseline",
-        help="Older cassette to compare tool surfaces against (enables R002).",
+        help=(
+            "Older cassette to compare tool surfaces against (enables R002; one "
+            "CASSETTE only)."
+        ),
+    )
+    lint.add_argument(
+        "--require-redaction",
+        metavar="NAME",
+        help=(
+            "Exit 4 unless every cassette's redaction manifest names this profile "
+            "(see record --redact-profile)."
+        ),
     )
     lint.add_argument(
         "--format",
         choices=["text", "json"],
         default="text",
         help="Output format (default: text; json is deterministic and diffable).",
+    )
+    lint.add_argument(
+        "--annotate",
+        choices=["github"],
+        default=None,
+        help=(
+            "Also print one GitHub Actions workflow command per finding on stdout, "
+            "after the --format output (file-level; nothing when there are no "
+            "findings)."
+        ),
     )
     lint.add_argument(
         "--select",
@@ -292,6 +393,40 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ignore [tool.mcp_cassette.lint] in the nearest pyproject.toml.",
     )
+    lint.add_argument(
+        "--entropy",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Run R005 high-entropy secret detection (default: on, at warning). "
+            "Entropy is a smell, not a verdict — review findings, do not auto-fix. "
+            "At most 200 candidate tokens per message are scanned."
+        ),
+    )
+    lint.add_argument(
+        "--entropy-min-bits",
+        type=float,
+        default=None,
+        metavar="FLOAT",
+        help="Lowest Shannon entropy per character R005 reports (default: 3.5).",
+    )
+    lint.add_argument(
+        "--entropy-min-length",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Shortest token R005 considers (default: 20).",
+    )
+    lint.add_argument(
+        "--entropy-allow",
+        action="append",
+        default=None,
+        metavar="STRING",
+        help=(
+            "Literal token R005 never reports (repeatable; exact match, not a regex; "
+            "replaces the project config's allowlist)."
+        ),
+    )
     return parser
 
 
@@ -304,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
+    _force_utf8_output()
     raw = list(sys.argv[1:] if argv is None else argv)
     front, server_cmd = _split_server_cmd(raw)
     parser = build_parser()
@@ -323,6 +459,21 @@ def main(argv: list[str] | None = None) -> int:
     return 2  # pragma: no cover — required subparsers reject unknown commands
 
 
+def _force_utf8_output() -> None:
+    """Make the text streams encode any cassette content, on every platform.
+
+    Findings quote recorded text verbatim — a Cyrillic tool name (R007), a ``mask``
+    run of U+2022 — and the default console encoding on Windows is cp1252, which
+    cannot encode either. Without this the CLI dies with ``UnicodeEncodeError`` and
+    exit 1, losing the exit-code contract on the rules whose whole point is a
+    non-ASCII character. The JSON-RPC paths write bytes through :mod:`._stdio` and
+    are unaffected.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def _split_server_cmd(argv: list[str]) -> tuple[list[str], list[str]]:
     """Split argv on the first standalone ``--`` into (front, server command)."""
     if "--" in argv:
@@ -338,6 +489,10 @@ def _parse_redaction(spec: str) -> RedactionRule:
     return RedactionRule(locator=spec)
 
 
+def _salt_mode(args: argparse.Namespace) -> SaltMode:
+    return "env" if args.redact_salt_env else "stable"
+
+
 def _cmd_record(args: argparse.Namespace) -> int:
     server_cmd = args.server_cmd
     if args.url and server_cmd:
@@ -351,42 +506,107 @@ def _cmd_record(args: argparse.Namespace) -> int:
             "after --\n"
         )
         return 2
-    if Path(args.cassette).exists():
-        sys.stderr.write(
-            f"mcp-cassette record: {args.cassette} already exists and will be "
-            "replaced when this session ends; copy it first to keep it\n"
-        )
-    if args.url:
-        try:
-            from .transports.http import RecordingProxy
-        except ImportError as exc:
-            sys.stderr.write(f"mcp-cassette record: {exc}\n")
-            return 2
-        return RecordingProxy(
-            server_url=args.url,
-            cassette_path=args.cassette,
-            redaction=[_parse_redaction(s) for s in args.redact],
-            include_default_redactions=not args.no_default_redactions,
-            port=args.port,
-            report_path=args.report,
-            max_idle=args.max_idle,
-            checkpoint_interval=args.checkpoint_interval,
-        ).run()
-    if args.port or args.max_idle is not None:
+    if not args.url and (args.port or args.max_idle is not None):
         sys.stderr.write(
             "mcp-cassette record: --port/--max-idle apply to --url recording only, "
             "not to a stdio -- CMD\n"
         )
         return 2
-    proxy = StdioRecordingProxy(
-        server_cmd=server_cmd,
-        cassette_path=args.cassette,
-        redaction=[_parse_redaction(s) for s in args.redact],
-        include_default_redactions=not args.no_default_redactions,
-        report_path=args.report,
-        checkpoint_interval=args.checkpoint_interval,
+    if args.url:
+        try:
+            from .transports.http import RecordingProxy  # noqa: F401 — extra check
+        except ImportError as exc:
+            sys.stderr.write(f"mcp-cassette record: {exc}\n")
+            return 2
+    # CLI record always records, so a live claim takes the `all` row: fail fast,
+    # unless --claim-wait asks for a bounded wait or --force breaks it.
+    return _claimed(
+        args,
+        "record",
+        "all",
+        lambda claim: _record(args, server_cmd, claim),
+        wait=args.claim_wait,
+        force=args.force,
     )
-    return proxy.run()
+
+
+def _record(
+    args: argparse.Namespace, server_cmd: list[str], claim: ClaimFile | None
+) -> int:
+    # After the claim, not before: with a live claim the run exits 6 and the file
+    # this warning would promise to replace is never touched.
+    if Path(args.cassette).exists():
+        sys.stderr.write(
+            f"mcp-cassette record: {args.cassette} already exists and will be "
+            "replaced when this session ends; copy it first to keep it\n"
+        )
+    run: Callable[[], int]
+    try:
+        if args.url:
+            from .transports.http import RecordingProxy
+
+            run = RecordingProxy(
+                server_url=args.url,
+                cassette_path=args.cassette,
+                redaction=[_parse_redaction(s) for s in args.redact],
+                include_default_redactions=not args.no_default_redactions,
+                port=args.port,
+                report_path=args.report,
+                max_idle=args.max_idle,
+                checkpoint_interval=args.checkpoint_interval,
+                pii_packs=args.pii_pack,
+                redact_profile=args.redact_profile,
+                salt_mode=_salt_mode(args),
+                claim=claim,
+            ).run
+        else:
+            run = StdioRecordingProxy(
+                server_cmd=server_cmd,
+                cassette_path=args.cassette,
+                redaction=[_parse_redaction(s) for s in args.redact],
+                include_default_redactions=not args.no_default_redactions,
+                report_path=args.report,
+                checkpoint_interval=args.checkpoint_interval,
+                pii_packs=args.pii_pack,
+                redact_profile=args.redact_profile,
+                salt_mode=_salt_mode(args),
+                claim=claim,
+            ).run
+    except _LOAD_ERRORS as exc:
+        sys.stderr.write(f"mcp-cassette record: {exc}\n")
+        return 2
+    return run()
+
+
+def _claimed(
+    args: argparse.Namespace,
+    command: str,
+    mode: str,
+    run: Callable[[ClaimFile | None], int],
+    *,
+    wait: float = 0.0,
+    force: bool = False,
+) -> int:
+    """Run a cassette write under the single-writer claim; exit 6 on a conflict.
+
+    A fixture or library session takes the claim itself before handing the agent this
+    command and passes its own pid as ``--claim-held-by``, so the child neither
+    re-takes the claim (it would conflict with its parent) nor releases it.
+    """
+    claim: ClaimFile | None = None
+    holder = read_claim(args.cassette) if args.claim_held_by is not None else None
+    if holder is None or holder.pid != args.claim_held_by:
+        claim = ClaimFile(args.cassette, mode, wait=wait, force=force)
+        try:
+            claim.acquire()
+        except ClaimConflict as exc:
+            sys.stderr.write(f"mcp-cassette {command}: {exc}\n")
+            return 6
+    try:
+        return run(claim)
+    finally:
+        if claim is not None:
+            claim.release()
 
 
 def _build_pace(args: argparse.Namespace) -> tuple[PaceConfig | None, str | None]:
@@ -431,13 +651,18 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         sys.stderr.write(f"mcp-cassette serve: {pace_error}\n")
         return 2
     args.pace_config = pace
+    try:
+        transform, appender = _replay_redaction(args, cassette)
+    except _LOAD_ERRORS as exc:
+        sys.stderr.write(f"mcp-cassette serve: {exc}\n")
+        return 2
     config = MatchConfig(
         ignore_params=args.ignore_param,
         ordering=args.ordering,
         rewrite_protocol_version=args.rewrite_protocol_version,
     )
     if cassette.transport == "http":
-        return _cmd_serve_http(args, cassette, config, overlay)
+        return _cmd_serve_http(args, cassette, config, overlay, transform, appender)
     if args.url:
         sys.stderr.write(
             "mcp-cassette serve: --url applies to http cassettes; this cassette "
@@ -451,19 +676,61 @@ def _cmd_serve(args: argparse.Namespace) -> int:
                 "mcp-cassette serve --new-episodes: missing server command after --\n"
             )
             return 2
-        return NewEpisodesProxy(
-            cassette=cassette,
-            cassette_path=args.cassette,
-            server_cmd=server_cmd,
-            match=config,
-            report_path=args.report,
-            pace=pace,
-        ).run()
+        return _claimed(
+            args,
+            "serve",
+            "new_episodes",
+            lambda claim: NewEpisodesProxy(
+                cassette=cassette,
+                cassette_path=args.cassette,
+                server_cmd=server_cmd,
+                match=config,
+                report_path=args.report,
+                pace=pace,
+                request_transform=transform,
+                append_redactor=appender,
+                claim=claim,
+            ).run(),
+        )
 
     server = ReplayServer(
-        cassette, match=config, faults=overlay, report_path=args.report, pace=pace
+        cassette,
+        match=config,
+        faults=overlay,
+        report_path=args.report,
+        pace=pace,
+        request_transform=transform,
     )
     return server.run()
+
+
+def _replay_redaction(
+    args: argparse.Namespace, cassette: Cassette
+) -> tuple[RequestTransform | None, Redactor | None]:
+    """Resolve the cassette's recorded redaction into replay-time transforms.
+
+    Raises:
+        ValueError: If ``--pii-pack`` meets a cassette with no manifest, or a pack the
+            manifest names cannot be resolved.
+    """
+    manifest = cassette.redaction
+    if manifest is None:
+        if args.pii_pack:
+            raise ValueError(
+                f"--pii-pack given, but {args.cassette} carries no redaction "
+                "manifest, so there is nothing to resolve a pack against (is this "
+                "the cassette you meant to serve?)"
+            )
+        return None, None
+    _, unused = resolve_packs(manifest, args.pii_pack)
+    for path in unused:
+        sys.stderr.write(
+            f"mcp-cassette serve: note: --pii-pack {path} is not named by this "
+            "cassette's redaction manifest; ignored\n"
+        )
+    transform = replay_transform(manifest, args.pii_pack)
+    appender = append_redactor(manifest, args.pii_pack) if args.new_episodes else None
+    return transform, appender
 
 
 def _cmd_serve_http(
@@ -471,6 +738,8 @@ def _cmd_serve_http(
     cassette: Cassette,
     config: MatchConfig,
     overlay: FaultOverlay | None,
+    transform: RequestTransform | None = None,
+    appender: Redactor | None = None,
 ) -> int:
     try:
         from .transports.http import HttpReplayServer
@@ -486,16 +755,24 @@ def _cmd_serve_http(
                 "cassette records no server_url\n"
             )
             return 2
-    return HttpReplayServer(
-        cassette,
-        match=config,
-        faults=overlay,
-        port=args.port,
-        report_path=args.report,
-        fallthrough_url=fallthrough_url,
-        cassette_path=args.cassette if fallthrough_url else None,
-        pace=args.pace_config,
-    ).run()
+
+    def run(claim: ClaimFile | None) -> int:
+        return HttpReplayServer(
+            cassette,
+            match=config,
+            faults=overlay,
+            port=args.port,
+            report_path=args.report,
+            fallthrough_url=fallthrough_url,
+            cassette_path=args.cassette if fallthrough_url else None,
+            pace=args.pace_config,
+            request_transform=transform,
+            append_redactor=appender,
+        ).run()
+
+    if fallthrough_url is None:
+        return run(None)
+    return _claimed(args, "serve", "new_episodes", run)
 
 
 _TIMELINE_COLUMNS = (
@@ -782,45 +1059,139 @@ def _resolve_lint_config(args: argparse.Namespace) -> ProjectLintConfig:
     because an explicit selection is an override, not a merge.
     """
     config = ProjectLintConfig() if args.no_config else discover_config()
+    overrides = {
+        key: value
+        for key, value in {
+            "enabled": args.entropy,
+            "min_bits": args.entropy_min_bits,
+            "min_length": args.entropy_min_length,
+            "allowlist": args.entropy_allow,
+        }.items()
+        if value is not None
+    }
+    entropy = config.entropy
+    if overrides:
+        base = (config.entropy or EntropyConfig()).model_dump()
+        entropy = EntropyConfig.model_validate({**base, **overrides})
     return config.model_copy(
         update={
             "select": args.select or config.select,
             "ignore": args.ignore or config.ignore,
             "fail_on": args.fail_on or config.fail_on,
+            "require_redaction": args.require_redaction or config.require_redaction,
+            "entropy": entropy,
         }
     )
 
 
+class _LintResult(NamedTuple):
+    path: str
+    report: LintReport
+    notes: list[str]
+    redaction_failure: str | None
+
+
 def _cmd_lint(args: argparse.Namespace) -> int:
+    if args.baseline is not None and len(args.cassette) > 1:
+        sys.stderr.write(
+            "mcp-cassette lint: --baseline compares one cassette; pass a single "
+            "CASSETTE with it\n"
+        )
+        return 2
+    results: list[_LintResult] = []
     try:
         config = _resolve_lint_config(args)
-        report, notes = run_with_notes(
-            args.cassette,
-            args.baseline,
-            config.select or None,
-            ignore=config.ignore,
-            packs=list(args.pattern_pack),
-            config=config,
-        )
+        # Every cassette is linted before anything prints, so a load error on the
+        # third path cannot leave half a JSON document behind.
+        for path in args.cassette:
+            report, notes = run_with_notes(
+                path,
+                args.baseline,
+                config.select or None,
+                ignore=config.ignore,
+                packs=list(args.pattern_pack),
+                config=config,
+            )
+            failure = _redaction_failure(path, config.require_redaction)
+            results.append(_LintResult(path, report, notes, failure))
     except _LOAD_ERRORS as exc:
         sys.stderr.write(f"mcp-cassette lint: {exc}\n")
         return 2
     if args.format == "json":
-        print(report.model_dump_json(indent=2))
+        if len(results) == 1:
+            print(results[0].report.model_dump_json(indent=2))
+        else:
+            documents = [r.report.model_dump(mode="json") for r in results]
+            print(json.dumps(documents, indent=2, ensure_ascii=False))
     else:
-        for note in notes:
-            print(note)
-        for finding in report.findings:
-            first, *rest = finding.message.split("\n")
-            print(f"{finding.rule} {finding.severity} {finding.locator} {first}")
-            for line in rest:
-                print(f"    {line}")
-        if not report.findings:
-            print("clean: no findings")
+        for result in results:
+            _print_lint_text(result, with_header=len(results) > 1)
+    if args.annotate == "github":
+        for result in results:
+            _print_github_annotations(result)
+    for result in results:
+        if result.redaction_failure is not None:
+            sys.stderr.write(f"mcp-cassette lint: {result.redaction_failure}\n")
     # fail_on changes only the exit code; a finding's own severity is never
     # rewritten, so JSON output stays a faithful record.
     threshold = ("warning", "error") if config.fail_on == "warning" else ("error",)
-    return 4 if any(f.severity in threshold for f in report.findings) else 0
+    failed = any(
+        result.redaction_failure is not None
+        or any(f.severity in threshold for f in result.report.findings)
+        for result in results
+    )
+    return 4 if failed else 0
+
+
+def _print_lint_text(result: _LintResult, *, with_header: bool) -> None:
+    if with_header:
+        print(f"{result.path}:")
+    for note in result.notes:
+        print(note)
+    for finding in result.report.findings:
+        first, *rest = finding.message.split("\n")
+        print(f"{finding.rule} {finding.severity} {finding.locator} {first}")
+        for line in rest:
+            print(f"    {line}")
+    if not result.report.findings:
+        print("clean: no findings")
+
+
+def _print_github_annotations(result: _LintResult) -> None:
+    # File-level only: findings carry JSON pointers, not line numbers.
+    file = _escape_workflow_property(result.path)
+    for finding in result.report.findings:
+        first = finding.message.split("\n")[0]
+        title = _escape_workflow_property(finding.rule)
+        text = _escape_workflow_data(f"{finding.rule} {finding.locator} {first}")
+        print(f"::{finding.severity} file={file},title={title}::{text}")
+
+
+def _escape_workflow_data(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_workflow_property(value: str) -> str:
+    return _escape_workflow_data(value).replace(":", "%3A").replace(",", "%2C")
+
+
+def _redaction_failure(path: str, profile: str | None) -> str | None:
+    """Why ``path`` fails ``--require-redaction``, or ``None`` when it passes."""
+    if profile is None:
+        return None
+    manifest = Cassette.load(path).redaction
+    fix = (
+        f"re-record it with 'mcp-cassette record --redact-profile {profile} "
+        f"--cassette {path} -- CMD'"
+    )
+    if manifest is None:
+        return f"{path} carries no redaction manifest; {fix}"
+    if manifest.profile != profile:
+        return (
+            f"{path} was scrubbed with redaction profile {manifest.profile!r}, "
+            f"expected {profile!r}; {fix}"
+        )
+    return None
 
 
 def _inspect_faults(cassette: Cassette, overlay: FaultOverlay) -> None:

@@ -69,7 +69,7 @@ def test_full_session_capture(ref_server: str, tmp_path: Path) -> None:
     assert result.response_for(3)["result"]["content"][0]["text"] == "hi"
 
     cassette = Cassette.load(cassette_path)
-    assert cassette.format_version == 2
+    assert cassette.format_version == 3
     assert cassette.transport == "http"
     assert cassette.server_url == ref_server
     assert cassette.session_id is not None  # captured from Mcp-Session-Id

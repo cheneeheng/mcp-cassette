@@ -26,7 +26,16 @@ from pydantic import BaseModel, Field, ValidationError
 from .patterns import INJECTION_PATTERNS
 
 Severity = Literal["warning", "error"]
-Surface = Literal["description", "result"]
+Surface = Literal["name", "description", "result", "schema_description", "schema_enum"]
+
+ALL_SURFACES: tuple[Surface, ...] = (
+    "name",
+    "description",
+    "result",
+    "schema_description",
+    "schema_enum",
+)
+"""Every lintable surface kind. A pack names no surfaces -> description and result."""
 
 PACK_VERSION = 1
 """The only accepted pattern-pack format version."""
@@ -46,7 +55,9 @@ class PatternRule(BaseModel, extra="forbid"):
         regex: The pattern, compiled but never evaluated as code.
         flags: Subset of ``i``, ``m``, ``s``, ``x``.
         severity: Finding severity (default ``error``).
-        surfaces: Which lintable surfaces the pattern applies to.
+        surfaces: Which lintable surfaces the pattern applies to: ``name``,
+            ``description``, ``result``, ``schema_description``, ``schema_enum``
+            (default ``description`` and ``result``, as in v3).
         message: Optional replacement for the default finding wording.
     """
 
@@ -61,6 +72,24 @@ class PatternRule(BaseModel, extra="forbid"):
     message: str | None = None
 
 
+class EntropyConfig(BaseModel, extra="forbid"):
+    """How rule R005 decides a string is a high-entropy secret.
+
+    Attributes:
+        enabled: Whether R005 runs at all (on by default, at ``warning`` severity).
+        min_bits: Lowest Shannon entropy per character that fires.
+        min_length: Shortest token considered.
+        allowlist: Literal tokens never reported — compared by exact equality, not
+            as regexes, because an over-matching allowlist regex would silently
+            disable a security rule.
+    """
+
+    enabled: bool = True
+    min_bits: float = Field(default=3.5, gt=0)
+    min_length: int = Field(default=20, ge=1)
+    allowlist: list[str] = Field(default_factory=list)
+
+
 class ProjectLintConfig(BaseModel, extra="forbid"):
     """The ``[tool.mcp_cassette.lint]`` block of a project's ``pyproject.toml``.
 
@@ -71,12 +100,18 @@ class ProjectLintConfig(BaseModel, extra="forbid"):
         fail_on: Lowest severity that makes the run exit 4. Changes only the exit
             code — a finding's own severity is never rewritten, so JSON output stays
             a faithful record and two projects can gate the same cassette differently.
+        require_redaction: Redaction profile every linted cassette's manifest must
+            name; a missing manifest or another profile exits 4.
+        entropy: R005 settings (``[tool.mcp_cassette.lint.entropy]``); defaults apply
+            when absent.
     """
 
     pattern_packs: list[Path] = Field(default_factory=list)
     select: list[str] = Field(default_factory=list)
     ignore: list[str] = Field(default_factory=list)
     fail_on: Severity = "error"
+    require_redaction: str | None = None
+    entropy: EntropyConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -122,7 +157,9 @@ class PatternSet:
                 label=label,
                 regex=re.compile(pattern, flags),
                 severity=None,
-                surfaces=("description", "result"),
+                # Every kind: which bundled rule reports a hit is decided by the
+                # caller (R001 descriptions, R004 results, R006 name/schema text).
+                surfaces=ALL_SURFACES,
                 message=None,
             )
             for label, pattern, flags in INJECTION_PATTERNS
@@ -152,7 +189,8 @@ class PatternSet:
         Args:
             pack_ids: Pack rule ids that survive ``--select``/``--ignore``.
             include_bundled: Whether the bundled patterns are enabled for the
-                calling rule (``R001`` for descriptions, ``R004`` for results).
+                calling rule (``R001`` for descriptions, ``R004`` for results,
+                ``R006`` for names and schema text).
 
         Returns:
             A new set holding only the enabled patterns.
@@ -176,7 +214,7 @@ class PatternSet:
 
         Args:
             text: The surface text (already known not to be a redaction marker).
-            surface: ``description`` or ``result``.
+            surface: The surface kind the text was extracted from.
 
         Returns:
             Matches in iteration order: bundled patterns first, then packs in load
