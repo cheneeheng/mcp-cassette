@@ -11,6 +11,12 @@ The planning artifacts, decision log, and audit evidence under `.agents_workspac
 repository of their own at that path, git-ignored here; a fresh clone of this repo does not contain
 them, so paths cited into that folder resolve only for someone who has it.
 
+`.agents_workspace/product/JOURNAL.md` records the product lifecycle phase by phase, with every
+decision, assumption, workaround, and hack. When a session makes or settles one of those, or a
+phase starts or ends (a plan, a release, a reboot), add a row or section there in the same session,
+citing the `DECISION_LOG.md` entry or commit rather than restating it. Skip it when that folder is
+absent.
+
 ## Commands
 
 Tooling is `uv`. The `mcp` SDK is a dev-only dependency (used by the reference server in tests); it is NOT a runtime dependency and must never become one.
