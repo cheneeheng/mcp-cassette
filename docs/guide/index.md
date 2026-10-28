@@ -1,9 +1,10 @@
 # mcp-cassette Guide
 
-mcp-cassette records real MCP sessions between an agent and an MCP server — local stdio
-or remote Streamable HTTP — into **cassettes** (structured JSON files you commit), then
-replays those cassettes as deterministic mock MCP servers. Your agent test suite stops
-hitting live servers.
+mcp-cassette records real MCP sessions between an agent and an MCP server into
+**cassettes** (structured JSON files you commit), then uses them two ways: `check`
+re-launches each third-party server in CI and fails when it no longer starts or its tools
+changed, and replay stands in for the server so every agent change is evaluated against
+the same tool data, with a divergence report at the step where a changed agent departs.
 
 ## The mental model
 
@@ -58,31 +59,37 @@ The two audiences do not mix:
 
 ## Part I — Test authors
 
-- [Getting started](getting-started.md) — install, then one record-and-replay through
-  whichever of the four doors fits your setup.
+The core loop, in the order most teams adopt it:
+
+- [Getting started](getting-started.md) — install, the upgrade tripwire, then one
+  record-and-replay through whichever door fits your setup.
+- **HT-09** [Catch a server that changed under you](how-to/HT-09-gate-a-drifting-server.md)
+  — `check`: fail CI the day a third-party server stops starting or changes its tools.
 - **HT-01** [Record and replay a stdio server](how-to/HT-01-record-and-replay.md) — the
-  core loop through all three doors, record modes, re-recording.
+  core loop, record modes, re-recording.
+- **HT-04** [Inject faults](how-to/HT-04-inject-faults.md) — drive a resilience matrix off
+  one recording.
+- **HT-07** [Redact secrets](how-to/HT-07-redact-secrets.md) — what is scrubbed by default
+  and how to add rules.
+- [Troubleshooting](troubleshooting.md) — symptom to fix.
+
+Beyond Stage 1: these ship and are tested, but get no new features until a user needs
+them.
+
 - **HT-02** [Record and replay a remote HTTP server](how-to/HT-02-remote-http.md) —
   `server_url`, the `[http]` extra, and the async door where it differs.
 - **HT-03** [Use it as a library](how-to/HT-03-use-as-a-library.md) — `use_cassette` and
   `use_cassette_async` for harnesses that are not pytest suites.
-- **HT-04** [Inject faults](how-to/HT-04-inject-faults.md) — drive a resilience matrix off
-  one recording.
 - **HT-05** [Replay timing](how-to/HT-05-replay-timing.md) — replay recorded latency when
   your agent's timeout or retry logic depends on it.
 - **HT-06** [Inspect and diff cassettes](how-to/HT-06-inspect-and-diff.md) — read the
   timeline, grep payloads, compare two recordings.
-- **HT-07** [Redact secrets](how-to/HT-07-redact-secrets.md) — what is scrubbed by default
-  and how to add rules.
 - **HT-08** [Lint with your own pattern packs](how-to/HT-08-lint-pattern-packs.md) — extend
   the bundled rules with project-specific regexes.
-- **HT-09** [Gate a drifting server surface](how-to/HT-09-gate-a-drifting-server.md) — fail
-  the build when a third-party tool description or schema moves under you.
 - **HT-10** [Redact PII from free text](how-to/HT-10-redact-pii.md) — redaction packs,
   strategies, the salt, and replay symmetry.
 - **HT-11** [Detect secrets that got through](how-to/HT-11-detect-secrets.md) — `R005`
   entropy detection, and why it ships at warning.
-- [Troubleshooting](troubleshooting.md) — symptom to fix.
 
 ## Part II — Operators
 
@@ -95,7 +102,10 @@ The two audiences do not mix:
 - **OP-04** [CLI reference](operations/OP-04-cli-reference.md) — commands, flags, exit
   codes.
 - **OP-05** [Runbook: replay misses and failed recordings](operations/OP-05-runbook-replay-misses.md)
-  — the two incidents that actually happen.
+  — the two incidents that actually happen, and how to read a divergence report.
+
+Beyond Stage 1:
+
 - **OP-06** [Parallel test runs](operations/OP-06-parallel-test-runs.md) — what is safe
   under `pytest -n auto`, the write claim, and exit `6`.
 - **OP-07** [Pre-commit hooks](operations/OP-07-pre-commit.md) — refuse an unclean or

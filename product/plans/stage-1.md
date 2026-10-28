@@ -284,7 +284,16 @@ note. Pages for frozen items stay as written. No page is deleted.
   finds the stability line in both; `uv run pytest examples/ -q` passes. By hand, because no
   link checker or doc-command runner is installed: every command quoted in the touched pages is
   run once and gives the output the page shows, and every relative link opens.
-- **Status:** todo
+- **Status:** done. The README `## ` order is install, tripwire, record and replay, divergence,
+  failure on cue, CI, secrets, format stability, then "Beyond Stage 1"; the stability line is
+  in README:151 and OP-02:207; `MCP_CASSETTE_MODE=none uv run pytest examples/ -q` gave "31
+  passed". Ran every `check`, `serve` and `lint` command the touched pages quote against the
+  bundled and pasted echo servers, and they printed what the pages show. A stdlib script found
+  0 broken relative links in the touched pages. Not run: the `uvx mcp-server-fetch` and `npx
+  server-github` lines, which are illustrations of third-party servers. Beyond Builds: the
+  pasted getting-started server gained a `tools/list` handler (it had none, so `check` would
+  have reported it as not starting), and HT-03's miss wording and OP-01's server line count
+  were corrected.
 
 ### Phase 6: Prove Stage 1 done
 
@@ -330,3 +339,5 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 PR: #31 https://github.com/cheneeheng/mcp-cassette/pull/31
 - 2026-10-28 Built Phase 4: fcd89d7, `uv run coverage run -m pytest -q` 683 passed, 3 skipped; coverage TOTAL 99%
 - 2026-10-28 PR: #32 https://github.com/cheneeheng/mcp-cassette/pull/32
+- 2026-10-28 Built Phase 5: 8260d7d, `MCP_CASSETTE_MODE=none uv run pytest examples/ -q` 31 passed
+- 2026-10-28 PR: #33 https://github.com/cheneeheng/mcp-cassette/pull/33

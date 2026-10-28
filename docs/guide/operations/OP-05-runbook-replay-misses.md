@@ -6,20 +6,40 @@
 
 ## OP-05.1 Incident 1 — replay had unmatched requests
 
-**Detection.** A test fails at teardown with:
+**Detection.** A test fails at teardown with a divergence report first, then the list of
+misses:
 
 ```
-CassetteError: replay had 2 unmatched request(s):
+CassetteError: replay diverged at step 2: tools/call: no recorded call matches
+--- recorded
++++ new
+@@ -1,6 +1,6 @@
+ {
+   "arguments": {
+-    "text": "hello cassette"
++    "text": "hello, changed prompt"
+   },
+   "name": "echo"
+ }
+replay had 1 unmatched request(s):
   - tools/call params=<digest>
-  - resources/read params=<digest>
 Re-record with MCP_CASSETTE_MODE=all or delete <cassette path>.
 ```
 
-Out of pytest, the same condition is the replay process exiting `3`.
+Out of pytest, `serve` prints the same block to stderr and exits `3`. By default replay
+stops at that first miss, so there is one; with `on_unmatched="error"` it keeps serving and
+lists every miss after the block.
 
 **Impact.** Test-only. Nothing was written; the cassette is untouched.
 
 ### OP-05.1.1 Diagnosis
+
+0. Read the divergence report. `step N` counts the agent's requests from `initialize` as
+   step 1. The diff is recorded call (`-`) against new call (`+`), as matching sees them:
+   `params._meta` and your `ignore_params` are already dropped, so every changed line is
+   one that broke the match. If the report says `the recording has no calls left`, the
+   agent made more calls than were recorded (remediation A). If it says `has no recorded
+   response`, the recording was cut short (Incident 2).
 
 1. Confirm what the cassette actually contains.
 

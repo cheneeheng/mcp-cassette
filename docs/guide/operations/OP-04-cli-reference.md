@@ -8,6 +8,7 @@ this page mirrors it.
 ```
 mcp-cassette record  --cassette PATH [--url URL] [flags] [-- CMD ...]
 mcp-cassette serve   CASSETTE [flags] [-- CMD ...]
+mcp-cassette check   CASSETTE [--record] [--env KEY=VALUE] [--timeout SECONDS] -- CMD ...
 mcp-cassette inspect CASSETTE [--method METHOD] [--grep PATTERN] [--timeline | --tools] [--format text|json] [--faults PATH]
 mcp-cassette diff    OLD NEW [--format text|json] [--tools-only]
 mcp-cassette lint    CASSETTE... [--baseline PATH] [--require-redaction NAME] [--format text|json] [--annotate github] [--select RULE] [--ignore RULE] [--pattern-pack PATH] [--fail-on error|warning] [--no-config] [--entropy | --no-entropy] [--entropy-min-bits FLOAT] [--entropy-min-length N] [--entropy-allow STRING]
@@ -21,10 +22,11 @@ mcp-cassette lint    CASSETTE... [--baseline PATH] [--require-redaction NAME] [-
 |---|---|
 | `0` | Success. For `lint`: no error-severity findings. |
 | `2` | Usage error, or a cassette, fault overlay, or pack that is missing, unreadable, malformed, or has an unsupported `format_version`. Also: an unknown rule id in `--select`/`--ignore`, a redaction pack the cassette's manifest names that cannot be resolved, and `--redact-salt-env` without `MCP_CASSETTE_REDACT_SALT`. |
-| `3` | `serve`: an unmatched request was received. |
+| `3` | `serve`: an unmatched request was received. Under the default `--on-unmatched stop` the run ends at the first one. |
 | `4` | `lint`: at least one finding at or above `--fail-on` (default: error severity), or a cassette failing `--require-redaction`. |
-| `5` | `diff`: the two cassettes differ. |
+| `5` | `diff`: the two cassettes differ. `check`: the server's tools differ from the cassette's. |
 | `6` | `record`, `serve --new-episodes`: another live process holds the cassette for writing. Worth retrying; see [OP-06](OP-06-parallel-test-runs.md). |
+| `7` | `check`: the server did not start (it exited, closed its pipes, or did not answer within `--timeout`). |
 | `130` | Recording interrupted by a signal; the cassette was finalized first. |
 | other | `record`: the wrapped server's own exit code. |
 
@@ -104,7 +106,8 @@ Stands up a replay server. The transport is inferred from the cassette.
 | `--port N` | `0` (ephemeral) | Port for an http cassette. The URL is printed on startup. |
 | `--url URL` | cassette's `server_url` | Fall-through target for `--new-episodes` on an http cassette. |
 | `--ordering per_method\|strict\|none` | `per_method` | Match ordering discipline. |
-| `--ignore-param POINTER` | — | JSON pointer excluded from matching. Repeatable. |
+| `--on-unmatched stop\|error` | `stop` | At a request the cassette cannot answer: `stop` answers it with an error, prints the divergence report and ends the run; `error` answers with the error and keeps serving. Both exit `3`. A stdio cassette only; HTTP replay always keeps serving. |
+| `--ignore-param POINTER` | — | JSON pointer excluded from matching. Repeatable. `params._meta` is always excluded. |
 | `--rewrite-protocol-version` | off | Answer `initialize` with the client's requested version. |
 | `--faults PATH` | — | Fault overlay JSON sidecar. Replay-only: with `--new-episodes` it is a usage error (exit `2`). |
 | `--pii-pack PATH` | — | A redaction pack the cassette's manifest names, when its recorded path no longer resolves. Repeatable. |
@@ -231,6 +234,31 @@ default), `4` otherwise. Every finding carries a JSON-pointer locator into the c
 
 > Heuristic pattern rules, not a guarantee — a clean lint is the absence of *known*
 > smells, nothing more.
+
+## OP-04.7 `check`
+
+The upgrade tripwire: re-launches a stdio server, performs the handshake, reads
+`tools/list` to the last page, and compares the tools, descriptions and input schemas
+with the cassette, as `diff --tools-only` does. The server command goes after `--`.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `CASSETTE` | required | The committed baseline: a `check --record` file, or any stdio cassette holding a `tools/list` result. |
+| `--record` | off | Write the baseline instead of comparing: when no cassette exists, or over one that holds only the handshake (to accept a server change). Refused over a fuller session, and under `MCP_CASSETTE_MODE=none`. |
+| `--env KEY=VALUE` | — | Add to the server's environment, e.g. a placeholder API key. Repeatable. |
+| `--timeout SECONDS` | `120` | From launch to the last `tools/list` page. A first `uvx` or `npx` run downloads inside it. |
+
+```
+mcp-cassette check tests/cassettes/fetch.mcp.json -- uvx mcp-server-fetch
+mcp-cassette check tests/cassettes/fetch.mcp.json --record -- uvx mcp-server-fetch
+mcp-cassette check tests/cassettes/github.mcp.json --env GITHUB_TOKEN=dummy -- npx -y @modelcontextprotocol/server-github
+```
+
+Exit `0` unchanged (or baseline written), `5` the tools changed, `7` the server did not
+start, `2` usage: no baseline without `--record`, a refused `--record`, a baseline with no
+`tools/list` result, or an HTTP cassette. The fresh session is redacted the way the
+baseline was, so a redaction pack used at record time never reads as a change. See
+[HT-09. Catch a server that changed under you](../how-to/HT-09-gate-a-drifting-server.md).
 
 ---
 

@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the error, ends the run and exits `3`, instead of serving later requests. Suites whose
   agent recovers from a miss get the old behaviour back with `serve --on-unmatched
   error` or the marker's `on_unmatched="error"`. Streamable HTTP replay is unchanged.
+- The README and guide lead with the tripwire, record and replay, the divergence report
+  and faults. HTTP, the library doors, pacing, lint, PII packs, `new_episodes`, parallel
+  runs and the packaged CI are listed as "beyond Stage 1": shipped and tested, with no new
+  features until a user needs them. The cassette format is documented as unstable (0.x)
+  until three outside repositories use it.
 
 - Replay ignores `params._meta` when matching, always and before `ignore_params`.
   Tracers such as Langfuse and OpenTelemetry put a fresh trace id there on every call,

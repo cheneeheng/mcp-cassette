@@ -87,7 +87,8 @@ MCP_CASSETTE_MODE` or `mode=` argument), and the four valid modes.
 A clean exit calls `finalize()`, which raises `CassetteError` if:
 
 - a recording captured zero messages (the agent never spoke to the proxied server), or
-- replay hit any unmatched request (the message lists every miss).
+- replay hit any unmatched request (the message leads with the divergence report, then
+  lists every miss; by default replay stops at the first).
 
 If the `with` body raises, the session is closed — no thread or socket leaks — and **your**
 exception propagates untouched. Report checks are skipped deliberately: a replay miss is

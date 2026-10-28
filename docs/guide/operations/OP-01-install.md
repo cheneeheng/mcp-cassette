@@ -166,7 +166,7 @@ the interpreter pytest reports in its header.
 What it does **not** install is `examples/` — the sample servers, clients, and cassettes
 live in the repo, not in the wheel. Recipes naming `examples/...` need a clone; from your
 own project, [Getting started](../getting-started.md#no-server-to-record-against-yet)
-carries a paste-able 30-line server that stands in for them.
+carries a paste-able 40-line server that stands in for them.
 
 ## OP-01.5 Next
 
