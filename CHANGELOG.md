@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mcp-cassette check CASSETTE -- CMD`, the upgrade tripwire: re-launches a stdio server,
+  reads `tools/list` to the last page, and exits `5` when its tools, descriptions or input
+  schemas differ from the cassette (printed as `diff --tools-only` prints them) or `7`,
+  a new exit code, when the server does not start, with its last stderr lines. `--record`
+  writes the baseline, and rewrites one that holds only the handshake to accept a server
+  change. `--env KEY=VALUE` passes a dummy key, `--timeout` bounds the whole run. No
+  agent, model call or test suite needed.
+
 ## [0.4.0] - 2026-09-18
 
 Hardening for recording against production servers: free-text redaction stamped on the

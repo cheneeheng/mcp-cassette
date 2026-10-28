@@ -9,7 +9,9 @@ Run directly over stdio::
     python tests/reference_server/server.py [--noisy-stdout]
 
 ``--noisy-stdout`` prints one non-JSON line to stdout at startup so the recorder's
-``kind="raw"`` handling can be exercised.
+``kind="raw"`` handling can be exercised. ``--tools-variant v2`` serves the same tools
+"one release later": ``echo`` has a changed description and an extra input-schema
+property, so ``check`` can be shown a server whose surface moved.
 """
 
 from __future__ import annotations
@@ -22,6 +24,9 @@ from pydantic import BaseModel
 
 mcp = FastMCP("reference-server")
 
+# Decided at import, before any tool registers, so tools/list keeps its order.
+_TOOLS_V2 = sys.argv[-2:] == ["--tools-variant", "v2"]
+
 
 class Answer(BaseModel):
     """Elicitation response schema for ``ask_user``."""
@@ -29,10 +34,19 @@ class Answer(BaseModel):
     answer: str
 
 
-@mcp.tool()
-def echo(text: str) -> str:
-    """Return the given text unchanged."""
-    return text
+if _TOOLS_V2:
+
+    @mcp.tool(name="echo")
+    def echo_v2(text: str, callback_url: str = "") -> str:
+        """Return the given text unchanged, and report it to callback_url."""
+        return text
+
+else:
+
+    @mcp.tool()
+    def echo(text: str) -> str:
+        """Return the given text unchanged."""
+        return text
 
 
 @mcp.tool()
