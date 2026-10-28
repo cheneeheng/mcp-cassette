@@ -1,4 +1,5 @@
-"""Command-line interface: ``record``, ``serve``, ``inspect``, ``diff``, ``lint``.
+"""Command-line interface: ``record``, ``serve``, ``check``, ``inspect``, ``diff``,
+``lint``.
 
 A near-zero-dependency argparse tree. The full subcommand and flag surface is registered
 so ``--help`` shows the intended interface; every subcommand is a real implementation at
@@ -28,6 +29,7 @@ from .cassette import (
     SaltMode,
     UnsupportedFormatVersion,
 )
+from .check import DEFAULT_TIMEOUT, check_server
 from .diffing import CassetteDiff, ToolChange, diff_cassettes
 from .lint import (
     EntropyConfig,
@@ -289,6 +291,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Regex matched against each message payload; composes with --method.",
     )
 
+    chk = sub.add_parser(
+        "check",
+        help=(
+            "Upgrade tripwire: re-launch a server and fail when it no longer starts "
+            "(exit 7) or its tools changed (exit 5)."
+        ),
+        description=(
+            "Start the server, perform the handshake, read tools/list to the last "
+            "page, and compare the tools, descriptions and input schemas with the "
+            "cassette, as diff --tools-only does. No model call, no test suite."
+        ),
+    )
+    chk.add_argument("cassette", help="The committed baseline cassette.")
+    chk.add_argument(
+        "--record",
+        action="store_true",
+        help=(
+            "Write the baseline instead of comparing: when no cassette exists, or to "
+            "accept a server change over one that holds only the handshake. Refused "
+            "under MCP_CASSETTE_MODE=none."
+        ),
+    )
+    chk.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Add to the server's environment (repeatable), e.g. a dummy API key.",
+    )
+    chk.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT,
+        metavar="SECONDS",
+        help=(
+            f"Seconds from launch to the last tools/list page (default: "
+            f"{DEFAULT_TIMEOUT:g}; a first uvx or npx run downloads inside it)."
+        ),
+    )
+    chk.epilog = "Pass the server command after a -- separator: -- CMD [ARGS...]."
+
     dif = sub.add_parser(
         "diff",
         help="Structurally compare two cassettes (exit 5 when they differ).",
@@ -451,6 +494,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_serve(args)
     if args.command == "inspect":
         return _cmd_inspect(args)
+    if args.command == "check":
+        return _cmd_check(args)
     if args.command == "diff":
         return _cmd_diff(args)
     if args.command == "lint":
@@ -990,6 +1035,55 @@ def _timing_span(messages: list[Message]) -> int:
     if not messages:
         return 0
     return messages[-1].t_offset_ms - messages[0].t_offset_ms
+
+
+def _cmd_check(args: argparse.Namespace) -> int:
+    if not args.server_cmd:
+        sys.stderr.write("mcp-cassette check: pass the server command after --\n")
+        return 2
+    env: dict[str, str] = {}
+    for pair in args.env:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            sys.stderr.write(
+                f"mcp-cassette check: --env takes KEY=VALUE, got {pair!r}\n"
+            )
+            return 2
+        env[key] = value
+    try:
+        result = check_server(
+            args.cassette,
+            args.server_cmd,
+            env=env,
+            timeout=args.timeout,
+            record=args.record,
+        )
+    except _LOAD_ERRORS as exc:  # CheckUsageError is a ValueError
+        sys.stderr.write(f"mcp-cassette check: {exc}\n")
+        return 2
+    except KeyboardInterrupt:
+        return 130
+    if result.outcome == "did_not_start":
+        sys.stderr.write(
+            f"mcp-cassette check: server did not start: {result.failure}\n"
+        )
+        return 7
+    if result.version_change is not None:
+        old, new = result.version_change
+        print(f"server version: {old} -> {new}")
+    if result.outcome == "recorded":
+        print(f"wrote baseline {args.cassette} ({result.tool_count} tools)")
+        return 0
+    if result.outcome == "unchanged":
+        print(f"unchanged: {result.tool_count} tools match {args.cassette}")
+        return 0
+    # The same rendering as diff --tools-only, so the two never read differently.
+    baseline = Path(args.cassette)
+    _print_diff(
+        CassetteDiff(old=baseline, new=baseline, tools=result.changes, identical=False),
+        tools_only=True,
+    )
+    return 5
 
 
 def _cmd_diff(args: argparse.Namespace) -> int:

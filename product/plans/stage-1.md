@@ -1,7 +1,7 @@
 ---
 schema: plan/v1
 title: Stage 1, the core loop, rebuilt from the business plan with v0.4.x as the reference
-status: ready
+status: building
 created: 2026-10-28
 business_plan: .agents_workspace/product/business/BUSINESS_PLAN.md
 ---
@@ -128,8 +128,8 @@ flowchart LR
   baseline, a `DEFAULT_PROTOCOL_VERSION` constant in `check.py` set to the newest MCP spec version
   at build time; the server answers with the version it supports either way), and `clientInfo`
   `{"name": "mcp-cassette-check", "version": __version__}`. Then `notifications/initialized`, then
-  `tools/list`, following `nextCursor` until it is absent. Forward the server's stderr to ours, as
-  the pump does.
+  `tools/list`, following `nextCursor` until it is absent. Keep the server's last 20 stderr lines
+  and print them only when it did not start, so a green CI step stays one line.
 - Server-initiated traffic: a `ping` request gets an empty result, any other server request gets
   JSON-RPC error `-32601`, notifications are ignored, and a stdout line that is not JSON is skipped
   and kept for the "did not start" message. Without this, a server that waits on its own request
@@ -209,7 +209,7 @@ note. Pages for frozen items stay as written. No page is deleted.
   small stdlib-only stdio server in `tests/` that pages its `tools/list` with `nextCursor`, sends a
   `ping` and a `roots/list` before answering, and prints a non-JSON line first, because the
   FastMCP reference server cannot page.
-- **Check:** `uv run pytest tests/integration/test_check.py tests/unit/test_check.py examples/test_tripwire.py -q`
+- **Check:** `uv run pytest tests/integration/test_check.py tests/integration/test_check_cli.py examples/test_tripwire.py -q`
   passes, covering: exit `0` unchanged; `0` with a full fixture session as the baseline; `5`
   changed, seeded from `examples/cassettes/tools.mcp.json` and `tools-v2.mcp.json`, with the tool
   lines printed; `0` across `nextCursor` pages and server-initiated requests; `--env` reaching the
@@ -220,7 +220,12 @@ note. Pages for frozen items stay as written. No page is deleted.
   Then `uv run ruff check . && uv run mypy src` pass, and
   `uv run coverage run -m pytest -q && uv run coverage combine && uv run coverage report` holds
   `fail_under = 99`.
-- **Status:** todo
+- **Status:** done. ce5c174; `uv run coverage run -m pytest -q` gave "671 passed, 3 skipped" and
+  `coverage report` "TOTAL ... 99%" on Windows, with ruff and mypy clean. Two departures, both in
+  Record: the tests sit in `tests/integration/` because `tests/unit` forbids subprocesses, and
+  the server's stderr is kept as a tail rather than forwarded. On Windows the POSIX
+  terminate branch of `_stop` is uncovered, and on POSIX the `taskkill` branch will be. Both fit
+  the 99% gate.
 
 ### Phase 2: Tripwire in the author's own CI
 
@@ -305,3 +310,7 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 Design changed: was "`--record` writes the first baseline from the same handshake", now "`--record` writes the first baseline and rewrites only a handshake-only one, exiting 2 over a fixture session", because the review found an overwrite could clobber a replay cassette
 - 2026-10-28 Design changed: was "Comparison: `diff_cassettes` on the committed cassette and the fresh in-memory one", now "Comparison: `_diff_tools` in `diffing.py`", because `diff_cassettes` takes paths, not loaded cassettes
 - 2026-10-28 PR: #29 https://github.com/cheneeheng/mcp-cassette/pull/29
+- 2026-10-28 Design changed: was "Forward the server's stderr to ours, as the pump does.", now "Keep the server's last 20 stderr lines and print them only when it did not start", because forwarding as well printed every failing line twice and made a green CI step noisy
+- 2026-10-28 Design changed: was "`uv run pytest tests/integration/test_check.py tests/unit/test_check.py ...`", now "`... tests/integration/test_check.py tests/integration/test_check_cli.py ...`", because every check test spawns a server and `tests/unit` is in-process only
+- 2026-10-28 Built Phase 1: ce5c174, `uv run coverage run -m pytest -q` 671 passed, 3 skipped; coverage TOTAL 99%
+- 2026-10-28 PR: #30 https://github.com/cheneeheng/mcp-cassette/pull/30
