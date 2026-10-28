@@ -320,3 +320,5 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 Design changed: was "`uv run pytest tests/integration/test_check.py tests/unit/test_check.py ...`", now "`... tests/integration/test_check.py tests/integration/test_check_cli.py ...`", because every check test spawns a server and `tests/unit` is in-process only
 - 2026-10-28 Built Phase 1: ce5c174, `uv run coverage run -m pytest -q` 671 passed, 3 skipped; coverage TOTAL 99%
 - 2026-10-28 PR: #30 https://github.com/cheneeheng/mcp-cassette/pull/30
+- 2026-10-28 Built Phase 3: 1d427b2, `uv run pytest tests/unit/test_matching.py -q` 19 passed
+- 2026-10-28 PR: #31 https://github.com/cheneeheng/mcp-cassette/pull/31
