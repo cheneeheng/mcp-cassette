@@ -15,6 +15,8 @@ from typing import Any
 
 from .cassette import Cassette, MatchConfig, Message
 
+_TRACE_META = "/params/_meta"
+
 
 @dataclass
 class Exchange:
@@ -141,7 +143,10 @@ class Matcher:
 
     def _canonical_key(self, obj: dict[str, Any]) -> str:
         clone = copy.deepcopy(obj)
-        for ptr in self.config.ignore_params:
+        # Always, before the caller's list: tracers (Langfuse, OpenTelemetry) put a
+        # fresh trace id in params._meta on every call, so matching on it would make
+        # every traced agent miss.
+        for ptr in [_TRACE_META, *self.config.ignore_params]:
             _delete_pointer(clone, ptr)
         components = {name: clone.get(name) for name in self.config.match_on}
         return json.dumps(components, sort_keys=True, separators=(",", ":"))

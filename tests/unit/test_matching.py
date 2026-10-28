@@ -205,3 +205,36 @@ class TestIgnoreParams:
     def test_pointer_with_out_of_range_index_is_noop(self) -> None:
         matcher = self._matcher({"items": ["a"]}, "/params/items/99")
         assert matcher.find(_req_obj("tools/call", {"items": ["a"]})) is not None
+
+
+class TestTraceMetadata:
+    """``params._meta`` never decides a match: tracers put a fresh id there per call."""
+
+    RECORDED = {
+        "name": "echo",
+        "arguments": {"text": "hi"},
+        "_meta": {"traceparent": "00-aaaa-01"},
+    }
+
+    def _matcher(self, ignore: list[str]) -> Matcher:
+        cassette = _cassette(
+            [_request(0, 1, "tools/call", self.RECORDED), _response(1, 1, {})]
+        )
+        return Matcher(cassette, MatchConfig(ignore_params=ignore))
+
+    def test_calls_differing_only_in_meta_match(self) -> None:
+        incoming = {**self.RECORDED, "_meta": {"traceparent": "00-bbbb-01"}}
+        assert self._matcher([]).find(_req_obj("tools/call", incoming)) is not None
+
+    def test_a_caller_list_still_drops_meta(self) -> None:
+        incoming = {
+            "name": "echo",
+            "arguments": {"text": "hi", "nonce": "x"},
+            "_meta": {"traceparent": "00-cccc-01"},
+        }
+        matcher = self._matcher(["/params/arguments/nonce"])
+        assert matcher.find(_req_obj("tools/call", incoming)) is not None
+
+    def test_other_params_still_decide(self) -> None:
+        incoming = {**self.RECORDED, "arguments": {"text": "bye"}}
+        assert self._matcher([]).find(_req_obj("tools/call", incoming)) is None
