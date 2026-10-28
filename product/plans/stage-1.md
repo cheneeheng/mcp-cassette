@@ -313,3 +313,4 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 Design changed: was "Forward the server's stderr to ours, as the pump does.", now "Keep the server's last 20 stderr lines and print them only when it did not start", because forwarding as well printed every failing line twice and made a green CI step noisy
 - 2026-10-28 Design changed: was "`uv run pytest tests/integration/test_check.py tests/unit/test_check.py ...`", now "`... tests/integration/test_check.py tests/integration/test_check_cli.py ...`", because every check test spawns a server and `tests/unit` is in-process only
 - 2026-10-28 Built Phase 1: ce5c174, `uv run coverage run -m pytest -q` 671 passed, 3 skipped; coverage TOTAL 99%
+- 2026-10-28 PR: #30 https://github.com/cheneeheng/mcp-cassette/pull/30
