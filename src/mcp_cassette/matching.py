@@ -9,13 +9,63 @@ JSON; the JSON-RPC ``id`` is never matched on and is re-stamped by the server.
 from __future__ import annotations
 
 import copy
+import difflib
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel
 
 from .cassette import Cassette, MatchConfig, Message
 
 _TRACE_META = "/params/_meta"
+
+
+class Divergence(BaseModel):
+    """Where a replayed run first departed from the recording.
+
+    Both calls are request ``params`` as matching sees them (``_meta`` and
+    ``ignore_params`` dropped), so a diff of the two shows only what made the match
+    fail. Travels to the fixture through the report sidecar.
+
+    Attributes:
+        step: 1-based count of client requests in this replay, ``initialize``
+            included.
+        method: The method of the call that missed.
+        new_call: The incoming call's params.
+        recorded_call: The params of the call replay expected here, or ``None``
+            when the recording has no calls left.
+        reason: ``no-match``, or ``no-response`` when the call matched a recorded
+            one that has no recorded response.
+    """
+
+    step: int
+    method: str
+    new_call: Any
+    recorded_call: Any = None
+    reason: Literal["no-match", "no-response"] = "no-match"
+
+    def render(self) -> str:
+        """The human-readable block, a unified diff of recorded against new."""
+        head = f"step {self.step}: {self.method}"
+        if self.reason == "no-response":
+            return (
+                f"{head}: matched a recorded call that has no recorded response "
+                "(the recording was cut short)"
+            )
+        new_lines = _pretty(self.new_call)
+        if self.recorded_call is None:
+            body = "\n".join(f"  {line}" for line in new_lines)
+            return f"{head}: the recording has no calls left; the new call:\n{body}"
+        # A line diff stands in for two columns: terminals and CI logs wrap columns.
+        diff = difflib.unified_diff(
+            _pretty(self.recorded_call), new_lines, "recorded", "new", lineterm=""
+        )
+        return f"{head}: no recorded call matches\n" + "\n".join(diff)
+
+
+def _pretty(params: Any) -> list[str]:
+    return json.dumps(params, indent=2, sort_keys=True).splitlines()
 
 
 @dataclass
@@ -84,6 +134,63 @@ class Matcher:
         """Record an externally-detected miss summary."""
         self._misses.append(summary)
 
+    def divergence(
+        self,
+        request_obj: dict[str, Any],
+        step: int,
+        *,
+        matched: Exchange | None = None,
+    ) -> Divergence:
+        """Describe a miss against the recorded call replay expected at this point.
+
+        Call after :meth:`find` returned no exchange, or returned ``matched`` with no
+        recorded response.
+
+        Args:
+            request_obj: The incoming request, as it was passed to :meth:`find`.
+            step: The request's 1-based position in this replay session.
+            matched: The exchange it matched, when that exchange has no response.
+
+        Returns:
+            The :class:`Divergence`.
+        """
+        method = str(request_obj.get("method", "<none>"))
+        new_call = self._canonical(request_obj).get("params")
+        if matched is not None:
+            recorded = self._canonical(_payload_obj(matched.request)).get("params")
+            return Divergence(
+                step=step,
+                method=method,
+                new_call=new_call,
+                recorded_call=recorded,
+                reason="no-response",
+            )
+        expected = self._expected(method)
+        recorded = (
+            None
+            if expected is None
+            else self._canonical(_payload_obj(expected.request)).get("params", {})
+        )
+        return Divergence(
+            step=step, method=method, new_call=new_call, recorded_call=recorded
+        )
+
+    def _expected(self, method: str) -> Exchange | None:
+        # initialize bypasses the matcher (the server answers it directly), so its
+        # exchange is never consumed and must never be the call a reader is shown.
+        pending = [
+            ex
+            for ex in self._exchanges
+            if not ex.consumed
+            and _payload_obj(ex.request).get("method") != "initialize"
+        ]
+        if self.config.ordering != "strict":
+            same = [
+                ex for ex in pending if _payload_obj(ex.request).get("method") == method
+            ]
+            pending = same or pending
+        return pending[0] if pending else None
+
     def _lookup(self, key: str) -> Exchange | None:
         ordering = self.config.ordering
         if ordering == "none":
@@ -142,14 +249,18 @@ class Matcher:
         return exchanges
 
     def _canonical_key(self, obj: dict[str, Any]) -> str:
+        clone = self._canonical(obj)
+        components = {name: clone.get(name) for name in self.config.match_on}
+        return json.dumps(components, sort_keys=True, separators=(",", ":"))
+
+    def _canonical(self, obj: dict[str, Any]) -> dict[str, Any]:
         clone = copy.deepcopy(obj)
         # Always, before the caller's list: tracers (Langfuse, OpenTelemetry) put a
         # fresh trace id in params._meta on every call, so matching on it would make
         # every traced agent miss.
         for ptr in [_TRACE_META, *self.config.ignore_params]:
             _delete_pointer(clone, ptr)
-        components = {name: clone.get(name) for name in self.config.match_on}
-        return json.dumps(components, sort_keys=True, separators=(",", ":"))
+        return clone
 
     @staticmethod
     def _params_digest(obj: dict[str, Any]) -> str:

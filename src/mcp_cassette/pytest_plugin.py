@@ -50,7 +50,7 @@ def pytest_configure(config: Config) -> None:
     """Register the ``mcp_cassette`` marker."""
     config.addinivalue_line(
         "markers",
-        "mcp_cassette(mode=, cassette=, ordering=, ignore_params=, "
+        "mcp_cassette(mode=, cassette=, ordering=, on_unmatched=, ignore_params=, "
         "rewrite_protocol_version=, pace=, pace_scale=, pace_cap_ms=, pii_packs=): "
         "configure the mcp_cassette fixture.",
     )
@@ -90,6 +90,7 @@ def _match_config(marker_kwargs: dict[str, Any]) -> MatchConfig:
     return MatchConfig(
         ignore_params=list(marker_kwargs.get("ignore_params", [])),
         ordering=marker_kwargs.get("ordering", "per_method"),
+        on_unmatched=marker_kwargs.get("on_unmatched", "stop"),
         rewrite_protocol_version=bool(
             marker_kwargs.get("rewrite_protocol_version", False)
         ),

@@ -22,7 +22,7 @@ from scripted_http_client import (
     start_reference_http_server,
 )
 
-from mcp_cassette.cassette import Cassette, Fault, FaultOverlay
+from mcp_cassette.cassette import Cassette, Fault, FaultOverlay, MatchConfig
 from mcp_cassette.transports.http.proxy import RecordingProxy
 from mcp_cassette.transports.http.server import HttpReplayServer
 
@@ -140,6 +140,23 @@ def test_unmatched_request_gets_200_jsonrpc_error(recorded: Path) -> None:
     assert resp["error"]["code"] == -32001
     assert "no recorded interaction matches" in resp["error"]["message"]
     assert server.misses  # surfaced to the fixture as a failure signal
+
+
+def test_http_replay_still_answers_after_a_miss(recorded: Path) -> None:
+    # Stop-at-first-miss is the stdio default; HTTP is Stage 2 and keeps
+    # error-and-continue whatever on_unmatched says.
+    server = _replay_server(recorded, match=MatchConfig(on_unmatched="stop"))
+    with in_process_server(server.serve) as url:
+        result = run_http_session(
+            url,
+            [
+                *initialize_sequence(),
+                tool_call(9, "no_such_tool", {}),
+                tool_call(3, "echo", {"text": "hi"}),
+            ],
+        )
+    later = result.response_for(3)
+    assert later is not None and "result" in later
 
 
 def test_concurrent_identical_calls_consume_queue_deterministically(

@@ -216,12 +216,19 @@ class Cassette(BaseModel):
 
 
 class MatchConfig(BaseModel):
-    """How incoming replay requests are matched against recorded messages."""
+    """How incoming replay requests are matched against recorded messages.
+
+    ``on_unmatched`` decides what stdio replay does at a request the cassette has no
+    answer for: ``stop`` (default) answers it with an error and ends the run there,
+    with a divergence report, so a run is never compared past the step where it left
+    the recording; ``error`` answers with the error and keeps serving. The HTTP
+    transport always behaves as ``error``.
+    """
 
     match_on: list[str] = Field(default_factory=lambda: ["method", "params"])
     ignore_params: list[str] = Field(default_factory=list)
     ordering: Ordering = "per_method"
-    on_unmatched: Literal["error"] = "error"
+    on_unmatched: Literal["stop", "error"] = "stop"
     rewrite_protocol_version: bool = False
 
 

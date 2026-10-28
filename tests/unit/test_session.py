@@ -169,6 +169,29 @@ def test_finalize_flags_replay_misses(tmp_path: Path) -> None:
         session.finalize()
 
 
+def test_finalize_leads_with_the_divergence_report(tmp_path: Path) -> None:
+    cassette = tmp_path / "c.mcp.json"
+    cassette.write_text("{}", encoding="utf-8")
+    session = _session("once", cassette, tmp_path)
+    session.server_command(["python", "server.py"])
+    divergence = {
+        "step": 2,
+        "method": "tools/call",
+        "new_call": {"name": "echo", "arguments": {"text": "bye"}},
+        "recorded_call": {"name": "echo", "arguments": {"text": "hi"}},
+        "reason": "no-match",
+    }
+    write_report(
+        str(session.report_path),
+        {"misses": ["tools/call params={}"], "divergence": divergence},
+    )
+    with pytest.raises(CassetteError) as excinfo:
+        session.finalize()
+    message = str(excinfo.value)
+    assert message.startswith("replay diverged at step 2: tools/call")
+    assert '+    "text": "bye"' in message
+
+
 def test_finalize_without_report_is_silent(tmp_path: Path) -> None:
     # the engine never ran, so no report was written: finalize must not fail
     session = _session("all", tmp_path / "c.mcp.json", tmp_path)

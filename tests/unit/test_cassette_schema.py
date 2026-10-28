@@ -268,5 +268,5 @@ def test_match_config_defaults() -> None:
     cfg = MatchConfig()
     assert cfg.match_on == ["method", "params"]
     assert cfg.ordering == "per_method"
-    assert cfg.on_unmatched == "error"
+    assert cfg.on_unmatched == "stop"
     assert cfg.rewrite_protocol_version is False

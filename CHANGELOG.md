@@ -16,8 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writes the baseline, and rewrites one that holds only the handshake to accept a server
   change. `--env KEY=VALUE` passes a dummy key, `--timeout` bounds the whole run. No
   agent, model call or test suite needed.
+- A divergence report on the first replay miss: the step (counting `initialize` as 1),
+  and a unified diff of the recorded call against the new one, as matching sees them.
+  Printed by `serve`, written to the report sidecar as `divergence`, and leading the
+  fixture's failure message.
 
 ### Changed
+
+- **Breaking:** stdio replay now stops at the first unmatched request
+  (`MatchConfig.on_unmatched="stop"`, the new default). It answers that request with
+  the error, ends the run and exits `3`, instead of serving later requests. Suites whose
+  agent recovers from a miss get the old behaviour back with `serve --on-unmatched
+  error` or the marker's `on_unmatched="error"`. Streamable HTTP replay is unchanged.
 
 - Replay ignores `params._meta` when matching, always and before `ignore_params`.
   Tracers such as Langfuse and OpenTelemetry put a fresh trace id there on every call,

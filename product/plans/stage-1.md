@@ -264,7 +264,13 @@ note. Pages for frozen items stay as written. No page is deleted.
   the other field; and the fixture failure message leading with the block. Then
   `uv run ruff check . && uv run mypy src` pass, and the coverage command from phase 1 holds
   `fail_under = 99`.
-- **Status:** todo
+- **Status:** done. fcd89d7; under `MCP_CASSETTE_MODE=none`, `uv run coverage run -m pytest -q`
+  gave "683 passed, 3 skipped" and `coverage report` "TOTAL ... 99%", with ruff and mypy clean.
+  The fixture-message test sits in `tests/unit/test_session.py`, beside the existing miss test,
+  and the HTTP test in `tests/integration/test_http_replay.py`. Two unit tests that call the
+  handler directly moved to `on_unmatched="error"`, because under `stop` the handler raises
+  after replying. Stop also applies to a missing `initialize` response. In `error` mode the
+  block is printed once, then every miss's one-line summary, the first included.
 
 ### Phase 5: Stage 1 front door
 
@@ -322,3 +328,5 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 PR: #30 https://github.com/cheneeheng/mcp-cassette/pull/30
 - 2026-10-28 Built Phase 3: 1d427b2, `uv run pytest tests/unit/test_matching.py -q` 19 passed
 - 2026-10-28 PR: #31 https://github.com/cheneeheng/mcp-cassette/pull/31
+- 2026-10-28 Built Phase 4: fcd89d7, `uv run coverage run -m pytest -q` 683 passed, 3 skipped; coverage TOTAL 99%
+- 2026-10-28 PR: #32 https://github.com/cheneeheng/mcp-cassette/pull/32
