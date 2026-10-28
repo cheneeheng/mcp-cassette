@@ -117,6 +117,31 @@ def test_ordering_strict_exhausted_queue_is_unmatched() -> None:
     assert matcher.find(_req_obj("tools/call", {"name": "counter"})) is None
 
 
+# Every real recording opens with initialize, which the replay servers answer
+# themselves and never pass to the matcher.
+WITH_HANDSHAKE = [
+    _request(0, 1, "initialize", {"protocolVersion": "2024-11-05"}),
+    _response(1, 1, {}),
+    *[
+        m.model_copy(update={"seq": m.seq + 2, "t_offset_ms": m.seq + 2})
+        for m in TWO_CALLS
+    ],
+]
+
+
+def test_ordering_strict_matches_the_first_call_after_a_recorded_handshake() -> None:
+    matcher = Matcher(_cassette(WITH_HANDSHAKE), MatchConfig(ordering="strict"))
+    exchange = matcher.find(_req_obj("tools/call", {"name": "counter"}))
+    assert exchange is not None
+    assert exchange.response is not None
+    assert exchange.response.payload["result"] == {"n": 1}  # type: ignore[index]
+
+
+def test_ordering_strict_still_enforces_order_after_a_recorded_handshake() -> None:
+    matcher = Matcher(_cassette(WITH_HANDSHAKE), MatchConfig(ordering="strict"))
+    assert matcher.find(_req_obj("tools/call", {"name": "echo"})) is None
+
+
 def test_record_miss_appends_summary() -> None:
     matcher = Matcher(_cassette([]))
     matcher.record_miss("external miss")

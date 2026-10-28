@@ -117,6 +117,23 @@ def test_unmatched_request_errors_and_exits_3(tmp_path: Path) -> None:
     assert replayed.returncode == 3
 
 
+def test_strict_ordering_replays_a_real_recording(tmp_path: Path) -> None:
+    cassette = tmp_path / "demo.json"
+    messages = [
+        *initialize_sequence(),
+        tool_call(2, "echo", {"text": "hello"}),
+        tool_call(3, "add", {"a": 2, "b": 3}),
+    ]
+    _record(cassette, messages)
+
+    replayed = run_session(_serve_cmd(cassette, "--ordering", "strict"), messages)
+
+    assert replayed.returncode == 0, replayed.stderr
+    for msg_id in (2, 3):
+        resp = replayed.response_for(msg_id)
+        assert resp is not None and "result" in resp
+
+
 def test_first_miss_stops_the_run_with_a_divergence_report(tmp_path: Path) -> None:
     cassette = tmp_path / "demo.json"
     recorded = [
