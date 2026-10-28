@@ -304,3 +304,4 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 Reviewed: Revise first, 2 blocking (check --record on an existing cassette undefined and can clobber a fixture session; format-unstable label marked keep but absent and unbuilt)
 - 2026-10-28 Design changed: was "`--record` writes the first baseline from the same handshake", now "`--record` writes the first baseline and rewrites only a handshake-only one, exiting 2 over a fixture session", because the review found an overwrite could clobber a replay cassette
 - 2026-10-28 Design changed: was "Comparison: `diff_cassettes` on the committed cassette and the fresh in-memory one", now "Comparison: `_diff_tools` in `diffing.py`", because `diff_cassettes` takes paths, not loaded cassettes
+- 2026-10-28 PR: #29 https://github.com/cheneeheng/mcp-cassette/pull/29
