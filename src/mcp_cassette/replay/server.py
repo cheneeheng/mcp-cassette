@@ -19,7 +19,7 @@ from anyio.abc import ByteSendStream
 
 from .._stdio import stdin_stream, stdout_stream
 from ..cassette import Cassette, FaultOverlay, MatchConfig, Message, PaceConfig
-from ..matching import Matcher
+from ..matching import Divergence, Matcher
 from ..record.pump import buffered_lines
 from ..redaction.replay import RequestTransform
 from ..report import write_report
@@ -86,6 +86,10 @@ class _Disconnect(Exception):  # noqa: N818 — internal control-flow signal, no
     """Internal signal: a disconnect fault fired; close pipes and exit 0."""
 
 
+class _Stop(Exception):  # noqa: N818 — internal control-flow signal, not an error
+    """Internal signal: a miss under ``on_unmatched="stop"``; close pipes, exit 3."""
+
+
 class ReplayServer:
     """Serve recorded responses from a cassette as a drop-in stdio MCP server."""
 
@@ -125,6 +129,8 @@ class ReplayServer:
         self._out_lock = anyio.Lock()
         self._disconnect_requested = False
         self._deferred: anyio.abc.TaskGroup | None = None
+        self._step = 0
+        self._divergence: Divergence | None = None
 
     def run(self) -> int:
         """Run the server to completion, returning a process exit code.
@@ -138,6 +144,7 @@ class ReplayServer:
     async def _arun(self) -> int:
         stdin = stdin_stream()
         stdout = stdout_stream()
+        stopped = False
         async with anyio.create_task_group() as tg:
             self._deferred = tg
             async for line in buffered_lines(stdin):
@@ -149,13 +156,20 @@ class ReplayServer:
                     # the flag the gated path already uses.
                     self._disconnect_requested = True
                     break
-            # EOF or disconnect: abandon still-gated responses — stdio shutdown
-            # is EOF-driven, and the pending-request summary names the cause.
+                except _Stop:
+                    # The run left the recording: nothing after this step can be
+                    # compared fairly, so stop serving rather than answer it.
+                    stopped = True
+                    break
+            # EOF, disconnect or stop: abandon still-gated responses — stdio
+            # shutdown is EOF-driven, and the pending-request summary names the cause.
             tg.cancel_scope.cancel()
         if self._disconnect_requested:
             await stdout.aclose()
             self._write_report()
             return 0
+        if stopped:
+            await stdout.aclose()
         self._report_unused_faults()
         self._write_report()
         self._print_pending_server_requests()
@@ -166,7 +180,11 @@ class ReplayServer:
 
     def _write_report(self) -> None:
         if self.report_path is not None:
-            write_report(self.report_path, {"misses": self._matcher.misses})
+            divergence = self._divergence.model_dump() if self._divergence else None
+            write_report(
+                self.report_path,
+                {"misses": self._matcher.misses, "divergence": divergence},
+            )
 
     async def _handle_line(self, line: bytes, out: ByteSendStream) -> None:
         text = line.decode("utf-8", errors="replace").strip()
@@ -191,11 +209,13 @@ class ReplayServer:
     async def _handle_request(self, obj: dict[str, Any], out: ByteSendStream) -> None:
         method = obj.get("method")
         msg_id = obj.get("id")
+        self._step += 1
         if method == "initialize":
             await self._handle_initialize(obj, out)
             return
 
-        exchange = self._matcher.find(self._transform(obj) if self._transform else obj)
+        incoming = self._transform(obj) if self._transform else obj
+        exchange = self._matcher.find(incoming)
         if exchange is None or exchange.response is None:
             if exchange is not None:
                 # The request matched a recorded one whose response was never
@@ -203,7 +223,12 @@ class ReplayServer:
                 # by hand). The client gets the same error as an outright miss, so
                 # the session has to fail the same way rather than exiting 0.
                 self._matcher.record_miss(no_response_miss(obj))
+            if self._divergence is None:
+                self._divergence = self._matcher.divergence(
+                    incoming, self._step, matched=exchange
+                )
             await self._send(out, self._unmatched_error(obj))
+            self._stop_if_configured()
             return
 
         fault = self._injector.consult(method)
@@ -281,6 +306,7 @@ class ReplayServer:
                     "mcp-cassette: no recorded initialize response",
                 ),
             )
+            self._stop_if_configured()
             return
         response = self._restamp(init.response, msg_id)
         apply_protocol_version(self.config, obj, response)
@@ -420,7 +446,15 @@ class ReplayServer:
                 stacklevel=2,
             )
 
+    def _stop_if_configured(self) -> None:
+        if self.config.on_unmatched == "stop":
+            raise _Stop
+
     def _print_miss_summary(self) -> None:
+        if self._divergence is not None:
+            sys.stderr.write(
+                f"mcp-cassette: replay diverged at {self._divergence.render()}\n"
+            )
         sys.stderr.write(
             f"mcp-cassette: {len(self._matcher.misses)} unmatched request(s):\n"
         )

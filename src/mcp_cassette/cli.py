@@ -202,6 +202,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Matching order discipline (default: per_method).",
     )
     srv.add_argument(
+        "--on-unmatched",
+        choices=["stop", "error"],
+        default="stop",
+        help=(
+            "At a request the cassette has no answer for: stop the run there with a "
+            "divergence report (default), or answer with an error and keep serving. "
+            "Either way the run exits 3. Streamable HTTP always keeps serving."
+        ),
+    )
+    srv.add_argument(
         "--ignore-param",
         action="append",
         default=[],
@@ -704,6 +714,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     config = MatchConfig(
         ignore_params=args.ignore_param,
         ordering=args.ordering,
+        on_unmatched=args.on_unmatched,
         rewrite_protocol_version=args.rewrite_protocol_version,
     )
     if cassette.transport == "http":

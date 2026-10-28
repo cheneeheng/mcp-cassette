@@ -136,7 +136,8 @@ def test_initialize_without_recorded_exchange_answers_error() -> None:
             1, "server", "response", {"jsonrpc": "2.0", "id": 1, "result": {}}, msg_id=1
         ),
     ]
-    server = ReplayServer(_cassette(messages))
+    # error mode: under the default stop the handler raises after replying
+    server = ReplayServer(_cassette(messages), MatchConfig(on_unmatched="error"))
     sink = _drive(server, [INIT_LINE])
     (resp,) = sink.lines
     assert isinstance(resp, dict)
@@ -164,7 +165,7 @@ def test_request_recorded_without_a_response_counts_as_a_miss() -> None:
             msg_id=2,
         ),
     ]
-    server = ReplayServer(_cassette(messages))
+    server = ReplayServer(_cassette(messages), MatchConfig(on_unmatched="error"))
     call = json.dumps(
         {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {}}
     ).encode()
@@ -175,6 +176,24 @@ def test_request_recorded_without_a_response_counts_as_a_miss() -> None:
     assert server._matcher.misses == [  # noqa: SLF001 — same package
         "tools/call matched a recorded request that has no recorded response"
     ]
+
+
+def test_error_mode_keeps_the_first_divergence() -> None:
+    server = ReplayServer(
+        _cassette(_init_exchange_messages({})), MatchConfig(on_unmatched="error")
+    )
+    lines = [
+        json.dumps(
+            {"jsonrpc": "2.0", "id": n, "method": "tools/call", "params": {"n": n}}
+        ).encode()
+        + b"\n"
+        for n in (11, 12)
+    ]
+    _drive(server, [INIT_LINE, *lines])
+    divergence = server._divergence  # noqa: SLF001 — same package
+    assert divergence is not None
+    assert (divergence.step, divergence.new_call) == (2, {"n": 11})
+    assert len(server._matcher.misses) == 2  # noqa: SLF001 — same package
 
 
 def test_leading_notifications_emitted_only_once() -> None:

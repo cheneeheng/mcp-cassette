@@ -238,3 +238,78 @@ class TestTraceMetadata:
     def test_other_params_still_decide(self) -> None:
         incoming = {**self.RECORDED, "arguments": {"text": "bye"}}
         assert self._matcher([]).find(_req_obj("tools/call", incoming)) is None
+
+
+def _call(text: str, trace: str) -> dict[str, Any]:
+    return {
+        "name": "echo",
+        "arguments": {"text": text},
+        "_meta": {"traceparent": trace},
+    }
+
+
+class TestDivergence:
+    """The recorded call a reader lines up against the one that missed."""
+
+    def _matcher(self, ordering: str = "per_method") -> Matcher:
+        init = {"protocolVersion": "2024-11-05"}
+        cassette = _cassette(
+            [
+                _request(0, 1, "initialize", init),
+                _response(1, 1, {}),
+                _request(2, 2, "tools/list", {}),
+                _response(3, 2, {"tools": []}),
+                _request(4, 3, "tools/call", _call("hi", "00-aaaa-01")),
+                _response(5, 3, {}),
+            ]
+        )
+        return Matcher(cassette, MatchConfig(ordering=ordering))  # type: ignore[arg-type]
+
+    def test_points_at_the_next_recorded_call_of_the_same_method(self) -> None:
+        matcher = self._matcher()
+        incoming = _req_obj("tools/call", _call("bye", "00-bbbb-01"))
+        assert matcher.find(incoming) is None
+
+        divergence = matcher.divergence(incoming, step=3)
+
+        assert divergence.reason == "no-match"
+        assert divergence.recorded_call == {"name": "echo", "arguments": {"text": "hi"}}
+        assert divergence.new_call == {"name": "echo", "arguments": {"text": "bye"}}
+        block = divergence.render()
+        assert block.startswith("step 3: tools/call")
+        assert '-    "text": "hi"' in block
+        assert '+    "text": "bye"' in block
+        assert "traceparent" not in block  # ignored by matching, so not shown
+
+    def test_falls_back_to_the_next_recorded_call_of_any_method(self) -> None:
+        matcher = self._matcher(ordering="strict")
+        incoming = _req_obj("resources/read", {"uri": "ref://x"})
+
+        divergence = matcher.divergence(incoming, step=2)
+
+        # initialize bypasses the matcher, so it is never the expected call
+        assert divergence.method == "resources/read"
+        assert divergence.recorded_call == {}
+
+    def test_recording_used_up(self) -> None:
+        matcher = self._matcher()
+        assert matcher.find(_req_obj("tools/list", {})) is not None
+        assert matcher.find(_req_obj("tools/call", _call("hi", "x"))) is not None
+        incoming = _req_obj("tools/call", _call("again", "y"))
+        assert matcher.find(incoming) is None
+
+        divergence = matcher.divergence(incoming, step=4)
+
+        assert divergence.recorded_call is None
+        assert "the recording has no calls left" in divergence.render()
+
+    def test_no_response_names_the_matched_call(self) -> None:
+        matcher = self._matcher()
+        incoming = _req_obj("tools/call", _call("hi", "z"))
+        exchange = matcher.find(incoming)
+        assert exchange is not None
+
+        divergence = matcher.divergence(incoming, step=3, matched=exchange)
+
+        assert divergence.reason == "no-response"
+        assert "has no recorded response" in divergence.render()

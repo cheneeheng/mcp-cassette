@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -114,6 +115,62 @@ def test_unmatched_request_errors_and_exits_3(tmp_path: Path) -> None:
     assert resp is not None
     assert resp["error"]["code"] == -32001
     assert replayed.returncode == 3
+
+
+def test_first_miss_stops_the_run_with_a_divergence_report(tmp_path: Path) -> None:
+    cassette = tmp_path / "demo.json"
+    recorded = [
+        *initialize_sequence(),
+        tool_call(2, "echo", {"text": "hi"}),
+        tool_call(3, "add", {"a": 2, "b": 3}),
+    ]
+    _record(cassette, recorded)
+    report = tmp_path / "report.json"
+
+    changed = [
+        *initialize_sequence(),
+        tool_call(2, "echo", {"text": "a prompt change asked this"}),
+        tool_call(3, "add", {"a": 2, "b": 3}),
+    ]
+    replayed = run_session(
+        _serve_cmd(cassette, "--report", str(report)),
+        changed,
+        expected_responses=2,
+        settle=2.0,
+    )
+
+    assert replayed.returncode == 3
+    first = replayed.response_for(2)
+    assert first is not None and first["error"]["code"] == -32001
+    assert replayed.response_for(3) is None  # stopped: the matching call never ran
+    assert "step 2: tools/call" in replayed.stderr
+    assert '-    "text": "hi"' in replayed.stderr
+    assert '+    "text": "a prompt change asked this"' in replayed.stderr
+    divergence = json.loads(report.read_text(encoding="utf-8"))["divergence"]
+    assert divergence["step"] == 2
+    assert divergence["reason"] == "no-match"
+
+
+def test_error_mode_answers_later_calls_after_a_miss(tmp_path: Path) -> None:
+    cassette = tmp_path / "demo.json"
+    recorded = [
+        *initialize_sequence(),
+        tool_call(2, "echo", {"text": "hi"}),
+        tool_call(3, "add", {"a": 2, "b": 3}),
+    ]
+    _record(cassette, recorded)
+
+    changed = [
+        *initialize_sequence(),
+        tool_call(2, "echo", {"text": "changed"}),
+        tool_call(3, "add", {"a": 2, "b": 3}),
+    ]
+    replayed = run_session(_serve_cmd(cassette, "--on-unmatched", "error"), changed)
+
+    assert replayed.returncode == 3
+    later = replayed.response_for(3)
+    assert later is not None and "result" in later
+    assert "step 2: tools/call" in replayed.stderr  # the first miss still gets a block
 
 
 def test_notification_anchored_after_response(tmp_path: Path) -> None:

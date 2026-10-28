@@ -35,6 +35,7 @@ from ..cassette import (
     PaceConfig,
     UnsupportedFormatVersion,
 )
+from ..matching import Divergence
 from ..redaction.redactor import Redactor
 from ..redaction.replay import RequestTransform, append_redactor, replay_transform
 from ..report import read_report
@@ -680,8 +681,14 @@ class CassetteSession:
         misses = report.get("misses") or []
         if misses:
             summary = "\n".join(f"  - {m}" for m in misses)
+            divergence = report.get("divergence")
+            lead = (
+                f"replay diverged at {Divergence.model_validate(divergence).render()}\n"
+                if divergence
+                else ""
+            )
             raise CassetteError(
-                f"replay had {len(misses)} unmatched request(s):\n{summary}\n"
+                f"{lead}replay had {len(misses)} unmatched request(s):\n{summary}\n"
                 f"Re-record with MCP_CASSETTE_MODE=all or delete {self.cassette_path}."
             )
 
@@ -824,7 +831,12 @@ class CassetteSession:
         ]
 
     def _match_flags(self) -> list[str]:
-        flags = ["--ordering", self.match.ordering]
+        flags = [
+            "--ordering",
+            self.match.ordering,
+            "--on-unmatched",
+            self.match.on_unmatched,
+        ]
         for ptr in self.match.ignore_params:
             flags += ["--ignore-param", ptr]
         if self.match.rewrite_protocol_version:
