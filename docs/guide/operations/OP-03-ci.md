@@ -12,6 +12,11 @@
 Two jobs. Everything below is the reasoning behind them.
 
 ```yaml
+on:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * *"                 # a server can change with no PR of yours
+
 jobs:
   test:                                 # offline, deterministic, cannot record
     runs-on: ubuntu-latest
@@ -22,24 +27,28 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv run pytest
 
-  cassettes:                            # lint + drift vs the pull request's base branch
+  tripwire:                             # re-launch each third-party server, compare its tools
     runs-on: ubuntu-latest
+    env:
+      MCP_CASSETTE_MODE: none           # check --record is refused here too
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0                # required: see OP-03.3.1
-      - uses: cheneeheng/mcp-cassette@v0.4.0
-        with:
-          checks: lint,diff
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run mcp-cassette check tests/cassettes/fetch.mcp.json -- uvx mcp-server-fetch
+      - run: uv run mcp-cassette check tests/cassettes/github.mcp.json --env GITHUB_TOKEN=dummy -- npx -y @modelcontextprotocol/server-github
 ```
 
 Give the test job **no MCP server credentials** ([OP-03.2](#op-032-do-not-give-ci-upstream-credentials)).
-A drift check against a *fresh* recording needs credentials, so it is a scheduled job of
-its own, never the pull-request pipeline ([OP-03.3.2](#op-0332-the-scheduled-drift-job)).
+The tripwire job needs network to download and start each server, but only placeholder
+keys: listing tools is not an authenticated call for most servers. It runs on every pull
+request and on a schedule, because a server you launch unpinned changes on its own release
+day, not yours. Reading a red tripwire and accepting a change:
+[HT-09](../how-to/HT-09-gate-a-drifting-server.md).
 
-Exit codes you will see in a red build: `2` a usage or file error (including a missing
-merge-base), `3` a replay miss, `4` a lint finding or a missing redaction profile, `5` the
-tool surface drifted, `6` a cassette held for writing by another process.
+Exit codes you will see in a red build: `2` a usage or file error, `3` a replay miss, `5`
+a server's tools changed, `6` a cassette held for writing by another process, `7` a server
+did not start. The packaged Action and its `lint`/`diff` checks (OP-03.3) are frozen beyond
+Stage 1 and add `4`, a lint finding or a missing redaction profile.
 
 ## OP-03.1 The one non-negotiable setting
 

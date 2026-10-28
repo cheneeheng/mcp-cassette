@@ -2,10 +2,10 @@
 
 [← Guide index](index.md)
 
-Goal: go from nothing to a session that records against a real MCP server once and then
-replays it offline, forever.
+Goal: go from nothing to a green CI check on a server you depend on, then to a session
+that records against the real server once and replays it offline, forever.
 
-**Time:** about 10 minutes for one door.
+**Time:** about 5 minutes for the tripwire, 10 more for one replay door.
 
 ## Before you begin
 
@@ -23,7 +23,7 @@ credentials, network access — but only on the first run.
 The walkthroughs below name `examples/echo_server.py`, which exists **only in a clone
 of this repo** — installing from PyPI does not bring `examples/` with it. If you
 installed into your own project and want a real server to record right now, save this
-as `echo_server.py` next to your `pyproject.toml`. It is an MCP server in 30 lines of
+as `echo_server.py` next to your `pyproject.toml`. It is an MCP server in 40 lines of
 standard library, no `mcp` SDK, and it is enough to complete every step on this page:
 
 ```python
@@ -42,6 +42,13 @@ def handle(request):
             "serverInfo": {"name": "echo-example", "version": "1.0.0"}}}
     if method == "notifications/initialized":
         return None
+    if method == "tools/list":
+        number = {"type": "integer"}
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {"tools": [
+            {"name": "echo", "description": "Echo text back.", "inputSchema": {
+                "type": "object", "properties": {"text": {"type": "string"}}}},
+            {"name": "add", "description": "Add two integers.", "inputSchema": {
+                "type": "object", "properties": {"a": number, "b": number}}}]}}
     if method == "tools/call":
         params = request.get("params") or {}
         args = params.get("arguments") or {}
@@ -104,7 +111,7 @@ This writes `pyproject.toml` and `uv.lock` and installs into `.venv/`. To undo i
 `uv remove --dev mcp-cassette`.
 
 This install brings the library and the CLI, and nothing else — `examples/` is not part
-of the package. To follow the walkthroughs below without cloning, paste the 30-line
+of the package. To follow the walkthroughs below without cloning, paste the 40-line
 server from [No server to record against yet?](#no-server-to-record-against-yet).
 
 **Standing in a clone of the mcp-cassette repo** — which is what the CLI walkthrough
@@ -129,6 +136,45 @@ The pytest plugin registers itself through the `pytest11` entry point — there 
 to configure. If the `mcp_cassette` fixture turns up missing later, the package is
 installed in a different environment than the one pytest runs in; the health check in
 [OP-01.3](operations/OP-01-install.md) confirms it.
+
+## First check: the upgrade tripwire
+
+The quickest win needs no agent and no tests: a CI step that fails the day a server you
+depend on stops starting or changes its tools.
+
+1. Write the baseline. `check --record` starts the server, reads its tool list, and saves
+   it as a cassette.
+
+   ```
+   uv run mcp-cassette check tests/cassettes/echo.mcp.json --record -- python examples/echo_server.py
+   ```
+
+   ```
+   wrote baseline tests/cassettes/echo.mcp.json (3 tools)
+   ```
+
+   With the pasted server from [No server to record against yet?](#no-server-to-record-against-yet)
+   it says `(2 tools)`.
+
+2. Check it. This is the command CI runs:
+
+   ```
+   uv run mcp-cassette check tests/cassettes/echo.mcp.json -- python examples/echo_server.py
+   ```
+
+   ```
+   unchanged: 3 tools match tests/cassettes/echo.mcp.json
+   ```
+
+   Exit `0`. A changed tool exits `5` and prints the diff, and a server that does not start
+   exits `7` with its last stderr lines.
+
+3. Commit `tests/cassettes/echo.mcp.json`, and add the step to CI with
+   `MCP_CASSETTE_MODE=none` set, as in [OP-03.0](operations/OP-03-ci.md#op-030-the-whole-pipeline).
+
+For a real third-party server, put its launch command after `--`, for example
+`-- uvx mcp-server-fetch`. Accepting a change, placeholder keys and slow downloads are in
+[HT-09](how-to/HT-09-gate-a-drifting-server.md).
 
 ## Pick your door
 

@@ -120,6 +120,7 @@ directory env var would reach exactly one door of four.
 | `mode` | (falls through to ini) | Record mode for this test. |
 | `cassette` | derived path | Explicit cassette path. |
 | `ordering` | `per_method` | Match ordering discipline. |
+| `on_unmatched` | `stop` | `stop` ends replay at the first miss with a divergence report; `error` answers it with an error and keeps serving. |
 | `ignore_params` | `[]` | JSON pointers excluded from the match key. |
 | `rewrite_protocol_version` | `False` | Answer `initialize` with the client's requested `protocolVersion` instead of the recorded one. |
 | `pii_packs` | `[]` | Redaction pack files: applied when recording, and used to resolve the manifest's packs when replaying. |
@@ -131,9 +132,9 @@ directory env var would reach exactly one door of four.
 | Field | Default | Notes |
 |---|---|---|
 | `match_on` | `["method", "params"]` | The JSON-RPC `id` is **never** matched on; replay re-stamps the client's id onto the recorded response. |
-| `ignore_params` | `[]` | JSON pointers dropped before the key is computed. CLI: `--ignore-param` (repeatable). |
+| `ignore_params` | `[]` | JSON pointers dropped before the key is computed. CLI: `--ignore-param` (repeatable). `/params/_meta` is always dropped first: tracers put a fresh trace id there on every call. |
 | `ordering` | `per_method` | CLI: `--ordering per_method\|strict\|none`. |
-| `on_unmatched` | `error` | Unmatched requests are always an error; the replay process exits `3`. |
+| `on_unmatched` | `stop` | At a request the cassette cannot answer, `stop` answers it with an error, prints the divergence report (the step, and a diff of the recorded call against the new one) and ends the run; `error` answers with the error and keeps serving. Both exit `3`. CLI: `--on-unmatched stop\|error`. Streamable HTTP replay always behaves as `error`. |
 | `rewrite_protocol_version` | `False` | CLI: `--rewrite-protocol-version`. |
 
 Three ordering disciplines:
@@ -198,6 +199,14 @@ exit `130`. SIGTERM has no graceful-finalize semantics on Windows.
 
 Off the main thread, where no signal handler can be installed, shutdown degrades to
 EOF-driven: close the client's stdin to end the session.
+
+## OP-02.9 Cassette format stability
+
+Every cassette carries a `format_version`. Loading one newer than the installed release
+understands fails with `UnsupportedFormatVersion` (exit `2` from the CLI) rather than
+replaying wrongly; older versions load unchanged. The format is **unstable (0.x)** until
+three outside repositories use it: a release may change it, and the changelog says how to
+move. Pin the mcp-cassette version your cassettes were recorded with.
 
 ---
 
