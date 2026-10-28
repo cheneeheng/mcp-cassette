@@ -75,8 +75,15 @@ dev = [
 packages = ["src/mcp_cassette"]
 
 [tool.hatch.build.targets.sdist]
-# Internal agent-workspace docs and repo tooling do not belong in the distribution.
-exclude = [".agents_workspace", ".claude", "CLAUDE.md", ".pre-commit-config.yaml"]
+# Internal agent-workspace docs, lifecycle material, and repo tooling do not belong in the
+# distribution.
+exclude = [
+    ".agents_workspace",
+    ".claude",
+    "CLAUDE.md",
+    ".pre-commit-config.yaml",
+    "product",
+]
 
 [tool.ruff]
 line-length = 88

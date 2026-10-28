@@ -9,7 +9,10 @@ and operator guide (keep it in sync when flags, modes, error strings, or exit co
 
 The planning artifacts, decision log, and audit evidence under `.agents_workspace/` are a nested
 repository of their own at that path, git-ignored here; a fresh clone of this repo does not contain
-them, so paths cited into that folder resolve only for someone who has it.
+them, so paths cited into that folder resolve only for someone who has it. Business material (the
+business plan, budgets and hours, interviews, code searches) stays there. Lifecycle material that
+builds the product (build plans, plan reviews) is committed under `product/`, starting with
+`product/plans/stage-1.md`; keep business-plan budgets, dates, and interview details out of it.
 
 `.agents_workspace/product/JOURNAL.md` records the product lifecycle phase by phase, with every
 decision, assumption, workaround, and hack. When a session makes or settles one of those, or a
