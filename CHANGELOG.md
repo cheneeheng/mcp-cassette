@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change. `--env KEY=VALUE` passes a dummy key, `--timeout` bounds the whole run. No
   agent, model call or test suite needed.
 
+### Changed
+
+- Replay ignores `params._meta` when matching, always and before `ignore_params`.
+  Tracers such as Langfuse and OpenTelemetry put a fresh trace id there on every call,
+  which made every traced agent miss. Cassettes recorded earlier match unchanged.
+
 ## [0.4.0] - 2026-09-18
 
 Hardening for recording against production servers: free-text redaction stamped on the

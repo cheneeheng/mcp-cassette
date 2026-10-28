@@ -233,7 +233,9 @@ note. Pages for frozen items stay as written. No page is deleted.
   the author's agent suite, installed from this branch by git URL until v0.5.0 is released.
 - **Check:** manual, because the suite lives outside this repo: its CI run with the `check` steps
   is green, and the run's link goes into the phase's Status.
-- **Status:** todo
+- **Status:** todo, waiting. The author has no agent project with MCP servers in CI yet
+  (2026-10-28), so this phase and phase 6 wait until a home for the proof is picked (Open).
+  Phases 3 to 5 do not depend on it and go ahead.
 
 ### Phase 3: Ignore trace metadata when matching
 
@@ -241,7 +243,9 @@ note. Pages for frozen items stay as written. No page is deleted.
 - **Check:** `uv run pytest tests/unit/test_matching.py -q` passes, including a new test where a
   recorded `tools/call` and an incoming one differ only in `params._meta.traceparent` and match,
   and one where the caller's own `ignore_params` list still drops `_meta`.
-- **Status:** todo
+- **Status:** done. `uv run pytest tests/unit/test_matching.py -q` gave "19 passed", with a third
+  test that other params still decide a match; the unit suite and the replay integration tests
+  gave "537 passed" under `MCP_CASSETTE_MODE=none`. Commit and PR in Record.
 
 ### Phase 4: Divergence report
 
@@ -297,8 +301,10 @@ note. Pages for frozen items stay as written. No page is deleted.
   "Tripwire"); a miss stops the run by default, with `error` as the opt-in (Design "Divergence
   report"). A third mode that reports a miss without failing the test stays unplanned until the
   user asks for it.
-- Where the author's own agent suite lives, for phases 2 and 6: assumed a separate repo the author
-  points to when phase 2 starts. Phase 1 does not need it.
+- Where Stage 1's proof runs, for phases 2 and 6: the author has no agent project with MCP
+  servers in CI yet (2026-10-28). Candidates: a small real agent project of the author's, this
+  repo's examples (weaker, since the tool proves itself), or the first outside repo that takes
+  an outreach PR. Until one is picked, phases 2 and 6 wait.
 - Settled by the author on 2026-10-28: this plan and its review live in the repo's `product/`,
   with business material (budgets, dates, interviews) kept in `.agents_workspace/`, and the plan
   carries no hour estimates; the private hours log records actual time.
@@ -314,3 +320,5 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 Design changed: was "`uv run pytest tests/integration/test_check.py tests/unit/test_check.py ...`", now "`... tests/integration/test_check.py tests/integration/test_check_cli.py ...`", because every check test spawns a server and `tests/unit` is in-process only
 - 2026-10-28 Built Phase 1: ce5c174, `uv run coverage run -m pytest -q` 671 passed, 3 skipped; coverage TOTAL 99%
 - 2026-10-28 PR: #30 https://github.com/cheneeheng/mcp-cassette/pull/30
+- 2026-10-28 Built Phase 3: 1d427b2, `uv run pytest tests/unit/test_matching.py -q` 19 passed
+- 2026-10-28 PR: #31 https://github.com/cheneeheng/mcp-cassette/pull/31
