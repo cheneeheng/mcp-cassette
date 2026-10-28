@@ -41,6 +41,13 @@ def _check(
     )
 
 
+@pytest.fixture(autouse=True)
+def _recording_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CI sets MCP_CASSETTE_MODE=none, which --record rightly refuses; the
+    # subprocesses inherit the environment, so clear it for these tests.
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+
+
 @pytest.fixture(scope="module")
 def session(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A full fixture-style session: handshake, tool list, and a tool call."""

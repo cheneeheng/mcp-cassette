@@ -24,6 +24,13 @@ def _stub(*flags: str) -> list[str]:
     return [*STUB, *flags]
 
 
+@pytest.fixture(autouse=True)
+def _recording_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CI sets MCP_CASSETTE_MODE=none, which --record rightly refuses; these tests
+    # write their own baselines. The refusal itself is pinned below.
+    monkeypatch.delenv("MCP_CASSETTE_MODE", raising=False)
+
+
 @pytest.fixture
 def baseline(tmp_path: Path) -> Path:
     path = tmp_path / "stub.mcp.json"
