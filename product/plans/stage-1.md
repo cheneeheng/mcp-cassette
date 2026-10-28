@@ -328,3 +328,5 @@ note. Pages for frozen items stay as written. No page is deleted.
 - 2026-10-28 PR: #30 https://github.com/cheneeheng/mcp-cassette/pull/30
 - 2026-10-28 Built Phase 3: 1d427b2, `uv run pytest tests/unit/test_matching.py -q` 19 passed
 - 2026-10-28 PR: #31 https://github.com/cheneeheng/mcp-cassette/pull/31
+- 2026-10-28 Built Phase 4: fcd89d7, `uv run coverage run -m pytest -q` 683 passed, 3 skipped; coverage TOTAL 99%
+- 2026-10-28 PR: #32 https://github.com/cheneeheng/mcp-cassette/pull/32
