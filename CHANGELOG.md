@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Printed by `serve`, written to the report sidecar as `divergence`, and leading the
   fixture's failure message.
 
+### Fixed
+
+- `ordering="strict"` matched nothing after a recorded handshake: the `initialize`
+  exchange, which replay answers itself, held the head of the queue, so every later
+  request missed. Strict ordering now skips it and still enforces order for every other
+  call.
+
 ### Changed
 
 - **Breaking:** stdio replay now stops at the first unmatched request

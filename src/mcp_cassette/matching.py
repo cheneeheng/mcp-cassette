@@ -179,10 +179,7 @@ class Matcher:
         # initialize bypasses the matcher (the server answers it directly), so its
         # exchange is never consumed and must never be the call a reader is shown.
         pending = [
-            ex
-            for ex in self._exchanges
-            if not ex.consumed
-            and _payload_obj(ex.request).get("method") != "initialize"
+            ex for ex in self._exchanges if not ex.consumed and not _is_initialize(ex)
         ]
         if self.config.ordering != "strict":
             same = [
@@ -200,7 +197,9 @@ class Matcher:
             return None
         if ordering == "strict":
             for ex in self._exchanges:
-                if ex.consumed:
+                # The replay servers answer initialize themselves, so its exchange
+                # is never consumed here and must not hold the head of the line.
+                if ex.consumed or _is_initialize(ex):
                     continue
                 if ex.key == key:
                     ex.consumed = True
@@ -273,6 +272,10 @@ def _payload_obj(message: Message) -> dict[str, Any]:
     if isinstance(message.payload, dict):
         return message.payload
     return {}
+
+
+def _is_initialize(exchange: Exchange) -> bool:
+    return _payload_obj(exchange.request).get("method") == "initialize"
 
 
 def _delete_pointer(root: Any, pointer: str) -> None:
