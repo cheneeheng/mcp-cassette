@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,10 @@ class SessionResult:
     messages: list[dict[str, Any]]
     returncode: int
     stderr: str
+    # ``time.monotonic()`` at which each awaited response arrived, keyed by its ``id``.
+    # Timing tests subtract two of these, which leaves interpreter startup out of the
+    # measurement. Responses that arrive after stdin is closed are not stamped.
+    response_times: dict[Any, float] = field(default_factory=dict)
 
     def responses(self) -> list[dict[str, Any]]:
         """Server responses (objects carrying an ``id`` and no ``method``)."""
@@ -150,6 +154,7 @@ def run_session(
     err_reader.start()
 
     objs: list[dict[str, Any]] = []
+    response_times: dict[Any, float] = {}
     responses = 0
     deadline = time.monotonic() + timeout
     last_activity = time.monotonic()
@@ -171,6 +176,7 @@ def run_session(
             last_activity = time.monotonic()
             if "id" in item and "method" not in item:
                 responses += 1
+                response_times[item["id"]] = last_activity
             elif responder is not None and "id" in item and "method" in item:
                 reply = responder(item)
                 if reply is not None:
@@ -215,6 +221,7 @@ def run_session(
         messages=objs,
         returncode=proc.returncode if proc.returncode is not None else -1,
         stderr=b"".join(stderr_chunks).decode("utf-8", errors="replace"),
+        response_times=response_times,
     )
 
 

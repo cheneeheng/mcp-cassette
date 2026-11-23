@@ -100,6 +100,18 @@ def _elapsed(cmd: list[str], messages: list[dict[str, Any]]) -> float:
     return time.monotonic() - start
 
 
+def _span(cmd: list[str], messages: list[dict[str, Any]]) -> float:
+    """Seconds between the first and the last response of one run.
+
+    Both ends are stamped inside the same subprocess run, so interpreter startup is not
+    in the measurement. Startup alone varies by more than half a second on a loaded
+    runner, which is enough to swallow a floor set against two whole runs.
+    """
+    times = run_session(cmd, messages).response_times
+    assert 1 in times and 3 in times, times
+    return times[3] - times[1]
+
+
 def test_recorded_gaps_are_replayed(tmp_path: Path) -> None:
     cassette = _cassette(tmp_path / "paced.mcp.json")
     messages = _client_messages()
@@ -144,11 +156,10 @@ def test_delay_fault_is_additive_on_top_of_pacing(tmp_path: Path) -> None:
     messages[3] = tool_call(3, "echo", {"text": "hi"})
     faults = _faults_file(tmp_path, Fault.delay("tools/call", ms=1000, nth=1))
 
-    paced = _elapsed(_serve(cassette, "--pace", "recorded"), messages)
-    both = _elapsed(
-        _serve(cassette, "--pace", "recorded", "--faults", faults), messages
-    )
+    paced = _span(_serve(cassette, "--pace", "recorded"), messages)
+    both = _span(_serve(cassette, "--pace", "recorded", "--faults", faults), messages)
     # The injected delay is 1000 ms of signal on top of the same recorded pacing.
+    # Spans, not whole runs: two startups differing by 0.6 s once hid half of it.
     assert both - paced >= 0.5
 
 
