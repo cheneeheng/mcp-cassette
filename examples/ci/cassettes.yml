@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # required: the merge-base baseline needs the shared history
-      - uses: cheneeheng/mcp-cassette@v0.4.0
+      - uses: cheneeheng/mcp-cassette@v0.5.0
         with:
           cassettes: tests/cassettes/**/*.mcp.json
           checks: lint,diff

@@ -85,8 +85,8 @@ manually triggered job with its own credentials, never in the pull-request pipel
 
 Recorded tool descriptions and results are third-party content headed for a model's
 context window. The packaged Action gates them on every pull request. It is a composite
-action shipped from this repository's root, so `uses: cheneeheng/mcp-cassette@v0.4.0` runs
-exactly mcp-cassette 0.4.0: the Action and the library come from one tag and cannot drift.
+action shipped from this repository's root, so `uses: cheneeheng/mcp-cassette@v0.5.0` runs
+exactly mcp-cassette 0.5.0: the Action and the library come from one tag and cannot drift.
 
 | Input | Default | Purpose |
 |---|---|---|
